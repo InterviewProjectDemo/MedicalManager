@@ -1,0 +1,253 @@
+@inject MedicationScheduleService MedSchedule
+@inject AuthenticationStateProvider Auth
+
+@if (Schedule is not null)
+{
+    var scheduleHasMissed = Schedule.Groups.Any(g => g.Doses.Any(d => d.Status == AdministrationStatus.Missed));
+    <section class="panel accent-meds med-schedule-panel @(scheduleHasMissed ? "med-schedule-has-missed" : null)">
+        <div class="panel-head">
+            <div>
+                <h2>
+                    Today's medication schedule
+                    @if (scheduleHasMissed)
+                    {
+                        <span class="med-schedule-alert">Missed doses</span>
+                    }
+                </h2>
+                <p class="muted med-schedule-sub">@Schedule.Date.ToString("dddd, MMM d") · slots auto-mark missed after their time window</p>
+            </div>
+            @if (ManageHref is not null)
+            {
+                <a class="widget-link" href="@ManageHref">Manage meds</a>
+            }
+        </div>
+        <div class="med-slot-grid">
+            @foreach (var group in Schedule.Groups)
+            {
+                var slotHasMissed = group.Doses.Any(d => d.Status == AdministrationStatus.Missed);
+                <div class="med-slot-column @(slotHasMissed ? "med-slot-has-missed" : null)">
+                    <div class="med-slot-head">
+                        <strong>@group.Label</strong>
+                        @if (slotHasMissed)
+                        {
+                            <span class="med-slot-alert">Missed</span>
+                        }
+                        <span class="muted med-slot-window">@group.WindowLabel</span>
+                    </div>
+                    @if (group.Doses.Count == 0)
+                    {
+                        <div class="med-dose-table-wrap med-dose-empty">
+                            <p class="muted">No medication at this time frame</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="med-dose-table-wrap">
+                            <table class="med-dose-table">
+                                <thead>
+                                    <tr>
+                                        <th>Medication</th>
+                                        <th>Status</th>
+                                        <th class="med-dose-action-col">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var dose in group.Doses)
+                                    {
+                                        var css = DoseStatusCss(dose.Status);
+                                        <tr class="med-dose-row @css">
+                                            <td class="med-dose-med">
+                                                <strong>@dose.Name</strong>
+                                                <span class="muted">@dose.Dosage · @dose.Frequency</span>
+                                                @if (dose.RecordedAt is not null && !string.IsNullOrWhiteSpace(dose.RecordedByName))
+                                                {
+                                                    <span class="med-dose-recorded muted">@dose.RecordedByName · @dose.RecordedAt.Value.ToString("h:mm tt")</span>
+                                                }
+                                            </td>
+                                            <td class="med-dose-status">
+                                                <StatusPill Label="@DoseStatusLabel(dose.Status)" CssClass="@css" />
+                                            </td>
+                                            <td class="med-dose-actions">
+                                                @RenderActions(dose)
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (_pendingUpdate is not null)
+{
+    <div class="med-update-backdrop" @onclick="CancelUpdate">
+        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Confirm medication status update">
+            <div class="med-update-head">
+                <div>
+                    <h3>Confirm status update</h3>
+                    <p>@DoseStatusLabel(_pendingUpdate.Status) · @_pendingUpdate.DoseName</p>
+                </div>
+                <button type="button" class="med-update-close" @onclick="CancelUpdate" aria-label="Close">&times;</button>
+            </div>
+            <EditForm Model="_form" OnValidSubmit="SubmitUpdateAsync">
+                <DataAnnotationsValidator />
+                <div class="med-update-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="recordedByName">Recorded by</label>
+                        <InputText id="recordedByName" class="form-control" @bind-Value="_form.RecordedByName" placeholder="Patient, caregiver, nurse…" />
+                        <ValidationMessage For="@(() => _form.RecordedByName)" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="recordedAt">Time updated</label>
+                        <InputDate Type="InputDateType.DateTimeLocal" id="recordedAt" class="form-control" @bind-Value="_form.RecordedAt" />
+                        <ValidationMessage For="@(() => _form.RecordedAt)" />
+                    </div>
+                </div>
+                <div class="med-update-foot">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelUpdate">Cancel</button>
+                    <button type="submit" class="btn btn-success" disabled="@_submitting">Save update</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public DailyMedicationSchedule? Schedule { get; set; }
+
+    [Parameter, EditorRequired]
+    public string? PatientUserId { get; set; }
+
+    [Parameter]
+    public string? ManageHref { get; set; }
+
+    [Parameter]
+    public EventCallback<DailyMedicationSchedule> ScheduleChanged { get; set; }
+
+    private PendingDoseUpdate? _pendingUpdate;
+    private DoseUpdateForm _form = new();
+    private bool _submitting;
+    private string? _currentUserId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _currentUserId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    }
+
+    private RenderFragment RenderActions(MedicationDoseItem dose) => __builder =>
+    {
+        if (dose.Status == AdministrationStatus.Pending)
+        {
+            __builder.OpenElement(0, "button");
+            __builder.AddAttribute(1, "type", "button");
+            __builder.AddAttribute(2, "class", "btn btn-sm btn-green med-dose-btn");
+            __builder.AddAttribute(3, "disabled", _submitting);
+            __builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => OpenUpdate(dose, AdministrationStatus.Administered)));
+            __builder.AddContent(5, "Taken");
+            __builder.CloseElement();
+
+            __builder.OpenElement(6, "button");
+            __builder.AddAttribute(7, "type", "button");
+            __builder.AddAttribute(8, "class", "btn btn-sm btn-outline-danger med-dose-btn");
+            __builder.AddAttribute(9, "disabled", _submitting);
+            __builder.AddAttribute(10, "onclick", EventCallback.Factory.Create(this, () => OpenUpdate(dose, AdministrationStatus.Missed)));
+            __builder.AddContent(11, "Missed");
+            __builder.CloseElement();
+        }
+        else if (dose.Status == AdministrationStatus.Administered)
+        {
+            __builder.OpenElement(0, "button");
+            __builder.AddAttribute(1, "type", "button");
+            __builder.AddAttribute(2, "class", "btn btn-sm btn-outline-danger med-dose-btn");
+            __builder.AddAttribute(3, "disabled", _submitting);
+            __builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => OpenUpdate(dose, AdministrationStatus.Missed)));
+            __builder.AddContent(5, "Missed");
+            __builder.CloseElement();
+        }
+        else
+        {
+            __builder.OpenElement(0, "button");
+            __builder.AddAttribute(1, "type", "button");
+            __builder.AddAttribute(2, "class", "btn btn-sm btn-green med-dose-btn");
+            __builder.AddAttribute(3, "disabled", _submitting);
+            __builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => OpenUpdate(dose, AdministrationStatus.Administered)));
+            __builder.AddContent(5, "Taken");
+            __builder.CloseElement();
+        }
+    };
+
+    private void OpenUpdate(MedicationDoseItem dose, AdministrationStatus status)
+    {
+        _pendingUpdate = new PendingDoseUpdate(dose.AdministrationId, dose.Name, status);
+        _form = new DoseUpdateForm
+        {
+            RecordedByName = dose.RecordedByName ?? "",
+            RecordedAt = DateTime.Now
+        };
+    }
+
+    private void CancelUpdate()
+    {
+        _pendingUpdate = null;
+        _form = new();
+    }
+
+    private async Task SubmitUpdateAsync()
+    {
+        if (_pendingUpdate is null || PatientUserId is null || Schedule is null) return;
+
+        _submitting = true;
+        try
+        {
+            await MedSchedule.UpdateAdministrationStatusAsync(
+                _pendingUpdate.AdministrationId,
+                PatientUserId,
+                _pendingUpdate.Status,
+                _form.RecordedByName,
+                _form.RecordedAt,
+                _currentUserId);
+
+            var refreshed = await MedSchedule.GetDailyScheduleAsync(PatientUserId, Schedule.Date);
+            _pendingUpdate = null;
+            _form = new();
+            await ScheduleChanged.InvokeAsync(refreshed);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string DoseStatusCss(AdministrationStatus status) => status switch
+    {
+        AdministrationStatus.Administered => "status-ok",
+        AdministrationStatus.Missed => "status-danger",
+        _ => "status-warn"
+    };
+
+    private static string DoseStatusLabel(AdministrationStatus status) => status switch
+    {
+        AdministrationStatus.Administered => "Taken",
+        AdministrationStatus.Missed => "Missed",
+        AdministrationStatus.Pending => "Pending",
+        _ => "Pending"
+    };
+
+    private sealed record PendingDoseUpdate(int AdministrationId, string DoseName, AdministrationStatus Status);
+
+    private sealed class DoseUpdateForm
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter who is recording this update.")]
+        [System.ComponentModel.DataAnnotations.MaxLength(120)]
+        public string RecordedByName { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public DateTime RecordedAt { get; set; } = DateTime.Now;
+    }
+}

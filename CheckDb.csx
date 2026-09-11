@@ -1,0 +1,16 @@
+﻿using Microsoft.Data.Sqlite;
+var conn = new SqliteConnection("Data Source=Data/app.db");
+conn.Open();
+var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId";
+using var r = cmd.ExecuteReader();
+while (r.Read()) Console.WriteLine(r.GetString(0));
+cmd.CommandText = "SELECT name FROM sqlite_master WHERE type=''table'' ORDER BY name";
+cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+using var r2 = cmd.ExecuteReader();
+Console.WriteLine("--- tables ---");
+while (r2.Read()) Console.WriteLine(r2.GetString(0));
+cmd.CommandText = "PRAGMA table_info(Medications)";
+using var r3 = cmd.ExecuteReader();
+Console.WriteLine("--- Medications columns ---");
+while (r3.Read()) Console.WriteLine(r3.GetString(1));

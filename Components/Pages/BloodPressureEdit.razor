@@ -1,0 +1,93 @@
+@page "/blood-pressure/edit"
+@page "/blood-pressure/edit/{Id:int}"
+@attribute [Authorize]
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Add" : "Update") blood pressure</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (model is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-bp">
+        <div>
+            <p class="eyebrow">Blood pressure</p>
+            <h1>@(Id is null ? "Add reading" : "Update reading")</h1>
+        </div>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="Save" class="form-card">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Systolic</label>
+                <InputNumber class="form-control" @bind-Value="model.Systolic" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Diastolic</label>
+                <InputNumber class="form-control" @bind-Value="model.Diastolic" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Pulse (optional)</label>
+                <InputNumber class="form-control" @bind-Value="model.Pulse" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Recorded at</label>
+                <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Notes</label>
+                <InputText class="form-control" @bind-Value="model.Notes" />
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is not null)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+            }
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private BloodPressureReading? model;
+    private string Back => CareLinks.To("blood-pressure", PatientUserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is not string patientId) return;
+        if (Id is int id)
+        {
+            model = await Records.GetBloodPressureByIdAsync(id, patientId);
+        }
+        model ??= new BloodPressureReading { UserId = patientId, RecordedAt = DateTime.Now, Systolic = 120, Diastolic = 80 };
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await Records.SaveBloodPressureAsync(model);
+        Nav.NavigateTo(Back);
+    }
+
+    private async Task Delete()
+    {
+        if (Id is int id && scope?.PatientId is not null)
+        {
+            await Records.DeleteBloodPressureAsync(id, scope.PatientId);
+        }
+        Nav.NavigateTo(Back);
+    }
+}

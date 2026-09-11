@@ -1,0 +1,67 @@
+@page "/patients"
+@attribute [Authorize(Roles = "Doctor")]
+@inject PatientAccessService Access
+@inject HealthRecordService Records
+
+<PageTitle>Patients</PageTitle>
+
+<div class="page-head accent-doctor">
+    <div>
+        <p class="eyebrow">Doctor workspace</p>
+        <h1>Patients</h1>
+        <p class="muted">Pick a patient to review the same dashboard, vitals, medications, and appointments they see.</p>
+    </div>
+</div>
+
+<div class="table-card">
+    <table class="table align-middle">
+        <thead>
+            <tr>
+                <th>Patient</th>
+                <th>Latest BP</th>
+                <th>Latest sugar</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td>
+                        <strong>@row.Name</strong>
+                        <div class="muted">@row.Email</div>
+                    </td>
+                    <td>@(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}")</td>
+                    <td>@(row.Sugar is null ? "—" : $"{row.Sugar.Value:0} {row.Sugar.Unit}")</td>
+                    <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
+                        <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.Id)">Dashboard</a>
+                        <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", row.Id)">BP</a>
+                        <a class="btn btn-sm btn-outline-warning" href="@CareLinks.To("sugar", row.Id)">Sugar</a>
+                        <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", row.Id)">Meds</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("appointments", row.Id)">Appts</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (rows.Count == 0)
+    {
+        <p class="muted p-3">No patients registered yet.</p>
+    }
+</div>
+
+@code {
+    private List<PatientRow> rows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        foreach (var patient in await Access.ListPatientsAsync())
+        {
+            var bp = (await Records.GetBloodPressureAsync(patient.Id, 1)).FirstOrDefault();
+            var sugar = (await Records.GetSugarAsync(patient.Id, 1)).FirstOrDefault();
+            rows.Add(new PatientRow(patient.Id, patient.DisplayName, patient.Email ?? "", bp, sugar));
+        }
+    }
+
+    private sealed record PatientRow(string Id, string Name, string Email, BloodPressureReading? Bp, SugarReading? Sugar);
+}

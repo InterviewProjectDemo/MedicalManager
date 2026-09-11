@@ -1,0 +1,72 @@
+@page "/sugar"
+@attribute [Authorize]
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Sugar readings</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-sugar">
+        <div>
+            <p class="eyebrow">Vitals</p>
+            <h1>Sugar readings</h1>
+            <p class="muted">Track fasting, after-meal, and random glucose values.</p>
+        </div>
+        <a class="btn btn-warning text-white" href="@Link("sugar/edit")">Add reading</a>
+    </div>
+
+    <div class="table-card">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Value</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in items)
+                {
+                    var tag = VitalStatus.ForSugar(item.Value, item.Kind);
+                    <tr>
+                        <td>@item.RecordedAt.ToString("g")</td>
+                        <td>@item.Value.ToString("0.#") @item.Unit</td>
+                        <td>@item.Kind</td>
+                        <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-warning" href="@Link($"sugar/edit/{item.Id}")">Update</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (items.Count == 0)
+        {
+            <p class="muted p-3">No sugar readings yet.</p>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private List<SugarReading> items = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is string id)
+        {
+            items = await Records.GetSugarAsync(id);
+        }
+    }
+
+    private string Link(string path) => CareLinks.To(path, PatientUserId);
+}

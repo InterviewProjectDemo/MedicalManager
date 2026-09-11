@@ -1,0 +1,234 @@
+@page "/labs"
+@attribute [Authorize]
+@inject LabReportService LabReports
+@inject PatientAccessService Access
+@inject LabEditAuthorizationService LabEditAuth
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Lab reports</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-labs">
+        <div>
+            <p class="eyebrow">Diagnostics</p>
+            <h1>Lab reports</h1>
+            <p class="muted">Review lab panels by collection month. Green values are in range; red values need attention.</p>
+        </div>
+        <a class="btn btn-teal" href="@Link("labs/add")">Add report</a>
+    </div>
+
+    @if (months.Count == 0)
+    {
+        <div class="table-card">
+            <p class="muted p-3 mb-0">No lab reports yet. Add your first panel to start tracking results over time.</p>
+        </div>
+    }
+    else
+    {
+        <div class="lab-month-nav">
+            @foreach (var month in months)
+            {
+                <button type="button"
+                        class="lab-month-tab @(month.Month == selectedMonth ? "active" : "")"
+                        @onclick="() => SelectMonth(month.Month)">
+                    @month.Label
+                    <span class="lab-month-count">@month.Reports.Count</span>
+                </button>
+            }
+        </div>
+
+        var active = months.FirstOrDefault(m => m.Month == selectedMonth) ?? months[0];
+        <div class="table-card lab-table-wrap">
+            <div class="lab-table-head">
+                <h2>@active.Label</h2>
+                <span class="muted">@active.Reports.Count report@(active.Reports.Count == 1 ? "" : "s")</span>
+            </div>
+            <div class="lab-table-scroll">
+                <table class="table lab-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="lab-date-col">Collection date</th>
+                            @foreach (var test in LabTestDefinitions.All)
+                            {
+                                <th class="lab-test-col">
+                                    <span class="lab-test-name">@test.Name</span>
+                                    <span class="lab-test-range">@test.RangeLabel @test.Unit</span>
+                                </th>
+                            }
+                            <th class="lab-actions-col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var report in active.Reports)
+                        {
+                            var resultMap = report.Results.ToDictionary(r => r.TestCode, StringComparer.OrdinalIgnoreCase);
+                            <tr>
+                                <td class="lab-date-col">
+                                    <strong>@report.ReportDate.ToString("MMM d, yyyy")</strong>
+                                    @if (!string.IsNullOrWhiteSpace(report.Notes))
+                                    {
+                                        <span class="lab-note-hint" title="@report.Notes">Notes</span>
+                                    }
+                                </td>
+                                @foreach (var test in LabTestDefinitions.All)
+                                {
+                                    <td class="lab-value-col">
+                                        @if (resultMap.TryGetValue(test.Code, out var result))
+                                        {
+                                            <span class="lab-value @LabTestDefinitions.CssClass(test.Code, result.Value)">
+                                                @FormatValue(result.Value)
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="lab-empty">—</span>
+                                        }
+                                    </td>
+                                }
+                                <td class="lab-actions-col text-end">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-teal"
+                                            @onclick="() => OpenEdit(report.Id, report.ReportDate)">
+                                        Edit
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+@if (_pendingEditId is not null)
+{
+    <div class="med-update-backdrop" @onclick="CancelEdit">
+        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Confirm lab report edit">
+            <div class="med-update-head">
+                <div>
+                    <h3>Confirm edit access</h3>
+                    <p>
+                        @if (_pendingEditDate is DateOnly editDate)
+                        {
+                            <span>Lab report · @editDate.ToString("MMM d, yyyy")</span>
+                        }
+                        else
+                        {
+                            <span>Enter your account password to edit this lab report.</span>
+                        }
+                    </p>
+                </div>
+                <button type="button" class="med-update-close" @onclick="CancelEdit" aria-label="Close">&times;</button>
+            </div>
+            <EditForm Model="_passwordForm" OnValidSubmit="ConfirmEditAsync">
+                <DataAnnotationsValidator />
+                <div class="med-update-body">
+                    @if (!string.IsNullOrWhiteSpace(_passwordError))
+                    {
+                        <div class="alert alert-danger py-2 mb-3" role="alert">@_passwordError</div>
+                    }
+                    <div class="mb-0">
+                        <label class="form-label" for="labEditPassword">Password</label>
+                        <InputText type="password"
+                                   id="labEditPassword"
+                                   class="form-control"
+                                   @bind-Value="_passwordForm.Password"
+                                   autocomplete="current-password"
+                                   placeholder="Your account password" />
+                        <ValidationMessage For="@(() => _passwordForm.Password)" />
+                    </div>
+                </div>
+                <div class="med-update-foot">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                    <button type="submit" class="btn btn-teal" disabled="@_confirming">Continue</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private IReadOnlyList<LabMonthGroup> months = [];
+    private DateOnly selectedMonth;
+    private int? _pendingEditId;
+    private DateOnly? _pendingEditDate;
+    private string? _passwordError;
+    private bool _confirming;
+    private PasswordForm _passwordForm = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is string id)
+        {
+            months = await LabReports.GetReportsGroupedByMonthAsync(id);
+            if (months.Count > 0 && (selectedMonth == default || months.All(m => m.Month != selectedMonth)))
+            {
+                selectedMonth = months[0].Month;
+            }
+        }
+    }
+
+    private void SelectMonth(DateOnly month) => selectedMonth = month;
+
+    private void OpenEdit(int reportId, DateOnly reportDate)
+    {
+        _pendingEditId = reportId;
+        _pendingEditDate = reportDate;
+        _passwordError = null;
+        _passwordForm = new();
+    }
+
+    private void CancelEdit()
+    {
+        _pendingEditId = null;
+        _pendingEditDate = null;
+        _passwordError = null;
+        _passwordForm = new();
+    }
+
+    private async Task ConfirmEditAsync()
+    {
+        if (_pendingEditId is not int reportId) return;
+
+        _confirming = true;
+        _passwordError = null;
+        try
+        {
+            var (success, error) = await LabEditAuth.ConfirmPasswordAsync(_passwordForm.Password);
+            if (!success)
+            {
+                _passwordError = error;
+                return;
+            }
+
+            _pendingEditId = null;
+            _pendingEditDate = null;
+            _passwordForm = new();
+            Nav.NavigateTo(Link($"labs/edit/{reportId}"));
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    private string Link(string path) => CareLinks.To(path, PatientUserId);
+
+    private static string FormatValue(decimal value) =>
+        value % 1 == 0 ? value.ToString("0") : value.ToString("0.#");
+
+    private sealed class PasswordForm
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your password to continue.")]
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,64 @@
+@page "/med-check"
+@attribute [Authorize]
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Med Check</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-medcheck">
+        <div>
+            <p class="eyebrow">Safety</p>
+            <h1>Med Check</h1>
+            <p class="muted">Research a medication for interactions with your current list and review known side effects.</p>
+        </div>
+        <button type="button" class="btn btn-teal" @onclick="OpenModal">Check medication</button>
+    </div>
+
+    <div class="table-card med-check-intro">
+        <h2>How it works</h2>
+        <ol class="med-check-steps-overview">
+            <li>Enter a medication you are considering or want to learn about.</li>
+            <li>The research agent loads your active medications from your profile.</li>
+            <li>Interactions are checked against clinical rules and FDA labeling data.</li>
+            <li>Results highlight serious conflicts in red and moderate ones in amber.</li>
+        </ol>
+        <p class="muted mb-0">
+            Try searching <strong>Ibuprofen</strong> if you take Lisinopril, or <strong>Gemfibrozil</strong> if you take Atorvastatin to see sample interaction warnings.
+        </p>
+    </div>
+
+    <MedicationResearchModal @bind-Visible="_modalOpen"
+                             PatientUserId="@scope.Patient!.Id"
+                             InitialMedication="@_prefill" />
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    [SupplyParameterFromQuery] public string? Med { get; set; }
+
+    private PatientScope? scope;
+    private bool _modalOpen;
+    private string? _prefill;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        _prefill = Med;
+
+        if (!string.IsNullOrWhiteSpace(Med) && scope?.Patient is not null)
+        {
+            _modalOpen = true;
+        }
+    }
+
+    private void OpenModal()
+    {
+        _prefill = null;
+        _modalOpen = true;
+    }
+}

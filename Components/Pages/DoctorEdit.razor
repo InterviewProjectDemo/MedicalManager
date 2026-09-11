@@ -1,0 +1,114 @@
+@page "/doctors/edit"
+@page "/doctors/edit/{Id:int}"
+@attribute [Authorize]
+@inject DoctorService DoctorRecords
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Add" : "Update") doctor</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (model is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-providers">
+        <div>
+            <p class="eyebrow">Doctors</p>
+            <h1>@(Id is null ? "Add doctor" : "Update doctor")</h1>
+            @if (model.IsAutoDiscovered)
+            {
+                <p class="muted">Auto-discovered from @(model.Source == DoctorSource.FromMedication ? "a medication prescriber" : "an appointment provider"). You can add specialty and phone details below.</p>
+            }
+        </div>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="Save" class="form-card">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Name</label>
+                <InputText class="form-control" @bind-Value="model.Name" disabled="@model.IsAutoDiscovered" />
+                @if (model.IsAutoDiscovered)
+                {
+                    <div class="form-text muted">Name comes from your health records and cannot be changed here.</div>
+                }
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Specialty</label>
+                <InputText class="form-control" @bind-Value="model.Specialty" placeholder="e.g. Cardiology" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Phone</label>
+                <InputText class="form-control" @bind-Value="model.PhoneNumber" placeholder="e.g. 555-0100" />
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-teal">Save</button>
+            <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is not null)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="ConfirmDelete">Delete</button>
+            }
+        </div>
+    </EditForm>
+
+    @if (showDeleteConfirm)
+    {
+        <div class="form-card mt-3 border border-danger">
+            <p class="mb-2">
+                @if (model.IsAutoDiscovered)
+                {
+                    <text>Delete <strong>@model.Name</strong>? This provider may reappear when you visit the Doctors page if they are still listed on appointments or medications.</text>
+                }
+                else
+                {
+                    <text>Delete <strong>@model.Name</strong> from your care team?</text>
+                }
+            </p>
+            <button type="button" class="btn btn-danger btn-sm" @onclick="Delete">Yes, delete</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => showDeleteConfirm = false">Cancel</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private Doctor? model;
+    private bool showDeleteConfirm;
+    private string Back => CareLinks.To("doctors", PatientUserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is not string patientId) return;
+        if (Id is int id)
+        {
+            model = await DoctorRecords.GetDoctorByIdAsync(id, patientId);
+        }
+        model ??= new Doctor { UserId = patientId, Source = DoctorSource.Manual, IsAutoDiscovered = false };
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await DoctorRecords.SaveDoctorAsync(model);
+        Nav.NavigateTo(Back);
+    }
+
+    private void ConfirmDelete() => showDeleteConfirm = true;
+
+    private async Task Delete()
+    {
+        if (Id is int id && scope?.PatientId is not null)
+        {
+            await DoctorRecords.DeleteDoctorAsync(id, scope.PatientId);
+        }
+        Nav.NavigateTo(Back);
+    }
+}

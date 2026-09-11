@@ -1,0 +1,257 @@
+@inject MedicationResearchService Research
+
+@if (Visible)
+{
+    <div class="med-update-backdrop med-research-backdrop" @onclick="Close">
+        <div class="med-research-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Medication research">
+            <div class="med-research-head">
+                <div>
+                    <p class="eyebrow med-research-eyebrow">Drug lookup agent</p>
+                    <h3>@(string.IsNullOrWhiteSpace(_medicationInput) ? "Research medication" : _medicationInput)</h3>
+                    <p class="muted">Cross-check interactions with your active medications and review known side effects.</p>
+                </div>
+                <button type="button" class="med-update-close" @onclick="Close" aria-label="Close">&times;</button>
+            </div>
+
+            @if (!_researching && _result is null)
+            {
+                <div class="med-research-body">
+                    <label class="form-label" for="medResearchName">Medication name</label>
+                    <InputText id="medResearchName"
+                               class="form-control"
+                               @bind-Value="_medicationInput"
+                               placeholder="e.g. Ibuprofen, Atorvastatin, Warfarin"
+                               @onkeydown="OnInputKeyDown" />
+                    @if (!string.IsNullOrWhiteSpace(_error))
+                    {
+                        <p class="validation-message mt-2">@_error</p>
+                    }
+                </div>
+                <div class="med-research-foot">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="Close">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(_medicationInput))" @onclick="StartResearchAsync">
+                        Research
+                    </button>
+                </div>
+            }
+            else if (_researching)
+            {
+                <div class="med-research-body">
+                    <div class="med-research-agent">
+                        <div class="med-research-pulse" aria-hidden="true"></div>
+                        <div>
+                            <strong>Research agent working…</strong>
+                            <p class="muted mb-0">Analyzing clinical data sources for your request.</p>
+                        </div>
+                    </div>
+                    <ol class="med-research-steps">
+                        @foreach (var step in _steps)
+                        {
+                            <li class="@StepCss(step)">
+                                <span class="med-research-step-icon" aria-hidden="true">@StepIcon(step)</span>
+                                <span>@step.Message</span>
+                            </li>
+                        }
+                    </ol>
+                </div>
+            }
+            else if (_result is not null)
+            {
+                <div class="med-research-body med-research-results">
+                    @if (!string.IsNullOrWhiteSpace(_result.MatchedDrugName))
+                    {
+                        <p class="med-research-match">
+                            Matched: <strong>@_result.MatchedDrugName</strong>
+                            @if (_result.UsedOpenFda)
+                            {
+                                <span class="med-research-source">OpenFDA</span>
+                            }
+                        </p>
+                    }
+
+                    <section class="med-research-section">
+                        <h4>Interactions with your medications</h4>
+                        @if (_result.Interactions.Count == 0)
+                        {
+                            <div class="med-research-safe">
+                                <StatusPill Label="No known interactions with your current medications" CssClass="status-ok" />
+                            </div>
+                        }
+                        else
+                        {
+                            <ul class="med-research-interactions">
+                                @foreach (var interaction in _result.Interactions)
+                                {
+                                    <li class="med-research-interaction @SeverityCss(interaction.Severity)">
+                                        <div class="med-research-interaction-head">
+                                            <strong>@interaction.ExistingMedication</strong>
+                                            <StatusPill Label="@SeverityLabel(interaction.Severity)" CssClass="@SeverityCss(interaction.Severity)" />
+                                        </div>
+                                        <p>@interaction.Description</p>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </section>
+
+                    <section class="med-research-section">
+                        <h4>Known side effects</h4>
+                        @if (_result.SideEffects.Count == 0)
+                        {
+                            <p class="muted">No side effect data available for this medication.</p>
+                        }
+                        else
+                        {
+                            <ul class="med-research-effects">
+                                @foreach (var effect in _result.SideEffects)
+                                {
+                                    <li>@effect</li>
+                                }
+                            </ul>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_result.DataSourceNote))
+                        {
+                            <p class="med-research-note muted">@_result.DataSourceNote</p>
+                        }
+                    </section>
+
+                    <p class="med-research-disclaimer">
+                        For informational purposes only. Consult your healthcare provider before starting, stopping, or combining medications.
+                    </p>
+                </div>
+                <div class="med-research-foot">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ResetForNewSearch">New search</button>
+                    <button type="button" class="btn btn-primary" @onclick="Close">Done</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter, EditorRequired] public string PatientUserId { get; set; } = "";
+    [Parameter] public string? InitialMedication { get; set; }
+
+    private string _medicationInput = "";
+    private bool _researching;
+    private string? _error;
+    private MedicationResearchResult? _result;
+    private readonly List<ResearchStep> _steps = [];
+    private CancellationTokenSource? _cts;
+
+    protected override void OnParametersSet()
+    {
+        if (Visible && !string.IsNullOrWhiteSpace(InitialMedication) && string.IsNullOrWhiteSpace(_medicationInput))
+        {
+            _medicationInput = InitialMedication;
+        }
+    }
+
+    private async Task StartResearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_medicationInput) || string.IsNullOrWhiteSpace(PatientUserId))
+        {
+            return;
+        }
+
+        _error = null;
+        _result = null;
+        _steps.Clear();
+        _researching = true;
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            _result = await Research.ResearchAsync(
+                _medicationInput,
+                PatientUserId,
+                OnProgressAsync,
+                _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _researching = false;
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _researching = false;
+            return;
+        }
+
+        MarkLastStepComplete();
+        _researching = false;
+    }
+
+    private async Task OnProgressAsync(string message)
+    {
+        MarkLastStepComplete();
+        _steps.Add(new ResearchStep(message, false));
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void MarkLastStepComplete()
+    {
+        if (_steps.Count == 0)
+        {
+            return;
+        }
+
+        var last = _steps[^1];
+        if (!last.IsComplete)
+        {
+            _steps[^1] = last with { IsComplete = true };
+        }
+    }
+
+    private async Task Close()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        Visible = false;
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private void ResetForNewSearch()
+    {
+        _result = null;
+        _steps.Clear();
+        _error = null;
+        _researching = false;
+    }
+
+    private async Task OnInputKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_medicationInput))
+        {
+            await StartResearchAsync();
+        }
+    }
+
+    private static string StepCss(ResearchStep step) =>
+        step.IsComplete ? "med-research-step-done" : "med-research-step-active";
+
+    private static string StepIcon(ResearchStep step) =>
+        step.IsComplete ? "✓" : "…";
+
+    private static string SeverityCss(InteractionSeverity severity) => severity switch
+    {
+        InteractionSeverity.Serious => "status-danger",
+        InteractionSeverity.Moderate => "status-warn",
+        _ => "status-muted"
+    };
+
+    private static string SeverityLabel(InteractionSeverity severity) => severity switch
+    {
+        InteractionSeverity.Serious => "Serious",
+        InteractionSeverity.Moderate => "Moderate",
+        InteractionSeverity.Minor => "Minor",
+        _ => "Note"
+    };
+
+    private sealed record ResearchStep(string Message, bool IsComplete);
+}

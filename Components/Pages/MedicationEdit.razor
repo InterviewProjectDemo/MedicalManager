@@ -1,0 +1,103 @@
+@page "/medications/edit"
+@page "/medications/edit/{Id:int}"
+@attribute [Authorize]
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Add" : "Update") medication</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (model is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-meds">
+        <div>
+            <p class="eyebrow">Medications</p>
+            <h1>@(Id is null ? "Add medication" : "Update medication")</h1>
+        </div>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="Save" class="form-card">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Name</label>
+                <InputText class="form-control" @bind-Value="model.Name" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Dosage</label>
+                <InputText class="form-control" @bind-Value="model.Dosage" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Frequency</label>
+                <InputText class="form-control" @bind-Value="model.Frequency" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Prescribed by</label>
+                <InputText class="form-control" @bind-Value="model.PrescribedBy" placeholder="Doctor or provider name" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Start date</label>
+                <InputDate class="form-control" @bind-Value="model.StartDate" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-check mt-4">
+                    <InputCheckbox class="form-check-input" @bind-Value="model.IsActive" />
+                    <span class="form-check-label">Currently taking</span>
+                </label>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <InputTextArea class="form-control" @bind-Value="model.Notes" />
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-success">Save</button>
+            <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is not null)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+            }
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private Medication? model;
+    private string Back => CareLinks.To("medications", PatientUserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is not string patientId) return;
+        if (Id is int id)
+        {
+            model = await Records.GetMedicationByIdAsync(id, patientId);
+        }
+        model ??= new Medication { UserId = patientId };
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await Records.SaveMedicationAsync(model);
+        Nav.NavigateTo(Back);
+    }
+
+    private async Task Delete()
+    {
+        if (Id is int id && scope?.PatientId is not null)
+        {
+            await Records.DeleteMedicationAsync(id, scope.PatientId);
+        }
+        Nav.NavigateTo(Back);
+    }
+}

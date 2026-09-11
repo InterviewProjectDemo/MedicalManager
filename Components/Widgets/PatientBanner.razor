@@ -1,0 +1,13 @@
+@namespace MedicalManager.Components.Widgets
+
+@if (Scope?.IsDoctorViewingPatient == true && Scope.Patient is not null)
+{
+    <div class="patient-banner">
+        <span>Reviewing <strong>@Scope.Patient.DisplayName</strong></span>
+        <a href="patients">Change patient</a>
+    </div>
+}
+
+@code {
+    [Parameter] public PatientScope? Scope { get; set; }
+}

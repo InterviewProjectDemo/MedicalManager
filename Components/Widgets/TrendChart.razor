@@ -1,0 +1,486 @@
+@namespace MedicalManager.Components.Widgets
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="chart-card">
+    <div class="chart-card-head">
+        <span class="chart-dot" style="background:@Accent"></span>
+        <div>
+            <h3>@Title</h3>
+            <p>@Subtitle</p>
+        </div>
+    </div>
+    @if (Stats.Count > 0)
+    {
+        @RenderStatsRow()
+    }
+    @if (!HasData)
+    {
+        <div class="empty-chart">No readings yet. Add one on the dedicated page to see this chart.</div>
+    }
+    else
+    {
+        <div @ref="_compactHost"
+             class="chart-interactive chart-interactive-compact"
+             @onmousemove="e => OnChartMove(e, false)"
+             @onmouseleave="() => ClearHover(false)"
+             @onclick="OpenExpanded"
+             role="button"
+             tabindex="0"
+             @onkeydown="OnCompactKeyDown"
+             aria-label="@($"{Title} chart. Click to expand.")">
+            @RenderChart(CompactWidth, CompactHeight, false, _hoverIndex)
+            @if (_hoverIndex >= 0)
+            {
+                @RenderTooltip(_hoverIndex, _tooltipLeft, _tooltipTop)
+            }
+            <span class="chart-expand-hint">Click to expand</span>
+        </div>
+        <div class="chart-labels">
+            <span>@StartLabel</span>
+            <span>@EndLabel</span>
+        </div>
+        @if (Series.Count > 1)
+        {
+            <div class="chart-legend">
+                @foreach (var series in Series)
+                {
+                    <span><i style="background:@series.Color"></i>@series.Name</span>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (_expanded)
+{
+    <div class="chart-modal-backdrop" @onclick="CloseExpanded" @onkeydown="OnModalKeyDown">
+        <div class="chart-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="@Title expanded chart">
+            <div class="chart-modal-head">
+                <div>
+                    <h3>@Title</h3>
+                    <p>@Subtitle</p>
+                </div>
+                <button type="button" class="chart-modal-close" @onclick="CloseExpanded" aria-label="Close chart">&times;</button>
+            </div>
+            @if (Stats.Count > 0)
+            {
+                <div class="chart-modal-stats">
+                    @RenderStatsRow()
+                </div>
+            }
+            <div class="chart-modal-scroll">
+                <div @ref="_expandedHost"
+                     class="chart-interactive chart-interactive-expanded"
+                     style="width:@($"{ExpandedWidth}px")"
+                     @onmousemove="e => OnChartMove(e, true)"
+                     @onmouseleave="() => ClearHover(true)">
+                    @RenderChart(ExpandedWidth, ExpandedHeight, true, _modalHoverIndex)
+                    @if (_modalHoverIndex >= 0)
+                    {
+                        @RenderTooltip(_modalHoverIndex, _modalTooltipLeft, _modalTooltipTop)
+                    }
+                </div>
+            </div>
+            <div class="chart-modal-foot">
+                <span>@StartLabel</span>
+                <span>Scroll horizontally to browse all readings</span>
+                <span>@EndLabel</span>
+            </div>
+            @if (Series.Count > 1)
+            {
+                <div class="chart-legend chart-modal-legend">
+                    @foreach (var series in Series)
+                    {
+                        <span><i style="background:@series.Color"></i>@series.Name</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private const double CompactWidth = 360;
+    private const double CompactHeight = 170;
+    private const double ExpandedHeight = 220;
+    private const double PointSpacing = 52;
+
+    private const string OutOfRangeColor = "#b42318";
+
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string Accent { get; set; } = "#0f766e";
+    [Parameter] public List<ChartSeries> Series { get; set; } = [];
+    [Parameter] public List<ChartStatItem> Stats { get; set; } = [];
+    [Parameter] public EventCallback<DateOnly?> OnDateHovered { get; set; }
+
+    private ElementReference _compactHost;
+    private ElementReference _expandedHost;
+    private IJSObjectReference? _module;
+    private bool _expanded;
+    private int _hoverIndex = -1;
+    private int _modalHoverIndex = -1;
+    private double _tooltipLeft;
+    private double _tooltipTop;
+    private double _modalTooltipLeft;
+    private double _modalTooltipTop;
+
+    private bool HasData => Series.Any(s => s.Points.Count > 0);
+    private int PointCount => Series.Where(s => s.Points.Count > 0).Max(s => s.Points.Count);
+    private double ExpandedWidth => PointCount <= 1 ? CompactWidth : Math.Max(CompactWidth, 52 + (PointCount - 1) * PointSpacing);
+
+    private string StartLabel => PrimaryPoints.FirstOrDefault().Label ?? "";
+    private string EndLabel => PrimaryPoints.LastOrDefault().Label ?? "";
+    private string MinLabel => HasData ? Math.Round(AllValues.Min()).ToString() : "";
+    private string MaxLabel => HasData ? Math.Round(AllValues.Max()).ToString() : "";
+
+    private IEnumerable<double> AllValues => Series.SelectMany(s => s.Points.Select(p => p.Value));
+    private List<ChartPoint> PrimaryPoints => Series.FirstOrDefault(s => s.Points.Count > 0)?.Points ?? [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Widgets/TrendChart.razor.js");
+        }
+    }
+
+    private RenderFragment RenderChart(double width, double height, bool expanded, int hoverIndex) => builder =>
+    {
+        var scaled = Scale(width, height).ToList();
+        var hoverX = hoverIndex >= 0 ? GetHoverX(scaled, hoverIndex) : (double?)null;
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", $"0 0 {width.ToString("0.##")} {height.ToString("0.##")}");
+        builder.AddAttribute(2, "class", expanded ? "trend-svg trend-svg-expanded" : "trend-svg");
+        builder.AddAttribute(3, "aria-hidden", "true");
+
+        var seq = 5;
+        var plotBottom = height - 40;
+        var gridTop = 18.0;
+        var gridStep = (plotBottom - gridTop) / 4.0;
+
+        for (var i = 0; i <= 4; i++)
+        {
+            var y = gridTop + i * gridStep;
+            builder.OpenElement(seq++, "line");
+            builder.AddAttribute(seq++, "x1", 36);
+            builder.AddAttribute(seq++, "y1", y);
+            builder.AddAttribute(seq++, "x2", width - 12);
+            builder.AddAttribute(seq++, "y2", y);
+            builder.AddAttribute(seq++, "class", "chart-grid");
+            builder.CloseElement();
+        }
+
+        if (hoverX is not null)
+        {
+            builder.OpenElement(seq++, "line");
+            builder.AddAttribute(seq++, "x1", hoverX.Value);
+            builder.AddAttribute(seq++, "y1", gridTop);
+            builder.AddAttribute(seq++, "x2", hoverX.Value);
+            builder.AddAttribute(seq++, "y2", plotBottom);
+            builder.AddAttribute(seq++, "class", "chart-hover-line");
+            builder.CloseElement();
+        }
+
+        foreach (var series in scaled)
+        {
+            if (series.Area is not null)
+            {
+                builder.OpenElement(seq++, "path");
+                builder.AddAttribute(seq++, "d", series.Area);
+                builder.AddAttribute(seq++, "fill", series.Color);
+                builder.AddAttribute(seq++, "opacity", "0.16");
+                builder.CloseElement();
+            }
+
+            for (var i = 1; i < series.Points.Count; i++)
+            {
+                var prev = series.Points[i - 1];
+                var curr = series.Points[i];
+                var segmentColor = prev.IsOutOfRange || curr.IsOutOfRange ? OutOfRangeColor : series.Color;
+                builder.OpenElement(seq++, "line");
+                builder.AddAttribute(seq++, "x1", prev.X);
+                builder.AddAttribute(seq++, "y1", prev.Y);
+                builder.AddAttribute(seq++, "x2", curr.X);
+                builder.AddAttribute(seq++, "y2", curr.Y);
+                builder.AddAttribute(seq++, "stroke", segmentColor);
+                builder.AddAttribute(seq++, "stroke-width", "2.6");
+                builder.AddAttribute(seq++, "stroke-linecap", "round");
+                builder.CloseElement();
+            }
+
+            foreach (var point in series.Points)
+            {
+                var isActive = hoverIndex >= 0 && point.Index == hoverIndex;
+                var pointColor = point.IsOutOfRange ? OutOfRangeColor : series.Color;
+                builder.OpenElement(seq++, "circle");
+                builder.AddAttribute(seq++, "cx", point.X.ToString("0.##"));
+                builder.AddAttribute(seq++, "cy", point.Y.ToString("0.##"));
+                builder.AddAttribute(seq++, "r", isActive ? "5.2" : "3.4");
+                builder.AddAttribute(seq++, "fill", pointColor);
+                if (isActive) builder.AddAttribute(seq++, "class", "chart-point-active");
+                builder.CloseElement();
+            }
+        }
+
+        builder.OpenElement(seq++, "text");
+        builder.AddAttribute(seq++, "x", 8);
+        builder.AddAttribute(seq++, "y", gridTop + 4);
+        builder.AddAttribute(seq++, "class", "chart-axis");
+        builder.AddContent(seq++, MaxLabel);
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "text");
+        builder.AddAttribute(seq++, "x", 8);
+        builder.AddAttribute(seq++, "y", plotBottom - 4);
+        builder.AddAttribute(seq++, "class", "chart-axis");
+        builder.AddContent(seq++, MinLabel);
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderTooltip(int index, double left, double top) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "chart-tooltip");
+        builder.AddAttribute(2, "style", $"left:{left.ToString("0.##")}px;top:{top.ToString("0.##")}px");
+
+        builder.OpenElement(3, "strong");
+        builder.AddContent(4, TooltipWhen(index));
+        builder.CloseElement();
+
+        foreach (var row in TooltipRows(index))
+        {
+            builder.OpenElement(5, "span");
+            builder.AddAttribute(6, "class", "chart-tooltip-row");
+            builder.OpenElement(7, "i");
+            builder.AddAttribute(8, "style", $"background:{row.Color}");
+            builder.CloseElement();
+            builder.OpenElement(9, "span");
+            if (row.IsOutOfRange) builder.AddAttribute(10, "class", "chart-tooltip-oor");
+            builder.AddContent(11, $"{row.Name}: {row.Text}");
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private async Task OnChartMove(MouseEventArgs e, bool modal)
+    {
+        if (_module is null) return;
+
+        var host = modal ? _expandedHost : _compactHost;
+        var viewWidth = modal ? ExpandedWidth : CompactWidth;
+        var svgX = await _module.InvokeAsync<double>("svgXFromClient", host, e.ClientX);
+        var pixelWidth = await _module.InvokeAsync<double>("hostWidth", host);
+        var index = FindNearestIndex(svgX, viewWidth);
+        if (index < 0)
+        {
+            ClearHover(modal);
+            StateHasChanged();
+            return;
+        }
+
+        var scaled = Scale(viewWidth, modal ? ExpandedHeight : CompactHeight).ToList();
+        var hoverX = GetHoverX(scaled, index) ?? svgX;
+        var left = hoverX / viewWidth * pixelWidth;
+        var top = Math.Clamp(e.OffsetY - 52, 8, modal ? 120 : 72);
+
+        if (modal)
+        {
+            _modalHoverIndex = index;
+            _modalTooltipLeft = Math.Clamp(left, 8, Math.Max(8, pixelWidth - 168));
+            _modalTooltipTop = top;
+        }
+        else
+        {
+            _hoverIndex = index;
+            _tooltipLeft = Math.Clamp(left, 8, Math.Max(8, pixelWidth - 168));
+            _tooltipTop = top;
+        }
+
+        await NotifyDateHoveredAsync(index);
+        StateHasChanged();
+    }
+
+    private async Task NotifyDateHoveredAsync(int index)
+    {
+        if (!OnDateHovered.HasDelegate) return;
+        var point = PrimaryPoints.ElementAtOrDefault(index);
+        if (point.RecordedAt == default) return;
+        await OnDateHovered.InvokeAsync(DateOnly.FromDateTime(point.RecordedAt));
+    }
+
+    private void ClearHover(bool modal)
+    {
+        if (modal) _modalHoverIndex = -1;
+        else _hoverIndex = -1;
+        StateHasChanged();
+    }
+
+    private void OnModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseExpanded();
+    }
+
+    private void OpenExpanded() => _expanded = true;
+
+    private void CloseExpanded()
+    {
+        _expanded = false;
+        _modalHoverIndex = -1;
+    }
+
+    private void OnCompactKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ") OpenExpanded();
+    }
+
+    private int FindNearestIndex(double svgX, double chartWidth)
+    {
+        var scaled = Scale(chartWidth, chartWidth == CompactWidth ? CompactHeight : ExpandedHeight).FirstOrDefault();
+        if (scaled is null || scaled.Points.Count == 0) return -1;
+
+        var best = 0;
+        var bestDist = double.MaxValue;
+        for (var i = 0; i < scaled.Points.Count; i++)
+        {
+            var dist = Math.Abs(scaled.Points[i].X - svgX);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = i;
+            }
+        }
+
+        return best;
+    }
+
+    private static double? GetHoverX(IReadOnlyList<DrawnSeries> scaled, int index)
+    {
+        foreach (var series in scaled)
+        {
+            if (index < series.Points.Count)
+                return series.Points[index].X;
+        }
+        return null;
+    }
+
+    private string TooltipWhen(int index)
+    {
+        var point = PrimaryPoints.ElementAtOrDefault(index);
+        if (point.RecordedAt != default)
+            return point.RecordedAt.ToString("MMM d, yyyy · h:mm tt");
+        return point.Label;
+    }
+
+    private IEnumerable<(string Name, string Text, string Color, bool IsOutOfRange)> TooltipRows(int index)
+    {
+        foreach (var series in Series.Where(s => s.Points.Count > 0))
+        {
+            if (index >= series.Points.Count) continue;
+            var point = series.Points[index];
+            var text = point.Detail ?? point.Value.ToString("0.##");
+            var color = point.IsOutOfRange ? OutOfRangeColor : series.Color;
+            yield return (series.Name, text, color, point.IsOutOfRange);
+        }
+    }
+
+    private RenderFragment RenderStatsRow() => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "chart-stats");
+
+        var seq = 2;
+        foreach (var stat in Stats)
+        {
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "chart-stat-item");
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "chart-stat-label");
+            builder.AddContent(seq++, stat.Label);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "strong");
+            builder.AddAttribute(seq++, "class", stat.IsOutOfRange ? "chart-stat-value out-of-range" : "chart-stat-value");
+            if (!stat.IsOutOfRange)
+                builder.AddAttribute(seq++, "style", $"color:{Accent}");
+            builder.AddContent(seq++, stat.Value);
+            builder.CloseElement();
+            if (!string.IsNullOrEmpty(stat.SubValue))
+            {
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", stat.IsOutOfRange ? "chart-stat-subvalue out-of-range" : "chart-stat-subvalue");
+                builder.AddContent(seq++, stat.SubValue);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private IEnumerable<DrawnSeries> Scale(double chartWidth, double chartHeight)
+    {
+        if (!HasData) yield break;
+
+        var min = AllValues.Min();
+        var max = AllValues.Max();
+        if (Math.Abs(max - min) < 0.01) { min -= 1; max += 1; }
+
+        const double leftPad = 40;
+        const double rightPad = 12;
+        var plotWidth = chartWidth - leftPad - rightPad;
+        var plotBottom = chartHeight - 40;
+        const double plotTop = 22;
+        var plotHeight = plotBottom - plotTop;
+
+        foreach (var series in Series.Where(s => s.Points.Count > 0))
+        {
+            var count = series.Points.Count;
+            var points = new List<DrawnPoint>();
+            for (var i = 0; i < count; i++)
+            {
+                var x = count == 1 ? leftPad + plotWidth / 2 : leftPad + i * (plotWidth / (count - 1));
+                var y = plotBottom - ((series.Points[i].Value - min) / (max - min) * plotHeight);
+                points.Add(new DrawnPoint(i, x, y, series.Points[i].IsOutOfRange));
+            }
+
+            string? area = null;
+            if (points.Count > 0)
+            {
+                var line = string.Join(" ", points.Select(p => $"{p.X:0.##},{p.Y:0.##}"));
+                area = $"M {points[0].X:0.##} {plotBottom} L {line.Replace(" ", " L ")} L {points[^1].X:0.##} {plotBottom} Z";
+            }
+
+            yield return new DrawnSeries(series.Color, area, points);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+            await _module.DisposeAsync();
+    }
+
+    public readonly record struct ChartPoint(
+        string Label,
+        double Value,
+        DateTime RecordedAt = default,
+        string? Detail = null,
+        bool IsOutOfRange = false);
+
+    public sealed class ChartSeries
+    {
+        public string Name { get; set; } = "";
+        public string Color { get; set; } = "#0f766e";
+        public List<ChartPoint> Points { get; set; } = [];
+    }
+
+    private sealed record DrawnPoint(int Index, double X, double Y, bool IsOutOfRange);
+    private sealed record DrawnSeries(string Color, string? Area, List<DrawnPoint> Points);
+}

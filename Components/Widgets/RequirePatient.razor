@@ -1,0 +1,14 @@
+@namespace MedicalManager.Components.Widgets
+@inject NavigationManager Nav
+
+@code {
+    [Parameter] public PatientScope? Scope { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Scope?.NeedsPatientSelection == true)
+        {
+            Nav.NavigateTo("patients");
+        }
+    }
+}

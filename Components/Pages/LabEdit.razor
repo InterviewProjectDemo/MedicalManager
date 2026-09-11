@@ -1,0 +1,188 @@
+@page "/labs/add"
+@page "/labs/edit/{Id:int}"
+@attribute [Authorize]
+@inject LabReportService LabReports
+@inject PatientAccessService Access
+@inject LabEditAuthorizationService LabEditAuth
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Add" : "Edit") lab report</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (model is not null && (Id is null || _editAuthorized))
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-labs">
+        <div>
+            <p class="eyebrow">Labs</p>
+            <h1>@(Id is null ? "Add lab report" : "Edit lab report")</h1>
+            <p class="muted">Enter results for the collection date. Leave blank any tests not performed.</p>
+        </div>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="Save" class="form-card">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Collection date</label>
+                <InputDate class="form-control" @bind-Value="model.ReportDate" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <InputText class="form-control" @bind-Value="model.Notes" placeholder="Optional — fasting panel, follow-up labs, etc." />
+            </div>
+        </div>
+
+        <h2 class="lab-form-section">Panel results</h2>
+        <div class="lab-form-grid">
+            @foreach (var test in LabTestDefinitions.All)
+            {
+                <div class="lab-form-field">
+                    <label class="form-label">
+                        @test.Name
+                        <span class="lab-form-range">(@test.RangeLabel @test.Unit)</span>
+                    </label>
+                    <InputNumber class="form-control"
+                                 @bind-Value="values[test.Code]"
+                                 placeholder="—" />
+                </div>
+            }
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-teal">Save</button>
+            <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is not null)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+            }
+        </div>
+    </EditForm>
+}
+else if (Id is not null && model is not null && !_editAuthorized)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-labs">
+        <div>
+            <p class="eyebrow">Labs</p>
+            <h1>Edit lab report</h1>
+            <p class="muted">Confirm your password to update lab values for @model.ReportDate.ToString("MMM d, yyyy").</p>
+        </div>
+    </div>
+
+    <div class="form-card lab-edit-gate">
+        <EditForm Model="_passwordForm" OnValidSubmit="ConfirmPasswordAsync">
+            <DataAnnotationsValidator />
+            @if (!string.IsNullOrWhiteSpace(_passwordError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_passwordError</div>
+            }
+            <div class="mb-3">
+                <label class="form-label" for="labEditGatePassword">Password</label>
+                <InputText type="password"
+                           id="labEditGatePassword"
+                           class="form-control"
+                           @bind-Value="_passwordForm.Password"
+                           autocomplete="current-password"
+                           placeholder="Your account password" />
+                <ValidationMessage For="@(() => _passwordForm.Password)" />
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-teal" disabled="@_confirming">Continue</button>
+                <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private LabReport? model;
+    private bool _editAuthorized;
+    private string? _passwordError;
+    private bool _confirming;
+    private PasswordForm _passwordForm = new();
+    private readonly Dictionary<string, decimal?> values = LabTestDefinitions.All
+        .ToDictionary(t => t.Code, _ => (decimal?)null);
+    private string Back => CareLinks.To("labs", PatientUserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is not string patientId) return;
+
+        foreach (var key in values.Keys.ToList())
+        {
+            values[key] = null;
+        }
+
+        if (Id is int id)
+        {
+            _editAuthorized = LabEditAuth.IsAuthorized;
+            model = await LabReports.GetReportByIdAsync(id, patientId);
+            if (model is not null)
+            {
+                foreach (var result in model.Results)
+                {
+                    values[result.TestCode] = result.Value;
+                }
+            }
+        }
+        else
+        {
+            _editAuthorized = true;
+        }
+
+        model ??= new LabReport { UserId = patientId, ReportDate = DateOnly.FromDateTime(DateTime.Today) };
+    }
+
+    private async Task ConfirmPasswordAsync()
+    {
+        _confirming = true;
+        _passwordError = null;
+        try
+        {
+            var (success, error) = await LabEditAuth.ConfirmPasswordAsync(_passwordForm.Password);
+            if (!success)
+            {
+                _passwordError = error;
+                return;
+            }
+
+            _editAuthorized = true;
+            _passwordForm = new();
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await LabReports.SaveReportAsync(model, values);
+        Nav.NavigateTo(Back);
+    }
+
+    private async Task Delete()
+    {
+        if (Id is int id && scope?.PatientId is not null)
+        {
+            await LabReports.DeleteReportAsync(id, scope.PatientId);
+        }
+        Nav.NavigateTo(Back);
+    }
+
+    private sealed class PasswordForm
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Enter your password to continue.")]
+        public string Password { get; set; } = "";
+    }
+}
