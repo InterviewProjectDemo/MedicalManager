@@ -1,0 +1,14 @@
+.git
+.vs
+.idea
+.vscode
+bin
+obj
+artifacts
+tools
+**/*.user
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/app.db
+README.md

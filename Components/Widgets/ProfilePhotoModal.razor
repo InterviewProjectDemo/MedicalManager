@@ -1,0 +1,373 @@
+@using System.Security.Claims
+@inject ProfilePhotoService PhotoService
+@inject AuthenticationStateProvider Auth
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Visible)
+{
+    <div class="med-update-backdrop profile-photo-backdrop" @onclick="CloseAsync">
+        <div class="med-update-modal profile-photo-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Profile photo">
+            <div class="med-update-head">
+                <div>
+                    <p class="eyebrow profile-photo-eyebrow">Your profile</p>
+                    <h3>Profile photo</h3>
+                    <p class="muted">Choose a photo, drag one in, or use your camera.</p>
+                </div>
+                <button type="button" class="med-update-close" @onclick="CloseAsync" aria-label="Close">&times;</button>
+            </div>
+
+            <div class="profile-photo-body">
+                @if (!string.IsNullOrWhiteSpace(_previewUrl))
+                {
+                    <div class="profile-photo-preview-wrap">
+                        <img src="@_previewUrl" alt="Selected profile photo preview" class="profile-photo-preview" />
+                    </div>
+                }
+                else if (_cameraMode)
+                {
+                    <div class="profile-photo-camera-wrap">
+                        <video @ref="_videoElement" id="profile-photo-camera" class="profile-photo-video" autoplay playsinline muted aria-label="Camera preview"></video>
+                        <p class="muted profile-photo-camera-hint">Position yourself in the frame, then capture.</p>
+                    </div>
+                }
+                else
+                {
+                    <div @ref="_dropZoneElement" class="profile-photo-dropzone">
+                        <span class="profile-photo-drop-icon" aria-hidden="true"></span>
+                        <p><strong>Drag and drop</strong> an image here</p>
+                        <p class="muted">JPG, PNG, or WebP · up to 5 MB</p>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <p class="validation-message mt-2">@_error</p>
+                }
+
+                @if (!_cameraMode)
+                {
+                    <div class="profile-photo-actions">
+                        <label class="btn btn-outline-secondary profile-photo-file-btn">
+                            Choose file
+                            <InputFile OnChange="OnFileSelectedAsync" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" class="profile-photo-file-input" />
+                        </label>
+                        <label class="btn btn-outline-secondary profile-photo-file-btn profile-photo-camera-input-btn">
+                            Take picture
+                            <InputFile OnChange="OnFileSelectedAsync" accept="image/*" capture="user" class="profile-photo-file-input" />
+                        </label>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="StartCameraAsync">Use camera</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="profile-photo-actions">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="StopCameraAsync">Back</button>
+                        <button type="button" class="btn btn-primary" @onclick="CapturePhotoAsync">Capture</button>
+                    </div>
+                }
+            </div>
+
+            <div class="med-update-foot profile-photo-foot">
+                <a class="btn btn-link profile-photo-account-link" href="profile">Patient profile</a>
+                <div class="profile-photo-foot-actions">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_previewBytes is null || _saving)" @onclick="SaveAsync">
+                        @(_saving ? "Saving…" : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    /// <summary>Null = save for the signed-in user.</summary>
+    [Parameter] public string? TargetUserId { get; set; }
+    [Parameter] public EventCallback<string?> PhotoSaved { get; set; }
+
+    private ElementReference _dropZoneElement;
+    private ElementReference _videoElement;
+    private IJSObjectReference? _module;
+    private IJSObjectReference? _dropZone;
+    private DotNetObjectReference<ProfilePhotoModal>? _dotNetRef;
+
+    private bool _cameraMode;
+    private bool _startCameraPending;
+    private bool _saving;
+    private string? _error;
+    private string? _previewUrl;
+    private byte[]? _previewBytes;
+    private string? _previewFileName;
+    private string? _previewContentType;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible)
+            return;
+
+        if (_cameraMode && _startCameraPending)
+        {
+            _startCameraPending = false;
+            try
+            {
+                _module ??= await JS.InvokeAsync<IJSObjectReference>(
+                    "import", "./Components/Widgets/ProfilePhotoModal.razor.js");
+                await _module.InvokeVoidAsync("startCamera", _videoElement);
+            }
+            catch (JSException ex)
+            {
+                _cameraMode = false;
+                _error = MapCameraError(ex);
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        if (_cameraMode || !string.IsNullOrWhiteSpace(_previewUrl) || _dropZone is not null)
+            return;
+
+        _module ??= await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./Components/Widgets/ProfilePhotoModal.razor.js");
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        _dropZone = await _module.InvokeAsync<IJSObjectReference>("initDropZone", _dropZoneElement, _dotNetRef);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Visible)
+        {
+            await ResetStateAsync();
+        }
+    }
+
+    private async Task OnFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        var file = e.File;
+        if (file.Size > ProfilePhotoService.MaxBytes)
+        {
+            _error = "Image must be 5 MB or smaller.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(ProfilePhotoService.MaxBytes);
+            await SetPreviewFromStreamAsync(stream, file.Name, file.ContentType);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnDroppedFileAsync(string fileName, string contentType, long size, string base64)
+    {
+        _error = null;
+        if (size > ProfilePhotoService.MaxBytes)
+        {
+            _error = "Image must be 5 MB or smaller.";
+            return;
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(base64);
+            await SetPreviewFromBytesAsync(bytes, fileName, contentType);
+        }
+        catch (FormatException)
+        {
+            _error = "Could not read the dropped image.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartCameraAsync()
+    {
+        _error = null;
+        ClearPreview();
+        _cameraMode = true;
+        _startCameraPending = true;
+        await DisposeDropZoneAsync();
+    }
+
+    private async Task CapturePhotoAsync()
+    {
+        _error = null;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Widgets/ProfilePhotoModal.razor.js");
+            var base64 = await _module.InvokeAsync<string>("capturePhoto", _videoElement);
+            await StopCameraAsync();
+            var bytes = Convert.FromBase64String(base64);
+            await SetPreviewFromBytesAsync(bytes, "camera.jpg", "image/jpeg");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("stopCamera", _videoElement);
+        }
+
+        _cameraMode = false;
+        _startCameraPending = false;
+    }
+
+    private async Task SetPreviewFromStreamAsync(Stream stream, string fileName, string? contentType)
+    {
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        await SetPreviewFromBytesAsync(memory.ToArray(), fileName, contentType);
+    }
+
+    private Task SetPreviewFromBytesAsync(byte[] bytes, string fileName, string? contentType)
+    {
+        ClearPreview();
+        _previewBytes = bytes;
+        _previewFileName = fileName;
+        _previewContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType;
+        _previewUrl = $"data:{_previewContentType};base64,{Convert.ToBase64String(bytes)}";
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_previewBytes is null)
+            return;
+
+        var userId = await ResolveUserIdAsync();
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            _error = "You must be signed in to save a profile photo.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var (success, error, photoUrl) = await PhotoService.SaveBytesAsync(
+                userId,
+                _previewBytes,
+                _previewContentType,
+                _previewFileName);
+
+            if (!success)
+            {
+                _error = error ?? "Unable to save profile photo.";
+                return;
+            }
+
+            await PhotoSaved.InvokeAsync(photoUrl);
+            await CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string MapCameraError(JSException ex)
+    {
+        var message = ex.Message ?? string.Empty;
+        if (message.Contains("NotAllowedError", StringComparison.OrdinalIgnoreCase))
+            return "Camera access was blocked. Allow camera permission in your browser and try again.";
+        if (message.Contains("NotFoundError", StringComparison.OrdinalIgnoreCase))
+            return "No camera was found on this device.";
+        if (message.Contains("NotReadableError", StringComparison.OrdinalIgnoreCase))
+            return "The camera is already in use by another app.";
+        if (message.Contains("SecurityError", StringComparison.OrdinalIgnoreCase))
+            return "Camera requires a secure connection (HTTPS or localhost).";
+        if (message.Contains("srcObject", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("TypeError", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not ready", StringComparison.OrdinalIgnoreCase))
+            return "Camera preview is not ready yet. Try Use camera again.";
+        return "Unable to start the camera. Check permissions and try again.";
+    }
+
+    private async Task<string?> ResolveUserIdAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(TargetUserId))
+            return TargetUserId.Trim();
+
+        var state = await Auth.GetAuthenticationStateAsync();
+        return state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
+    }
+
+    private async Task CloseAsync()
+    {
+        await ResetStateAsync();
+        Visible = false;
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task ResetStateAsync()
+    {
+        await StopCameraAsync();
+        await DisposeDropZoneAsync();
+        ClearPreview();
+        _error = null;
+        _saving = false;
+    }
+
+    private async Task DisposeDropZoneAsync()
+    {
+        if (_dropZone is null)
+            return;
+
+        await _dropZone.InvokeVoidAsync("dispose");
+        await _dropZone.DisposeAsync();
+        _dropZone = null;
+    }
+
+    private void ClearPreview()
+    {
+        _previewBytes = null;
+        _previewFileName = null;
+        _previewContentType = null;
+        _previewUrl = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("stopCamera", _videoElement);
+        }
+
+        await DisposeDropZoneAsync();
+
+        _dotNetRef?.Dispose();
+
+        if (_module is not null)
+        {
+            await _module.DisposeAsync();
+        }
+    }
+}

@@ -54,6 +54,9 @@ public sealed class PatientAccessService(
         db.PatientProfiles.Add(new PatientProfile { UserId = user.Id });
         await db.SaveChangesAsync();
     }
+
+    public async Task<PatientProfile?> GetProfileAsync(string userId) =>
+        await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
 }
 
 public sealed record PatientScope(

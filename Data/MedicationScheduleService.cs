@@ -43,6 +43,23 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
         return new DailyMedicationSchedule(date, groups);
     }
 
+    public async Task<MedicationOverview> GetMedicationOverviewAsync(string userId)
+    {
+        var rows = await db.Medications
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(med => new MedicationOverviewRow(
+                med.Id,
+                med.Name,
+                med.Purpose,
+                med.Dosage,
+                med.Frequency))
+            .ToListAsync();
+
+        return new MedicationOverview(rows);
+    }
+
     public async Task UpdateAdministrationStatusAsync(
         int administrationId,
         string userId,
@@ -156,3 +173,13 @@ public sealed record MedicationSlotGroup(
     List<MedicationDoseItem> Doses);
 
 public sealed record DailyMedicationSchedule(DateOnly Date, List<MedicationSlotGroup> Groups);
+
+public sealed record MedicationOverviewRow(
+    int MedicationId,
+    string Name,
+    string? Purpose,
+    string Dosage,
+    string Frequency);
+
+public sealed record MedicationOverview(
+    IReadOnlyList<MedicationOverviewRow> Medications);

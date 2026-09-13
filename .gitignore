@@ -28,6 +28,12 @@
 *.db-shm
 *.db-wal
 
+# ASP.NET Data Protection keys (secrets)
+Data/keys/
+
+# Local publish / build output
+artifacts/
+
 # Logs
 *.log
 logs/

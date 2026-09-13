@@ -37,15 +37,15 @@
 
         <h2 class="lab-form-section">Panel results</h2>
         <div class="lab-form-grid">
-            @foreach (var test in LabTestDefinitions.All)
+            @foreach (var entry in entries)
             {
                 <div class="lab-form-field">
                     <label class="form-label">
-                        @test.Name
-                        <span class="lab-form-range">(@test.RangeLabel @test.Unit)</span>
+                        @entry.Test.Name
+                        <span class="lab-form-range">(@entry.Test.RangeLabel @entry.Test.Unit)</span>
                     </label>
                     <InputNumber class="form-control"
-                                 @bind-Value="values[test.Code]"
+                                 @bind-Value="entry.Value"
                                  placeholder="—" />
                 </div>
             }
@@ -106,8 +106,9 @@ else if (Id is not null && model is not null && !_editAuthorized)
     private string? _passwordError;
     private bool _confirming;
     private PasswordForm _passwordForm = new();
-    private readonly Dictionary<string, decimal?> values = LabTestDefinitions.All
-        .ToDictionary(t => t.Code, _ => (decimal?)null);
+    private readonly List<LabValueEntry> entries = LabTestDefinitions.All
+        .Select(t => new LabValueEntry { Test = t })
+        .ToList();
     private string Back => CareLinks.To("labs", PatientUserId);
 
     protected override async Task OnParametersSetAsync()
@@ -116,9 +117,9 @@ else if (Id is not null && model is not null && !_editAuthorized)
         scope = await Access.ResolveAsync(state.User, PatientUserId);
         if (scope.PatientId is not string patientId) return;
 
-        foreach (var key in values.Keys.ToList())
+        foreach (var entry in entries)
         {
-            values[key] = null;
+            entry.Value = null;
         }
 
         if (Id is int id)
@@ -129,7 +130,11 @@ else if (Id is not null && model is not null && !_editAuthorized)
             {
                 foreach (var result in model.Results)
                 {
-                    values[result.TestCode] = result.Value;
+                    var entry = entries.FirstOrDefault(e => e.Test.Code == result.TestCode);
+                    if (entry is not null)
+                    {
+                        entry.Value = result.Value;
+                    }
                 }
             }
         }
@@ -167,6 +172,7 @@ else if (Id is not null && model is not null && !_editAuthorized)
     {
         if (model is null || scope?.PatientId is null) return;
         model.UserId = scope.PatientId;
+        var values = entries.ToDictionary(e => e.Test.Code, e => e.Value);
         await LabReports.SaveReportAsync(model, values);
         Nav.NavigateTo(Back);
     }
@@ -178,6 +184,12 @@ else if (Id is not null && model is not null && !_editAuthorized)
             await LabReports.DeleteReportAsync(id, scope.PatientId);
         }
         Nav.NavigateTo(Back);
+    }
+
+    private sealed class LabValueEntry
+    {
+        public required LabTestDefinition Test { get; init; }
+        public decimal? Value { get; set; }
     }
 
     private sealed class PasswordForm

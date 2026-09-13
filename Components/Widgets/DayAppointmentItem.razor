@@ -1,0 +1,31 @@
+<li class="day-appt-item @(Appointment.Status == AppointmentStatus.Missed ? "day-appt-missed" : null)">
+    <div class="day-appt-main">
+        <strong>@Appointment.Title</strong>
+        <span>@When · @Appointment.ProviderName</span>
+        <span class="muted">@Appointment.Location</span>
+        <StatusPill Label="@Appointment.Status.ToString()" CssClass="@AppointmentRules.StatusCss(Appointment.Status)" />
+    </div>
+    <div class="day-appt-actions">
+        @foreach (var status in Enum.GetValues<AppointmentStatus>())
+        {
+            if (Appointment.Status == status) continue;
+            <button type="button"
+                    class="btn btn-sm @(status is AppointmentStatus.Cancelled or AppointmentStatus.Missed ? "btn-outline-danger" : "btn-outline-secondary")"
+                    disabled="@Disabled"
+                    @onclick="() => StatusChanged.InvokeAsync(status)">
+                @AppointmentRules.ActionLabel(status)
+            </button>
+        }
+    </div>
+</li>
+
+@code {
+    [Parameter, EditorRequired] public Appointment Appointment { get; set; } = default!;
+    [Parameter] public bool IncludeDate { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<AppointmentStatus> StatusChanged { get; set; }
+
+    private string When => IncludeDate
+        ? Appointment.StartsAt.ToString("MMM d · h:mm tt")
+        : Appointment.StartsAt.ToString("h:mm tt");
+}

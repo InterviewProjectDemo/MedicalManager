@@ -31,7 +31,7 @@ else if (scope.NeedsPatientSelection)
             <a class="picker-card" href="@CareLinks.To("", row.Id)">
                 <strong>@row.Name</strong>
                 <span>@row.Email</span>
-                <span class="muted">BP @(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}") · Sugar @(row.Sugar is null ? "—" : $"{row.Sugar.Value:0}")</span>
+                <span class="muted">Blood pressure @(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}") · Blood sugar @(row.Sugar is null ? "—" : $"{row.Sugar.Value:0}")</span>
             </a>
         }
         @if (patientRows.Count == 0)
@@ -47,7 +47,7 @@ else if (snapshot is not null && scope.Patient is not null)
         <div>
             <p class="eyebrow">@(scope.IsDoctorViewingPatient ? "Doctor review" : "My health")</p>
             <h1>@(scope.IsDoctorViewingPatient ? $"{scope.Patient.DisplayName}'s dashboard" : $"Hello, {scope.CurrentUser.DisplayName}")</h1>
-            <p class="muted">Color-coded snapshot of blood pressure, sugar, medications, and upcoming visits. Add or edit records from the dedicated pages.</p>
+            <p class="muted">Daily blood pressure and sugar readings with high, low, and average, plus active medications. Add or edit records from the dedicated pages.</p>
         </div>
     </div>
 
@@ -56,121 +56,107 @@ else if (snapshot is not null && scope.Patient is not null)
                            ManageHref="@Link("medications")"
                            ScheduleChanged="OnScheduleChanged" />
 
-    <div class="stat-grid">
-        <div class="stat-card accent-bp">
-            <span class="stat-label">Blood pressure</span>
-            @if (latestBp is null)
-            {
-                <strong>--</strong>
-                <span>No reading yet</span>
-            }
-            else
-            {
-                <strong>@latestBp.Systolic/@latestBp.Diastolic</strong>
-                <StatusPill Label="@bpTag.Label" CssClass="@bpTag.CssClass" />
-                <span class="muted">@latestBp.RecordedAt.ToString("MMM d, h:mm tt")</span>
-            }
-            <a class="stat-link" href="@Link("blood-pressure")">Open blood pressure</a>
+    <section class="daily-snapshot">
+        <div class="daily-snapshot-intro">
+            <div>
+                <h2>Daily snapshot</h2>
+                <p class="muted">Pick a date on each card to review that day's readings. Medications lists active prescriptions with purpose and dose.</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-teal daily-refresh-btn" @onclick="ResetToToday">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 10.714.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                </svg>
+                Today
+            </button>
         </div>
-        <div class="stat-card accent-sugar">
-            <span class="stat-label">Sugar</span>
-            @if (latestSugar is null)
-            {
-                <strong>--</strong>
-                <span>No reading yet</span>
-            }
-            else
-            {
-                <strong>@latestSugar.Value.ToString("0") <small>@latestSugar.Unit</small></strong>
-                <StatusPill Label="@sugarTag.Label" CssClass="@sugarTag.CssClass" />
-                <span class="muted">@latestSugar.Kind · @latestSugar.RecordedAt.ToString("MMM d")</span>
-            }
-            <a class="stat-link" href="@Link("sugar")">Open sugar readings</a>
+        <div class="snapshot-trio@(bothVitalsEmpty ? " snapshot-trio--compact-empty" : "")">
+            <DailyVitalsTable Title="Blood pressure"
+                              Subtitle="Readings by time · mmHg"
+                              Accent="#2f80ed"
+                              Variant="DailyVitalsTable.DailyVitalsKind.BloodPressure"
+                              SelectedDate="bpDate"
+                              SelectedDateChanged="OnBpDateChanged"
+                              BpReadings="selectedDayBp"
+                              CompactEmpty="bothVitalsEmpty"
+                              PatientName="@PrintPatientName"
+                              PatientDateOfBirth="@PrintDateOfBirth"
+                              ManageHref="@Link("blood-pressure")" />
+            <DailyVitalsTable Title="Blood sugar"
+                              Subtitle="Readings by time · mg/dL"
+                              Accent="#f2994a"
+                              Variant="DailyVitalsTable.DailyVitalsKind.Sugar"
+                              SelectedDate="sugarDate"
+                              SelectedDateChanged="OnSugarDateChanged"
+                              SugarReadings="selectedDaySugar"
+                              CompactEmpty="bothVitalsEmpty"
+                              PatientName="@PrintPatientName"
+                              PatientDateOfBirth="@PrintDateOfBirth"
+                              ManageHref="@Link("sugar")" />
+            <MedicationOverviewPanel Overview="medicationOverview"
+                                     PatientName="@PrintPatientName"
+                                     PatientDateOfBirth="@PrintDateOfBirth"
+                                     ManageHref="@Link("medications")" />
         </div>
-        <div class="stat-card accent-meds">
-            <span class="stat-label">Medications</span>
-            <strong>@snapshot.Medications.Count</strong>
-            <span>active prescriptions</span>
-            <a class="stat-link" href="@Link("medications")">Open medications</a>
-        </div>
-        <div class="stat-card accent-appt">
-            <span class="stat-label">Next appointment</span>
-            @if (nextAppt is null)
-            {
-                <strong>None</strong>
-                <span>No upcoming visit</span>
-            }
-            else
-            {
-                <strong>@nextAppt.StartsAt.ToString("MMM d")</strong>
-                <span>@nextAppt.Title · @nextAppt.ProviderName</span>
-            }
-            <a class="stat-link" href="@Link("appointments")">Open appointments</a>
-        </div>
-    </div>
+    </section>
 
-    <div class="widget-grid">
-        <TrendChart Title="Daily blood pressure" Subtitle="Systolic and diastolic (mmHg)" Accent="#2f80ed" Series="bpSeries" Stats="bpStats" OnDateHovered="OnChartDateHovered" />
-        <TrendChart Title="Daily sugar readings" Subtitle="Glucose values (mg/dL)" Accent="#f2994a" Series="sugarSeries" Stats="sugarStats" OnDateHovered="OnChartDateHovered" />
-    </div>
+    <section class="monthly-trends">
+        <div class="monthly-trends-intro">
+            <div>
+                <h2>Monthly trends</h2>
+                <p class="muted">Scroll month by month, hover to read values, and switch between line and bar charts.</p>
+            </div>
+        </div>
+        <div class="widget-grid">
+            <TrendChart Title="Blood pressure"
+                        Subtitle="Systolic and diastolic (mmHg)"
+                        Accent="#2f80ed"
+                        Series="bpSeries"
+                        Stats="bpStats"
+                        SelectedMonth="bpMonth"
+                        SelectedMonthChanged="OnBpMonthChanged"
+                        CanGoPrevious="bpCanGoPrev"
+                        PatientName="@PrintPatientName"
+                        PatientDateOfBirth="@PrintDateOfBirth" />
+            <TrendChart Title="Blood sugar"
+                        Subtitle="Glucose values (mg/dL)"
+                        Accent="#f2994a"
+                        Series="sugarSeries"
+                        Stats="sugarStats"
+                        SelectedMonth="sugarMonth"
+                        SelectedMonthChanged="OnSugarMonthChanged"
+                        CanGoPrevious="sugarCanGoPrev"
+                        PatientName="@PrintPatientName"
+                        PatientDateOfBirth="@PrintDateOfBirth" />
+        </div>
+    </section>
 
     <section class="panel accent-appt day-detail-panel">
         <div class="panel-head">
             <div>
                 <h2>Selected day</h2>
                 <p class="muted day-detail-sub">
-                    @selectedDate.ToString("dddd, MMM d, yyyy")
-                    @if (selectedDate == DateOnly.FromDateTime(DateTime.Today))
+                    Appointments for
+                    <label class="daily-date-picker daily-date-picker--inline">
+                        <span class="visually-hidden">Selected day</span>
+                        <input type="date"
+                               class="daily-date-input"
+                               value="@selectedDate.ToString("yyyy-MM-dd")"
+                               max="@Today.ToString("yyyy-MM-dd")"
+                               @onchange="OnSelectedDateInputChanged" />
+                    </label>
+                    @if (selectedDate == Today)
                     {
                         <span class="day-badge">Today</span>
                     }
-                    · hover a chart point to change
                 </p>
             </div>
-            @if (selectedDate != DateOnly.FromDateTime(DateTime.Today))
+            @if (selectedDate != Today)
             {
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ResetToToday">Back to today</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ResetSelectedDayToToday">Back to today</button>
             }
         </div>
-        <div class="day-detail-grid">
-            <div class="day-vitals">
-                <h3>Vitals</h3>
-                @if (selectedDayBp.Count == 0 && selectedDaySugar.Count == 0)
-                {
-                    <p class="muted">No readings recorded on this day.</p>
-                }
-                else
-                {
-                    @if (selectedDayBp.Count > 0)
-                    {
-                        <ul class="day-reading-list">
-                            @foreach (var bp in selectedDayBp)
-                            {
-                                var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
-                                <li>
-                                    <strong>BP @bp.Systolic/@bp.Diastolic</strong>
-                                    <span>@bp.RecordedAt.ToString("h:mm tt")</span>
-                                    <StatusPill Label="@tag.Label" CssClass="@tag.CssClass" />
-                                </li>
-                            }
-                        </ul>
-                    }
-                    @if (selectedDaySugar.Count > 0)
-                    {
-                        <ul class="day-reading-list">
-                            @foreach (var sugar in selectedDaySugar)
-                            {
-                                var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
-                                <li>
-                                    <strong>@sugar.Value.ToString("0") @sugar.Unit</strong>
-                                    <span>@sugar.Kind · @sugar.RecordedAt.ToString("h:mm tt")</span>
-                                    <StatusPill Label="@tag.Label" CssClass="@tag.CssClass" />
-                                </li>
-                            }
-                        </ul>
-                    }
-                }
-            </div>
+        <div class="day-detail-grid day-detail-grid-single">
             <div class="day-appointments">
                 <h3>Appointments</h3>
                 @if (selectedDayAppointments.Count == 0)
@@ -182,85 +168,61 @@ else if (snapshot is not null && scope.Patient is not null)
                     <ul class="day-appt-list">
                         @foreach (var appt in selectedDayAppointments)
                         {
-                            <li class="day-appt-item">
-                                <div class="day-appt-main">
-                                    <strong>@appt.Title</strong>
-                                    <span>@appt.StartsAt.ToString("h:mm tt") · @appt.ProviderName</span>
-                                    <span class="muted">@appt.Location</span>
-                                    <StatusPill Label="@appt.Status.ToString()" CssClass="@ApptStatusCss(appt.Status)" />
-                                </div>
-                                <div class="day-appt-actions">
-                                    @foreach (var status in Enum.GetValues<AppointmentStatus>())
-                                    {
-                                        if (appt.Status == status) continue;
-                                        <button type="button"
-                                                class="btn btn-sm @(status == AppointmentStatus.Cancelled ? "btn-outline-danger" : "btn-outline-secondary")"
-                                                disabled="@updatingAppt"
-                                                @onclick="() => UpdateApptStatusAsync(appt.Id, status)">
-                                            @ApptActionLabel(status)
-                                        </button>
-                                    }
-                                </div>
-                            </li>
+                            <DayAppointmentItem Appointment="appt"
+                                                Disabled="updatingAppt"
+                                                StatusChanged="status => UpdateApptStatusAsync(appt.Id, status)" />
                         }
                     </ul>
+                }
+
+                @if (snapshot.MissedThisMonth.Count > 0)
+                {
+                    <div class="missed-month-summary">
+                        <div class="missed-month-head">
+                            <h3>Missed this month</h3>
+                            <span class="med-slot-alert">@snapshot.MissedThisMonth.Count missed</span>
+                        </div>
+                        <p class="muted missed-month-sub">Appointments from @DateTime.Now.ToString("MMMM") that passed without being marked Completed or Cancelled.</p>
+                        <ul class="day-appt-list missed-month-grid">
+                            @foreach (var appt in snapshot.MissedThisMonth)
+                            {
+                                <DayAppointmentItem Appointment="appt"
+                                                    IncludeDate="true"
+                                                    Disabled="updatingAppt"
+                                                    StatusChanged="status => UpdateApptStatusAsync(appt.Id, status)" />
+                            }
+                        </ul>
+                    </div>
                 }
             </div>
         </div>
     </section>
 
-    <div class="widget-grid">
-        <section class="panel accent-appt">
-            <div class="panel-head">
-                <h2>Appointments</h2>
-                <a class="widget-link" href="@Link("appointments")">Manage</a>
-            </div>
-            @if (snapshot.UpcomingAppointments.Count == 0)
-            {
-                <p class="muted">No upcoming appointments.</p>
-            }
-            else
-            {
-                <ul class="timeline">
-                    @foreach (var appt in snapshot.UpcomingAppointments)
-                    {
-                        <li>
-                            <div>
-                                <strong>@appt.Title</strong>
-                                <span>With @appt.ProviderName · @appt.Location</span>
-                            </div>
-                            <em>@appt.StartsAt.ToString("ddd, MMM d · h:mm tt")</em>
-                        </li>
-                    }
-                </ul>
-            }
-        </section>
-        <section class="panel accent-meds">
-            <div class="panel-head">
-                <h2>Medications</h2>
-                <a class="widget-link" href="@Link("medications")">Manage</a>
-            </div>
-            @if (snapshot.Medications.Count == 0)
-            {
-                <p class="muted">No active medications.</p>
-            }
-            else
-            {
-                <ul class="med-list">
-                    @foreach (var med in snapshot.Medications)
-                    {
-                        <li>
-                            <div>
-                                <strong>@med.Name</strong>
-                                <span>@med.Dosage · @med.Frequency</span>
-                            </div>
-                            <StatusPill Label="Active" CssClass="status-ok" />
-                        </li>
-                    }
-                </ul>
-            }
-        </section>
-    </div>
+    <section class="panel accent-appt">
+        <div class="panel-head">
+            <h2>Upcoming appointments</h2>
+            <a class="widget-link" href="@Link("appointments")">Manage</a>
+        </div>
+        @if (snapshot.UpcomingAppointments.Count == 0)
+        {
+            <p class="muted">No upcoming appointments.</p>
+        }
+        else
+        {
+            <ul class="timeline">
+                @foreach (var appt in snapshot.UpcomingAppointments)
+                {
+                    <li>
+                        <div>
+                            <strong>@appt.Title</strong>
+                            <span>With @appt.ProviderName · @appt.Location</span>
+                        </div>
+                        <em>@appt.StartsAt.ToString("ddd, MMM d · h:mm tt")</em>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
 }
 
 @code {
@@ -270,24 +232,35 @@ else if (snapshot is not null && scope.Patient is not null)
     private PatientScope? scope;
     private DashboardSnapshot? snapshot;
     private DailyMedicationSchedule? dailySchedule;
+    private MedicationOverview? medicationOverview;
     private string? error;
     private List<PatientRow> patientRows = [];
 
-    private BloodPressureReading? latestBp;
-    private SugarReading? latestSugar;
-    private Appointment? nextAppt;
-    private StatusTag bpTag;
-    private StatusTag sugarTag;
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly bpDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly sugarDate = DateOnly.FromDateTime(DateTime.Today);
+    private List<Appointment> selectedDayAppointments = [];
+    private List<BloodPressureReading> selectedDayBp = [];
+    private List<SugarReading> selectedDaySugar = [];
+    private bool bothVitalsEmpty => selectedDayBp.Count == 0 && selectedDaySugar.Count == 0;
+    private bool updatingAppt;
+
+    private string? loadedPatientId;
+    private DateOnly bpMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private DateOnly sugarMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private List<BloodPressureReading> monthBp = [];
+    private List<SugarReading> monthSugar = [];
     private List<TrendChart.ChartSeries> bpSeries = [];
     private List<TrendChart.ChartSeries> sugarSeries = [];
     private List<ChartStatItem> bpStats = [];
     private List<ChartStatItem> sugarStats = [];
-
-    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
-    private List<Appointment> selectedDayAppointments = [];
-    private List<BloodPressureReading> selectedDayBp = [];
-    private List<SugarReading> selectedDaySugar = [];
-    private bool updatingAppt;
+    private DateTime? earliestBp;
+    private DateTime? earliestSugar;
+    private bool bpCanGoPrev;
+    private bool sugarCanGoPrev;
+    private string? printPatientName;
+    private string? printDateOfBirth;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -299,6 +272,10 @@ else if (snapshot is not null && scope.Patient is not null)
             {
                 snapshot = null;
                 dailySchedule = null;
+                medicationOverview = null;
+                loadedPatientId = null;
+                printPatientName = null;
+                printDateOfBirth = null;
                 patientRows.Clear();
                 foreach (var patient in await Access.ListPatientsAsync())
                 {
@@ -312,49 +289,25 @@ else if (snapshot is not null && scope.Patient is not null)
 
             snapshot = await Records.GetDashboardAsync(scope.PatientId!);
             dailySchedule = await MedSchedule.GetDailyScheduleAsync(scope.PatientId!, DateOnly.FromDateTime(DateTime.Today));
-            latestBp = snapshot.BloodPressure.FirstOrDefault();
-            latestSugar = snapshot.Sugar.FirstOrDefault();
-            nextAppt = snapshot.UpcomingAppointments.FirstOrDefault();
-            if (latestBp is not null) bpTag = VitalStatus.ForBloodPressure(latestBp.Systolic, latestBp.Diastolic);
-            if (latestSugar is not null) sugarTag = VitalStatus.ForSugar(latestSugar.Value, latestSugar.Kind);
+            medicationOverview = await MedSchedule.GetMedicationOverviewAsync(scope.PatientId!);
+            printPatientName = scope.Patient?.DisplayName;
+            var profile = await Access.GetProfileAsync(scope.PatientId!);
+            printDateOfBirth = profile?.DateOfBirth?.ToString("MMMM d, yyyy");
 
-            var bpChrono = snapshot.BloodPressure.OrderBy(x => x.RecordedAt).ToList();
-            bpStats = ChartStatsHelper.ForBloodPressure(snapshot.BloodPressure);
-            bpSeries =
-            [
-                new TrendChart.ChartSeries
-                {
-                    Name = "Systolic",
-                    Color = "#2f80ed",
-                    Points = bpChrono.Select(x => new TrendChart.ChartPoint(
-                        x.RecordedAt.ToString("MM/dd"), x.Systolic, x.RecordedAt, $"{x.Systolic} mmHg",
-                        VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
-                },
-                new TrendChart.ChartSeries
-                {
-                    Name = "Diastolic",
-                    Color = "#1a9b8e",
-                    Points = bpChrono.Select(x => new TrendChart.ChartPoint(
-                        x.RecordedAt.ToString("MM/dd"), x.Diastolic, x.RecordedAt, $"{x.Diastolic} mmHg",
-                        VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
-                }
-            ];
-            var sugarChrono = snapshot.Sugar.OrderBy(x => x.RecordedAt).ToList();
-            sugarStats = ChartStatsHelper.ForSugar(snapshot.Sugar);
-            sugarSeries =
-            [
-                new TrendChart.ChartSeries
-                {
-                    Name = "Glucose",
-                    Color = "#f2994a",
-                    Points = sugarChrono.Select(x => new TrendChart.ChartPoint(
-                        x.RecordedAt.ToString("MM/dd"), (double)x.Value, x.RecordedAt,
-                        $"{x.Value:0} {x.Unit} · {x.Kind}",
-                        VitalStatus.IsSugarOutOfRange(x.Value, x.Kind))).ToList()
-                }
-            ];
+            if (loadedPatientId != scope.PatientId)
+            {
+                loadedPatientId = scope.PatientId;
+                selectedDate = Today;
+                bpDate = Today;
+                sugarDate = Today;
+                bpMonth = FirstOfMonth(selectedDate);
+                sugarMonth = FirstOfMonth(selectedDate);
+                earliestBp = await Records.GetEarliestBloodPressureDateAsync(scope.PatientId!);
+                earliestSugar = await Records.GetEarliestSugarDateAsync(scope.PatientId!);
+            }
 
-            selectedDate = DateOnly.FromDateTime(DateTime.Today);
+            await LoadBpMonthAsync();
+            await LoadSugarMonthAsync();
             await LoadSelectedDayAsync();
             error = null;
         }
@@ -364,38 +317,176 @@ else if (snapshot is not null && scope.Patient is not null)
         }
     }
 
-    private async Task LoadSelectedDayAsync()
+    private async Task OnBpMonthChanged(DateOnly month)
     {
-        if (scope?.PatientId is null || snapshot is null) return;
-
-        selectedDayAppointments = await Records.GetAppointmentsForDateAsync(scope.PatientId, selectedDate);
-        selectedDayBp = snapshot.BloodPressure
-            .Where(x => DateOnly.FromDateTime(x.RecordedAt) == selectedDate)
-            .OrderBy(x => x.RecordedAt)
-            .ToList();
-        selectedDaySugar = snapshot.Sugar
-            .Where(x => DateOnly.FromDateTime(x.RecordedAt) == selectedDate)
-            .OrderBy(x => x.RecordedAt)
-            .ToList();
+        bpMonth = FirstOfMonth(month);
+        await LoadBpMonthAsync();
     }
 
-    private async Task OnChartDateHovered(DateOnly? date)
+    private async Task OnSugarMonthChanged(DateOnly month)
     {
-        if (date is null || date == selectedDate) return;
-        selectedDate = date.Value;
-        await LoadSelectedDayAsync();
+        sugarMonth = FirstOfMonth(month);
+        await LoadSugarMonthAsync();
+    }
+
+    private async Task LoadBpMonthAsync()
+    {
+        if (scope?.PatientId is null) return;
+        var (start, end) = MonthRange(bpMonth);
+        monthBp = await Records.GetBloodPressureInRangeAsync(scope.PatientId, start, end);
+        bpCanGoPrev = CanGoPrev(earliestBp, bpMonth);
+        RebuildBpChart();
+    }
+
+    private async Task LoadSugarMonthAsync()
+    {
+        if (scope?.PatientId is null) return;
+        var (start, end) = MonthRange(sugarMonth);
+        monthSugar = await Records.GetSugarInRangeAsync(scope.PatientId, start, end);
+        sugarCanGoPrev = CanGoPrev(earliestSugar, sugarMonth);
+        RebuildSugarChart();
+    }
+
+    private void RebuildBpChart()
+    {
+        var ordered = monthBp.OrderBy(x => x.RecordedAt).ToList();
+        bpSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Systolic",
+                Color = "#2f80ed",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    x.Systolic,
+                    x.RecordedAt,
+                    $"{x.Systolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+            },
+            new TrendChart.ChartSeries
+            {
+                Name = "Diastolic",
+                Color = "#56ccf2",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    x.Diastolic,
+                    x.RecordedAt,
+                    $"{x.Diastolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+            }
+        ];
+        bpStats = ChartStatsHelper.ForBloodPressureMonth(ordered);
+    }
+
+    private void RebuildSugarChart()
+    {
+        var ordered = monthSugar.OrderBy(x => x.RecordedAt).ToList();
+        sugarSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Glucose",
+                Color = "#f2994a",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    (double)x.Value,
+                    x.RecordedAt,
+                    $"{x.Value:0} {x.Unit} · {x.Kind}",
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind))).ToList()
+            }
+        ];
+        sugarStats = ChartStatsHelper.ForSugarMonth(ordered);
+    }
+
+    private static DateOnly FirstOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
+
+    private static (DateTime Start, DateTime End) MonthRange(DateOnly month)
+    {
+        var start = FirstOfMonth(month).ToDateTime(TimeOnly.MinValue);
+        return (start, start.AddMonths(1));
+    }
+
+    private static bool CanGoPrev(DateTime? earliest, DateOnly month)
+    {
+        if (earliest is null) return false;
+        var earliestMonth = FirstOfMonth(DateOnly.FromDateTime(earliest.Value));
+        return earliestMonth < FirstOfMonth(month);
+    }
+
+    private async Task LoadSelectedDayAsync()
+    {
+        if (scope?.PatientId is null) return;
+
+        selectedDayAppointments = await Records.GetAppointmentsForDateAsync(scope.PatientId, selectedDate);
+        await LoadBpDayAsync();
+        await LoadSugarDayAsync();
+    }
+
+    private async Task LoadBpDayAsync()
+    {
+        if (scope?.PatientId is null) return;
+        var start = bpDate.ToDateTime(TimeOnly.MinValue);
+        selectedDayBp = await Records.GetBloodPressureInRangeAsync(scope.PatientId, start, start.AddDays(1));
+    }
+
+    private async Task LoadSugarDayAsync()
+    {
+        if (scope?.PatientId is null) return;
+        var start = sugarDate.ToDateTime(TimeOnly.MinValue);
+        selectedDaySugar = await Records.GetSugarInRangeAsync(scope.PatientId, start, start.AddDays(1));
+    }
+
+    private async Task OnBpDateChanged(DateOnly date)
+    {
+        date = ClampToToday(date);
+        if (date == bpDate) return;
+        bpDate = date;
+        await LoadBpDayAsync();
+    }
+
+    private async Task OnSugarDateChanged(DateOnly date)
+    {
+        date = ClampToToday(date);
+        if (date == sugarDate) return;
+        sugarDate = date;
+        await LoadSugarDayAsync();
+    }
+
+    private async Task OnSelectedDateChanged(DateOnly date)
+    {
+        date = ClampToToday(date);
+        if (date == selectedDate) return;
+        selectedDate = date;
+        if (scope?.PatientId is null) return;
+        selectedDayAppointments = await Records.GetAppointmentsForDateAsync(scope.PatientId, selectedDate);
+    }
+
+    private async Task OnSelectedDateInputChanged(ChangeEventArgs e)
+    {
+        if (!DateOnly.TryParse(e.Value?.ToString(), out var date)) return;
+        await OnSelectedDateChanged(date);
     }
 
     private async Task ResetToToday()
     {
-        selectedDate = DateOnly.FromDateTime(DateTime.Today);
+        selectedDate = Today;
+        bpDate = Today;
+        sugarDate = Today;
         await LoadSelectedDayAsync();
     }
 
-    private Task OnScheduleChanged(DailyMedicationSchedule schedule)
+    private async Task ResetSelectedDayToToday()
+    {
+        await OnSelectedDateChanged(Today);
+    }
+
+    private static DateOnly ClampToToday(DateOnly date) => date > Today ? Today : date;
+
+    private async Task OnScheduleChanged(DailyMedicationSchedule schedule)
     {
         dailySchedule = schedule;
-        return Task.CompletedTask;
+        if (scope?.PatientId is not null)
+            medicationOverview = await MedSchedule.GetMedicationOverviewAsync(scope.PatientId);
     }
 
     private async Task UpdateApptStatusAsync(int appointmentId, AppointmentStatus status)
@@ -407,7 +498,6 @@ else if (snapshot is not null && scope.Patient is not null)
             await Records.UpdateAppointmentStatusAsync(appointmentId, scope.PatientId, status);
             selectedDayAppointments = await Records.GetAppointmentsForDateAsync(scope.PatientId, selectedDate);
             snapshot = await Records.GetDashboardAsync(scope.PatientId);
-            nextAppt = snapshot.UpcomingAppointments.FirstOrDefault();
         }
         finally
         {
@@ -415,19 +505,8 @@ else if (snapshot is not null && scope.Patient is not null)
         }
     }
 
-    private static string ApptStatusCss(AppointmentStatus status) => status switch
-    {
-        AppointmentStatus.Scheduled => "status-ok",
-        AppointmentStatus.Cancelled => "status-danger",
-        _ => "status-muted"
-    };
-
-    private static string ApptActionLabel(AppointmentStatus status) => status switch
-    {
-        AppointmentStatus.Completed => "Mark completed",
-        AppointmentStatus.Cancelled => "Cancel",
-        _ => "Mark scheduled"
-    };
+    private string? PrintPatientName => printPatientName;
+    private string? PrintDateOfBirth => printDateOfBirth;
 
     private string Link(string path) => CareLinks.To(path, PatientUserId);
 

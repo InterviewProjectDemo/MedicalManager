@@ -7,7 +7,8 @@ public enum AppointmentStatus
 {
     Scheduled,
     Completed,
-    Cancelled
+    Cancelled,
+    Missed
 }
 
 public class Appointment

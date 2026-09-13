@@ -1,0 +1,250 @@
+@namespace MedicalManager.Components.Widgets
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_card" class="chart-card daily-vitals-card med-overview-card">
+    <div class="chart-card-head daily-vitals-head">
+        <span class="chart-dot" style="background:#27ae60"></span>
+        <div class="daily-vitals-title">
+            <h3>Medications</h3>
+            <p>Active prescriptions</p>
+        </div>
+        <CardPrintButton Label="Print medications list" OnClick="PrintAsync" />
+    </div>
+
+    @if (Overview is null || Overview.Medications.Count == 0)
+    {
+        <div class="empty-chart med-overview-empty">No active medications.</div>
+    }
+    else
+    {
+        <div class="daily-vitals-table-wrap med-overview-table-wrap"
+             @ref="_tableWrap"
+             id="med-overview-page"
+             role="@(TabCount > 1 ? "tabpanel" : null)"
+             aria-labelledby="@(TabCount > 1 ? $"med-overview-tab-{CurrentTab}" : null)">
+            <table class="daily-vitals-table med-overview-table">
+                <thead>
+                    <tr>
+                        <th>Medication name</th>
+                        <th>Purpose or reason</th>
+                        <th>Doses</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var med in PageRows)
+                    {
+                        <tr>
+                            <td><strong>@med.Name</strong></td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(med.Purpose))
+                                {
+                                    <span class="muted">—</span>
+                                }
+                                else
+                                {
+                                    @med.Purpose
+                                }
+                            </td>
+                            <td class="med-overview-doses">@DoseLabel(med)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (TabCount > 1)
+        {
+            <div class="med-overview-tabs" role="tablist" aria-label="Medication pages">
+                @for (var i = 1; i <= TabCount; i++)
+                {
+                    var tab = i;
+                    <button type="button"
+                            class="med-overview-tab @(tab == CurrentTab ? "active" : null)"
+                            role="tab"
+                            id="@($"med-overview-tab-{tab}")"
+                            aria-selected="@(tab == CurrentTab)"
+                            aria-controls="med-overview-page"
+                            tabindex="@(tab == CurrentTab ? 0 : -1)"
+                            @onclick="() => SelectTab(tab)">
+                        @tab
+                    </button>
+                }
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(ManageHref))
+    {
+        <a class="daily-vitals-link widget-link" href="@ManageHref">Manage medications</a>
+    }
+</div>
+
+@code {
+    private const int MinPageSize = 5;
+
+    [Parameter] public MedicationOverview? Overview { get; set; }
+    [Parameter] public string? ManageHref { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+    [Parameter] public string? PatientDateOfBirth { get; set; }
+
+    private ElementReference _card;
+    private IJSObjectReference? _printModule;
+    private ElementReference _tableWrap;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<MedicationOverviewPanel>? _self;
+    private bool _observing;
+    private int _fittedRows = MinPageSize;
+    private int CurrentTab { get; set; } = 1;
+
+    private int PageSize => Math.Max(MinPageSize, _fittedRows);
+
+    private int TabCount
+    {
+        get
+        {
+            var count = Overview?.Medications.Count ?? 0;
+            return count == 0 ? 1 : (int)Math.Ceiling(count / (double)PageSize);
+        }
+    }
+
+    private IEnumerable<MedicationOverviewRow> PageRows
+    {
+        get
+        {
+            if (Overview is null) return [];
+            return Overview.Medications
+                .Skip((CurrentTab - 1) * PageSize)
+                .Take(PageSize);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        ClampTab();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Widgets/MedicationOverviewPanel.razor.js");
+            _self = DotNetObjectReference.Create(this);
+        }
+
+        if (_module is null || _self is null) return;
+
+        var hasMeds = Overview is not null && Overview.Medications.Count > 0;
+        if (!hasMeds)
+        {
+            _observing = false;
+            return;
+        }
+
+        if (!_observing)
+        {
+            await _module.InvokeVoidAsync("observeTable", _tableWrap, _self);
+            _observing = true;
+        }
+    }
+
+    [JSInvokable]
+    public void OnTableResized(int fittedRows)
+    {
+        var next = Math.Max(MinPageSize, fittedRows);
+        if (next == _fittedRows) return;
+
+        _fittedRows = next;
+        ClampTab();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ClampTab()
+    {
+        if (CurrentTab > TabCount)
+            CurrentTab = TabCount;
+        if (CurrentTab < 1)
+            CurrentTab = 1;
+    }
+
+    private void SelectTab(int tab)
+    {
+        if (tab < 1 || tab > TabCount || tab == CurrentTab) return;
+        CurrentTab = tab;
+    }
+
+    private static string DoseLabel(MedicationOverviewRow med)
+    {
+        var dosage = med.Dosage?.Trim();
+        var frequency = med.Frequency?.Trim();
+        if (string.IsNullOrEmpty(dosage)) return frequency ?? "—";
+        if (string.IsNullOrEmpty(frequency)) return dosage;
+        return $"{dosage} · {frequency}";
+    }
+
+    private async Task PrintAsync()
+    {
+        _printModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/cardPrint.js");
+
+        var meds = Overview?.Medications ?? [];
+        var rows = meds.Select((med, index) => new
+        {
+            cells = new[]
+            {
+                (index + 1).ToString(),
+                med.Name,
+                string.IsNullOrWhiteSpace(med.Purpose) ? "—" : med.Purpose,
+                DoseLabel(med)
+            },
+            highlight = false
+        }).ToList();
+
+        await _printModule.InvokeVoidAsync("printCard", _card, new
+        {
+            title = "Medications — Active Prescriptions",
+            subtitle = "Full list of current medications",
+            patientName = PatientName,
+            dateOfBirth = PatientDateOfBirth,
+            periodCaption = "List",
+            periodLabel = $"{meds.Count} active {(meds.Count == 1 ? "medication" : "medications")}",
+            stats = new[]
+            {
+                new { label = "Active medications", value = meds.Count.ToString(), subValue = (string?)null, outOfRange = false }
+            },
+            tables = new[]
+            {
+                new
+                {
+                    heading = "Medication list",
+                    columns = new[] { "#", "Medication name", "Purpose or reason", "Doses" },
+                    rows,
+                    emptyMessage = "No active medications."
+                }
+            },
+            includeChart = false
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_observing && _module is not null)
+                await _module.InvokeVoidAsync("disposeTable", _tableWrap);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        _observing = false;
+        _self?.Dispose();
+        if (_module is not null)
+            await _module.DisposeAsync();
+        if (_printModule is not null)
+        {
+            try { await _printModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+}

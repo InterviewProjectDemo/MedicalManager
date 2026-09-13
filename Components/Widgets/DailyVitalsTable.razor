@@ -1,0 +1,372 @@
+@namespace MedicalManager.Components.Widgets
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_card" class="chart-card daily-vitals-card@(CompactEmpty ? " daily-vitals-card--compact-empty" : "")">
+    <div class="daily-vitals-body">
+        <div class="chart-card-head daily-vitals-head">
+            <span class="chart-dot" style="background:@Accent"></span>
+            <div class="daily-vitals-title">
+                <h3>@Title</h3>
+                <p>@Subtitle</p>
+            </div>
+            <div class="daily-vitals-date-nav">
+                <button type="button" class="btn btn-sm btn-outline-secondary daily-date-btn" aria-label="Previous day" @onclick="GoPrevDay">&lsaquo;</button>
+                <label class="daily-date-picker">
+                    <span class="visually-hidden">@Title date</span>
+                    <input type="date"
+                           class="daily-date-input"
+                           value="@SelectedDate.ToString("yyyy-MM-dd")"
+                           max="@Today.ToString("yyyy-MM-dd")"
+                           @onchange="OnDateInputChanged" />
+                </label>
+                @if (IsToday)
+                {
+                    <span class="day-badge">Today</span>
+                }
+                <button type="button" class="btn btn-sm btn-outline-secondary daily-date-btn" aria-label="Next day" disabled="@IsToday" @onclick="GoNextDay">&rsaquo;</button>
+                <CardPrintButton Label="@PrintButtonLabel" OnClick="PrintAsync" />
+            </div>
+        </div>
+
+        @if (Stats.HasReadings)
+        {
+            <div class="chart-stats daily-vitals-stats">
+                <div class="chart-stat-item">
+                    <span class="chart-stat-label">Readings</span>
+                    <strong class="chart-stat-value" style="color:@Accent">@Stats.ReadingCount</strong>
+                </div>
+                <div class="chart-stat-item">
+                    <span class="chart-stat-label">Average</span>
+                    <strong class="chart-stat-value @(Stats.IsAverageOutOfRange ? "out-of-range" : "")" style="@AverageStyle">@Stats.Average</strong>
+                </div>
+                <div class="chart-stat-item">
+                    <span class="chart-stat-label">High</span>
+                    <strong class="chart-stat-value @(Stats.IsHighOutOfRange ? "out-of-range" : "")" style="@HighStyle">@Stats.High</strong>
+                    @if (!string.IsNullOrEmpty(Stats.HighTime))
+                    {
+                        <span class="chart-stat-subvalue @(Stats.IsHighOutOfRange ? "out-of-range" : "")">@Stats.HighTime</span>
+                    }
+                </div>
+                <div class="chart-stat-item">
+                    <span class="chart-stat-label">Low</span>
+                    <strong class="chart-stat-value @(Stats.IsLowOutOfRange ? "out-of-range" : "")" style="@LowStyle">@Stats.Low</strong>
+                    @if (!string.IsNullOrEmpty(Stats.LowTime))
+                    {
+                        <span class="chart-stat-subvalue @(Stats.IsLowOutOfRange ? "out-of-range" : "")">@Stats.LowTime</span>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="daily-vitals-readings">
+            @if (Variant == DailyVitalsKind.BloodPressure)
+            {
+                @if (BpReadings.Count == 0)
+                {
+                    <div class="@(CompactEmpty ? "daily-vitals-empty daily-vitals-empty--compact" : "empty-chart daily-vitals-empty")">No blood pressure readings on this day.</div>
+                }
+                else
+                {
+                    <div class="daily-vitals-table-wrap">
+                        <table class="daily-vitals-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Reading</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var bp in BpReadings.OrderByDescending(x => x.RecordedAt))
+                                {
+                                    var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
+                                    <tr>
+                                        <td class="vitals-time">@bp.RecordedAt.ToString("h:mm tt")</td>
+                                        <td><span class="vitals-reading-value @tag.CssClass">@bp.Systolic/@bp.Diastolic</span> <small class="muted">mmHg</small></td>
+                                        <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            else
+            {
+                @if (SugarReadings.Count == 0)
+                {
+                    <div class="@(CompactEmpty ? "daily-vitals-empty daily-vitals-empty--compact" : "empty-chart daily-vitals-empty")">No sugar readings on this day.</div>
+                }
+                else
+                {
+                    <div class="daily-vitals-table-wrap">
+                        <table class="daily-vitals-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Reading</th>
+                                    <th>Kind</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var sugar in SugarReadings.OrderByDescending(x => x.RecordedAt))
+                                {
+                                    var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
+                                    <tr>
+                                        <td class="vitals-time">@sugar.RecordedAt.ToString("h:mm tt")</td>
+                                        <td><span class="vitals-reading-value @tag.CssClass">@sugar.Value.ToString("0")</span> <small class="muted">@sugar.Unit</small></td>
+                                        <td class="vitals-kind">@sugar.Kind</td>
+                                        <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="daily-vitals-footer">
+        @if (!string.IsNullOrEmpty(ManageHref))
+        {
+            <a class="daily-vitals-link widget-link" href="@ManageHref">@ManageLinkText</a>
+        }
+        @if (!CompactEmpty)
+        {
+            <div class="daily-vitals-graph">
+                <TrendChart Embedded="true"
+                            Accent="@Accent"
+                            Series="DaySeries"
+                            Stats="DayChartStats"
+                            EmptyMessage="No readings" />
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    public enum DailyVitalsKind { BloodPressure, Sugar }
+
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string Accent { get; set; } = "#0f766e";
+    [Parameter] public DailyVitalsKind Variant { get; set; }
+    [Parameter] public DateOnly SelectedDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    [Parameter] public EventCallback<DateOnly> SelectedDateChanged { get; set; }
+    [Parameter] public List<BloodPressureReading> BpReadings { get; set; } = [];
+    [Parameter] public List<SugarReading> SugarReadings { get; set; } = [];
+    [Parameter] public string? ManageHref { get; set; }
+    [Parameter] public bool CompactEmpty { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+    [Parameter] public string? PatientDateOfBirth { get; set; }
+
+    private ElementReference _card;
+    private IJSObjectReference? _printModule;
+
+    private string ManageLinkText => Variant == DailyVitalsKind.BloodPressure
+        ? "Review Blood Pressure Readings"
+        : "Review Blood Sugar Readings";
+
+    private DailyVitalDayStats Stats => Variant == DailyVitalsKind.BloodPressure
+        ? ChartStatsHelper.ForBloodPressureDay(BpReadings)
+        : ChartStatsHelper.ForSugarDay(SugarReadings);
+
+    private List<ChartStatItem> DayChartStats => ChartStatsHelper.ForDailyChart(Stats);
+
+    private List<TrendChart.ChartSeries> DaySeries => Variant == DailyVitalsKind.BloodPressure
+        ? BuildBpSeries()
+        : BuildSugarSeries();
+
+    private List<TrendChart.ChartSeries> BuildBpSeries()
+    {
+        var ordered = BpReadings.OrderBy(x => x.RecordedAt).ToList();
+        return
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Systolic",
+                Color = Accent,
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    x.Systolic,
+                    x.RecordedAt,
+                    $"{x.Systolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+            },
+            new TrendChart.ChartSeries
+            {
+                Name = "Diastolic",
+                Color = "#56ccf2",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    x.Diastolic,
+                    x.RecordedAt,
+                    $"{x.Diastolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+            }
+        ];
+    }
+
+    private List<TrendChart.ChartSeries> BuildSugarSeries()
+    {
+        var ordered = SugarReadings.OrderBy(x => x.RecordedAt).ToList();
+        return
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Glucose",
+                Color = Accent,
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    (double)x.Value,
+                    x.RecordedAt,
+                    $"{x.Value:0} {x.Unit} · {x.Kind}",
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind))).ToList()
+            }
+        ];
+    }
+
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+    private bool IsToday => SelectedDate >= Today;
+
+    private string AverageStyle => Stats.IsAverageOutOfRange ? "" : $"color:{Accent}";
+    private string HighStyle => Stats.IsHighOutOfRange ? "" : $"color:{Accent}";
+    private string LowStyle => Stats.IsLowOutOfRange ? "" : $"color:{Accent}";
+
+    private async Task OnDateInputChanged(ChangeEventArgs e)
+    {
+        if (!DateOnly.TryParse(e.Value?.ToString(), out var date)) return;
+        await SelectedDateChanged.InvokeAsync(ClampToToday(date));
+    }
+
+    private async Task GoPrevDay()
+    {
+        await SelectedDateChanged.InvokeAsync(SelectedDate.AddDays(-1));
+    }
+
+    private async Task GoNextDay()
+    {
+        if (IsToday) return;
+        var next = SelectedDate.AddDays(1);
+        if (next > Today) return;
+        await SelectedDateChanged.InvokeAsync(next);
+    }
+
+    private static DateOnly ClampToToday(DateOnly date) => date > Today ? Today : date;
+
+    private string PrintButtonLabel => Variant == DailyVitalsKind.BloodPressure
+        ? "Print blood pressure daily snapshot"
+        : "Print blood sugar daily snapshot";
+
+    private string PrintDocTitle => Variant == DailyVitalsKind.BloodPressure
+        ? "Blood Pressure — Daily Snapshot"
+        : "Blood Sugar — Daily Snapshot";
+
+    private async Task PrintAsync()
+    {
+        _printModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/cardPrint.js");
+
+        var stats = new List<object>();
+        if (Stats.HasReadings)
+        {
+            stats.Add(new { label = "Readings", value = Stats.ReadingCount.ToString(), subValue = (string?)null, outOfRange = false });
+            stats.Add(new { label = "Average", value = Stats.Average, subValue = (string?)null, outOfRange = Stats.IsAverageOutOfRange });
+            stats.Add(new { label = "High", value = Stats.High, subValue = Stats.HighTime, outOfRange = Stats.IsHighOutOfRange });
+            stats.Add(new { label = "Low", value = Stats.Low, subValue = Stats.LowTime, outOfRange = Stats.IsLowOutOfRange });
+        }
+
+        object table;
+        if (Variant == DailyVitalsKind.BloodPressure)
+        {
+            var rows = BpReadings
+                .OrderByDescending(x => x.RecordedAt)
+                .Select(bp =>
+                {
+                    var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
+                    return new
+                    {
+                        cells = new[]
+                        {
+                            bp.RecordedAt.ToString("h:mm tt"),
+                            $"{bp.Systolic}/{bp.Diastolic} mmHg",
+                            tag.Label
+                        },
+                        highlight = tag.CssClass == "status-danger"
+                    };
+                })
+                .ToList();
+
+            table = new
+            {
+                heading = "Readings",
+                columns = new[] { "Time", "Reading", "Status" },
+                rows,
+                emptyMessage = "No blood pressure readings on this day."
+            };
+        }
+        else
+        {
+            var rows = SugarReadings
+                .OrderByDescending(x => x.RecordedAt)
+                .Select(sugar =>
+                {
+                    var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
+                    return new
+                    {
+                        cells = new[]
+                        {
+                            sugar.RecordedAt.ToString("h:mm tt"),
+                            $"{sugar.Value:0} {sugar.Unit}",
+                            sugar.Kind.ToString(),
+                            tag.Label
+                        },
+                        highlight = tag.CssClass == "status-danger"
+                    };
+                })
+                .ToList();
+
+            table = new
+            {
+                heading = "Readings",
+                columns = new[] { "Time", "Reading", "Kind", "Status" },
+                rows,
+                emptyMessage = "No sugar readings on this day."
+            };
+        }
+
+        var legend = DaySeries
+            .Where(s => s.Points.Count > 0)
+            .Select(s => new { name = s.Name, color = s.Color })
+            .ToList();
+
+        await _printModule.InvokeVoidAsync("printCard", _card, new
+        {
+            title = PrintDocTitle,
+            subtitle = Subtitle,
+            patientName = PatientName,
+            dateOfBirth = PatientDateOfBirth,
+            periodCaption = "Date",
+            periodLabel = SelectedDate.ToString("dddd, MMMM d, yyyy"),
+            stats,
+            tables = new[] { table },
+            includeChart = !CompactEmpty && Stats.HasReadings,
+            chartCaption = "Daily trend",
+            legend
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_printModule is not null)
+                await _printModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

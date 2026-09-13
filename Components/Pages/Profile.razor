@@ -1,0 +1,162 @@
+@page "/profile"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider Auth
+@inject UserManager<ApplicationUser> UserManager
+@inject PatientAccessService Access
+@inject ProfilePhotoService PhotoService
+
+<PageTitle>Patient Profile</PageTitle>
+
+@if (_loading)
+{
+    <p class="muted">Loading profile…</p>
+}
+else if (_user is null)
+{
+    <div class="alert alert-danger">Unable to load your profile.</div>
+}
+else
+{
+    <div class="page-head accent-dash">
+        <div>
+            <p class="eyebrow">Your account</p>
+            <h1>Patient profile</h1>
+            <p class="muted">Manage your photo and view your health profile details.</p>
+        </div>
+    </div>
+
+    <div class="profile-page-card">
+        <div class="profile-page-photo-section">
+            <button type="button"
+                    class="profile-page-photo-wrap"
+                    aria-label="Change profile photo"
+                    @onclick="OpenPhotoModal">
+                @if (!string.IsNullOrWhiteSpace(_photoUrl))
+                {
+                    <img src="@_photoUrl" alt="" class="profile-page-photo" />
+                }
+                else
+                {
+                    <span class="profile-page-photo-placeholder">@GetInitials(_user)</span>
+                }
+            </button>
+            <div class="profile-page-photo-meta">
+                <h2>@_user.DisplayName</h2>
+                <p class="muted">@_user.Email</p>
+                <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="OpenPhotoModal">
+                    Change photo
+                </button>
+            </div>
+        </div>
+
+        <dl class="profile-page-details">
+            <div>
+                <dt>Full name</dt>
+                <dd>@(_user.FullName)</dd>
+            </div>
+            <div>
+                <dt>Email</dt>
+                <dd>@(_user.Email ?? "—")</dd>
+            </div>
+            <div>
+                <dt>Phone</dt>
+                <dd>@(_profile?.Phone ?? _user.PhoneNumber ?? "—")</dd>
+            </div>
+            <div>
+                <dt>Date of birth</dt>
+                <dd>@(_profile?.DateOfBirth?.ToString("MMMM d, yyyy") ?? "—")</dd>
+            </div>
+            <div>
+                <dt>Sex</dt>
+                <dd>@(_profile?.Sex ?? "—")</dd>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_profile?.Notes))
+            {
+                <div>
+                    <dt>Notes</dt>
+                    <dd>@_profile.Notes</dd>
+                </div>
+            }
+        </dl>
+
+        <p class="profile-page-account-hint">
+            <a href="Account/Manage">Account settings</a> — update phone number, email, and password.
+        </p>
+    </div>
+
+    <ProfilePhotoModal Visible="_photoModalOpen"
+                       VisibleChanged="OnPhotoModalVisibleChanged"
+                       PhotoSaved="OnPhotoSaved" />
+}
+
+@code {
+    private bool _loading = true;
+    private string? _userId;
+    private string? _photoUrl;
+    private bool _photoModalOpen;
+    private ApplicationUser? _user;
+    private PatientProfile? _profile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var claimUserId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
+        if (string.IsNullOrWhiteSpace(claimUserId))
+        {
+            _loading = false;
+            return;
+        }
+
+        _user = await UserManager.FindByIdAsync(claimUserId);
+        if (_user is null)
+        {
+            _loading = false;
+            return;
+        }
+
+        _userId = _user.Id;
+        await Access.EnsureProfileAsync(_user);
+        _profile = await Access.GetProfileAsync(_userId);
+        _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
+        _loading = false;
+    }
+
+    private void OpenPhotoModal() => _photoModalOpen = true;
+
+    private Task OnPhotoModalVisibleChanged(bool visible)
+    {
+        _photoModalOpen = visible;
+        return Task.CompletedTask;
+    }
+
+    private Task OnPhotoSaved(string? photoUrl)
+    {
+        _photoUrl = photoUrl;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetInitials(ApplicationUser user)
+    {
+        var name = string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
+        if (string.IsNullOrWhiteSpace(name))
+            return "?";
+
+        if (name.Contains('@'))
+            name = name.Split('@')[0];
+
+        var parts = name.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}";
+        if (parts.Length == 1 && parts[0].Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}";
+        if (parts.Length == 1)
+            return char.ToUpperInvariant(parts[0][0]).ToString();
+
+        return "?";
+    }
+}

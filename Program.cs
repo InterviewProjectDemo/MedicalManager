@@ -1,11 +1,34 @@
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using MedicalManager.Components;
 using MedicalManager.Components.Account;
 using MedicalManager.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+var dataDirectory = Environment.GetEnvironmentVariable("MEDICALMANAGER_DATA_DIR");
+if (string.IsNullOrWhiteSpace(dataDirectory))
+{
+    dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "Data");
+}
+
+Directory.CreateDirectory(dataDirectory);
+var keysDirectory = Path.Combine(dataDirectory, "keys");
+Directory.CreateDirectory(keysDirectory);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory))
+    .SetApplicationName("MedicalManager");
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -23,8 +46,19 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+var configuredConnection = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var sqliteBuilder = new SqliteConnectionStringBuilder(configuredConnection);
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MEDICALMANAGER_DATA_DIR")))
+{
+    sqliteBuilder.DataSource = Path.Combine(dataDirectory, "app.db");
+}
+else if (!Path.IsPathRooted(sqliteBuilder.DataSource))
+{
+    sqliteBuilder.DataSource = Path.Combine(builder.Environment.ContentRootPath, sqliteBuilder.DataSource);
+}
+Directory.CreateDirectory(Path.GetDirectoryName(sqliteBuilder.DataSource)!);
+var connectionString = sqliteBuilder.ConnectionString;
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
@@ -55,8 +89,10 @@ builder.Services.AddHttpClient("OpenFda", client =>
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<MedicationResearchService>();
+builder.Services.AddScoped<ProfilePhotoService>();
 
 var app = builder.Build();
+app.UseForwardedHeaders();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -84,6 +120,7 @@ else
     app.UseHttpsRedirection();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.MapGet("/health", () => Results.Ok("ok"));
 
 app.UseAntiforgery();
 
@@ -92,5 +129,26 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapAdditionalIdentityEndpoints();
+
+app.MapGet("/profile-photo/{userId}", async (
+    string userId,
+    HttpContext context,
+    ProfilePhotoService photos) =>
+{
+    var currentUserId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(currentUserId))
+        return Results.Unauthorized();
+
+    var isSelf = string.Equals(currentUserId, userId, StringComparison.Ordinal);
+    var isDoctor = context.User.IsInRole(AppRoles.Doctor);
+    if (!isSelf && !isDoctor)
+        return Results.Forbid();
+
+    var photo = await photos.GetPhotoDataAsync(userId);
+    if (photo is null)
+        return Results.NotFound();
+
+    return Results.File(photo.Value.Data, photo.Value.ContentType);
+}).RequireAuthorization();
 
 app.Run();

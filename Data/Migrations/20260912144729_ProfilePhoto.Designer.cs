@@ -3,16 +3,19 @@ using System;
 using MedicalManager.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace MedicalManager.Migrations
+namespace MedicalManager.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912144729_ProfilePhoto")]
+    partial class ProfilePhoto
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.6");
@@ -298,10 +301,6 @@ namespace MedicalManager.Migrations
                     b.Property<string>("PrescribedBy")
                         .IsRequired()
                         .HasMaxLength(120)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Purpose")
-                        .HasMaxLength(160)
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly>("StartDate")

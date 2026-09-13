@@ -25,6 +25,8 @@ public static class IdentitySeeder
         }
 
         await db.Database.MigrateAsync();
+        await EnsureProfilePhotoColumnsAsync(db);
+        await EnsureMedicationPurposeColumnAsync(db);
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
         foreach (var role in AppRoles.All)
@@ -49,7 +51,11 @@ public static class IdentitySeeder
                 Phone = "555-0142",
                 Notes = "Demo patient monitoring blood pressure and glucose."
             });
+            await db.SaveChangesAsync();
         }
+
+        await EnsurePatientProfilesAsync(db, users);
+        await EnsureDemoMedicationPurposesAsync(db, patient.Id);
 
         if (!await db.BloodPressureReadings.AnyAsync(x => x.UserId == patient.Id))
         {
@@ -84,6 +90,7 @@ public static class IdentitySeeder
                 Name = "Lisinopril",
                 Dosage = "10 mg",
                 Frequency = "Once daily",
+                Purpose = "Blood pressure",
                 PrescribedBy = "Dr. Morgan Chen",
                 Notes = "Take in the morning with water.",
                 IsActive = true,
@@ -95,6 +102,7 @@ public static class IdentitySeeder
                 Name = "Metformin",
                 Dosage = "500 mg",
                 Frequency = "Twice daily",
+                Purpose = "Blood sugar",
                 PrescribedBy = "Dr. Morgan Chen",
                 Notes = "Take with breakfast and dinner.",
                 IsActive = true,
@@ -106,6 +114,7 @@ public static class IdentitySeeder
                 Name = "Atorvastatin",
                 Dosage = "20 mg",
                 Frequency = "Once daily at bedtime",
+                Purpose = "Cholesterol",
                 PrescribedBy = "Dr. Sarah Kim",
                 Notes = "Cholesterol support.",
                 IsActive = true,
@@ -161,6 +170,17 @@ public static class IdentitySeeder
                 new Appointment
                 {
                     UserId = patient.Id,
+                    Title = "Cardiology follow-up",
+                    ProviderName = "Dr. Morgan Chen",
+                    Location = "Main Clinic, Room 214",
+                    StartsAt = DemoPastVisitStart(today),
+                    EndsAt = DemoPastVisitStart(today).AddMinutes(30),
+                    Status = AppointmentStatus.Scheduled,
+                    Notes = "Left Scheduled so dashboard auto-miss can demonstrate Missed."
+                },
+                new Appointment
+                {
+                    UserId = patient.Id,
                     Title = "Blood pressure check",
                     ProviderName = "Dr. Morgan Chen",
                     Location = "Main Clinic, Room 214",
@@ -194,7 +214,39 @@ public static class IdentitySeeder
 
         await EnsureDemoMedicationSchedulesAsync(db, patient.Id);
         await EnsureDemoLabReportsAsync(db, patient.Id);
+        await EnsureDemoPastScheduledAppointmentAsync(db, patient.Id);
         await db.SaveChangesAsync();
+    }
+
+    internal const string DemoPastScheduledTitle = "Cardiology follow-up";
+
+    private static DateTime DemoPastVisitStart(DateTime today)
+    {
+        var now = DateTime.Now;
+        if (today.Day >= 3)
+            return today.AddDays(-2).AddHours(11);
+        if (now.TimeOfDay >= TimeSpan.FromHours(10))
+            return today.AddHours(9);
+        return now.AddHours(-2);
+    }
+
+    private static async Task EnsureDemoPastScheduledAppointmentAsync(ApplicationDbContext db, string patientId)
+    {
+        if (await db.Appointments.AnyAsync(x => x.UserId == patientId && x.Title == DemoPastScheduledTitle))
+            return;
+
+        var start = DemoPastVisitStart(DateTime.Today);
+        db.Appointments.Add(new Appointment
+        {
+            UserId = patientId,
+            Title = DemoPastScheduledTitle,
+            ProviderName = "Dr. Morgan Chen",
+            Location = "Main Clinic, Room 214",
+            StartsAt = start,
+            EndsAt = start.AddMinutes(30),
+            Status = AppointmentStatus.Scheduled,
+            Notes = "Left Scheduled so dashboard auto-miss can demonstrate Missed."
+        });
     }
 
     private static async Task EnsureDemoLabReportsAsync(ApplicationDbContext db, string patientId)
@@ -340,6 +392,22 @@ public static class IdentitySeeder
         }
     }
 
+    private static async Task EnsurePatientProfilesAsync(
+        ApplicationDbContext db,
+        UserManager<ApplicationUser> users)
+    {
+        var patients = await users.GetUsersInRoleAsync(AppRoles.Patient);
+        foreach (var patient in patients)
+        {
+            if (await db.PatientProfiles.AnyAsync(p => p.UserId == patient.Id))
+                continue;
+
+            db.PatientProfiles.Add(new PatientProfile { UserId = patient.Id });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<ApplicationUser> EnsureUserAsync(
         UserManager<ApplicationUser> users,
         string email,
@@ -370,5 +438,146 @@ public static class IdentitySeeder
         }
 
         return user;
+    }
+
+    private static async Task EnsureMedicationPurposeColumnAsync(ApplicationDbContext db)
+    {
+        var connection = db.Database.GetDbConnection();
+        var wasOpen = connection.State == System.Data.ConnectionState.Open;
+        if (!wasOpen)
+            await connection.OpenAsync();
+
+        try
+        {
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "SELECT name FROM pragma_table_info('Medications')";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    columns.Add(reader.GetString(0));
+            }
+
+            await TryAddColumnAsync(db, columns, "Purpose",
+                """ALTER TABLE "Medications" ADD COLUMN "Purpose" TEXT NULL""");
+        }
+        finally
+        {
+            if (!wasOpen)
+                await connection.CloseAsync();
+        }
+    }
+
+    private static async Task EnsureDemoMedicationPurposesAsync(ApplicationDbContext db, string patientId)
+    {
+        var purposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Lisinopril"] = "Blood pressure",
+            ["Metformin"] = "Blood sugar",
+            ["Atorvastatin"] = "Cholesterol"
+        };
+
+        var names = purposes.Keys.ToList();
+        var meds = await db.Medications
+            .Where(x => x.UserId == patientId && names.Contains(x.Name))
+            .ToListAsync();
+
+        var changed = false;
+        foreach (var med in meds)
+        {
+            if (!string.IsNullOrWhiteSpace(med.Purpose)) continue;
+            if (!purposes.TryGetValue(med.Name, out var purpose)) continue;
+            med.Purpose = purpose;
+            changed = true;
+        }
+
+        if (changed)
+            await db.SaveChangesAsync();
+
+        var extras = new (string Name, string Dosage, string Frequency, string Purpose, string PrescribedBy, string Notes, DateOnly StartDate)[]
+        {
+            ("Amlodipine", "5 mg", "Once daily", "Blood pressure", "Dr. Morgan Chen", "Calcium channel blocker.", DateOnly.FromDateTime(DateTime.Today.AddMonths(-5))),
+            ("Levothyroxine", "75 mcg", "Once daily", "Thyroid", "Dr. Sarah Kim", "Take on an empty stomach.", DateOnly.FromDateTime(DateTime.Today.AddMonths(-8))),
+            ("Omeprazole", "20 mg", "Once daily", "Acid reflux", "Dr. Morgan Chen", "Take before breakfast.", DateOnly.FromDateTime(DateTime.Today.AddMonths(-3)))
+        };
+
+        var existingNames = await db.Medications
+            .Where(x => x.UserId == patientId)
+            .Select(x => x.Name)
+            .ToListAsync();
+        var existingSet = existingNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = false;
+        foreach (var extra in extras)
+        {
+            if (existingSet.Contains(extra.Name)) continue;
+            db.Medications.Add(new Medication
+            {
+                UserId = patientId,
+                Name = extra.Name,
+                Dosage = extra.Dosage,
+                Frequency = extra.Frequency,
+                Purpose = extra.Purpose,
+                PrescribedBy = extra.PrescribedBy,
+                Notes = extra.Notes,
+                IsActive = true,
+                StartDate = extra.StartDate
+            });
+            added = true;
+        }
+
+        if (added)
+            await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureProfilePhotoColumnsAsync(ApplicationDbContext db)
+    {
+        var connection = db.Database.GetDbConnection();
+        var wasOpen = connection.State == System.Data.ConnectionState.Open;
+        if (!wasOpen)
+            await connection.OpenAsync();
+
+        try
+        {
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "SELECT name FROM pragma_table_info('PatientProfiles')";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    columns.Add(reader.GetString(0));
+            }
+
+            await TryAddColumnAsync(db, columns, "ProfilePhotoData",
+                """ALTER TABLE "PatientProfiles" ADD COLUMN "ProfilePhotoData" BLOB NULL""");
+            await TryAddColumnAsync(db, columns, "ProfilePhotoContentType",
+                """ALTER TABLE "PatientProfiles" ADD COLUMN "ProfilePhotoContentType" TEXT NULL""");
+            await TryAddColumnAsync(db, columns, "ProfilePhotoUpdatedAt",
+                """ALTER TABLE "PatientProfiles" ADD COLUMN "ProfilePhotoUpdatedAt" TEXT NULL""");
+        }
+        finally
+        {
+            if (!wasOpen)
+                await connection.CloseAsync();
+        }
+    }
+
+    private static async Task TryAddColumnAsync(
+        ApplicationDbContext db,
+        HashSet<string> columns,
+        string name,
+        string alterSql)
+    {
+        if (columns.Contains(name))
+            return;
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(alterSql);
+            columns.Add(name);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+        {
+            // Column already exists (schema drift / concurrent migration).
+        }
     }
 }

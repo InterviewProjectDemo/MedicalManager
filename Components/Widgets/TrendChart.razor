@@ -2,42 +2,94 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="chart-card">
-    <div class="chart-card-head">
-        <span class="chart-dot" style="background:@Accent"></span>
-        <div>
-            <h3>@Title</h3>
-            <p>@Subtitle</p>
+<div class="@(Embedded ? "daily-embedded-chart" : "chart-card monthly-chart-card")"
+     style="@(Embedded ? null : $"border-top: 5px solid {Accent}")">
+    @if (Embedded)
+    {
+        <div class="daily-embedded-toolbar">
+            <div class="chart-type-toggle" role="group" aria-label="Chart type">
+                <button type="button"
+                        class="@(_mode == DisplayMode.Line ? "active" : null)"
+                        aria-pressed="@(_mode == DisplayMode.Line)"
+                        @onclick="() => SetMode(DisplayMode.Line)">Line</button>
+                <button type="button"
+                        class="@(_mode == DisplayMode.Bar ? "active" : null)"
+                        aria-pressed="@(_mode == DisplayMode.Bar)"
+                        @onclick="() => SetMode(DisplayMode.Bar)">Bar</button>
+            </div>
         </div>
-    </div>
+    }
+    else
+    {
+        <div class="chart-card-head monthly-chart-head">
+            <span class="chart-dot" style="background:@Accent"></span>
+            <div class="monthly-chart-title">
+                <h3>@Title</h3>
+                <p>@Subtitle</p>
+            </div>
+            <div class="monthly-chart-toolbar">
+                <div class="chart-type-toggle" role="group" aria-label="Chart type">
+                    <button type="button"
+                            class="@(_mode == DisplayMode.Line ? "active" : null)"
+                            aria-pressed="@(_mode == DisplayMode.Line)"
+                            @onclick="() => SetMode(DisplayMode.Line)">Line</button>
+                    <button type="button"
+                            class="@(_mode == DisplayMode.Bar ? "active" : null)"
+                            aria-pressed="@(_mode == DisplayMode.Bar)"
+                            @onclick="() => SetMode(DisplayMode.Bar)">Bar</button>
+                </div>
+                <div class="monthly-date-nav">
+                    <CardPrintButton Label="@PrintButtonLabel" OnClick="PrintAsync" />
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary daily-date-btn"
+                            aria-label="Previous month"
+                            disabled="@(!CanGoPrevious)"
+                            @onclick="GoPrevMonth">&lsaquo;</button>
+                    <span class="monthly-date-label">
+                        @MonthStart.ToString("MMMM yyyy")
+                        @if (IsCurrentMonth)
+                        {
+                            <span class="day-badge">This month</span>
+                        }
+                    </span>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary daily-date-btn"
+                            aria-label="Next month"
+                            disabled="@IsCurrentMonth"
+                            @onclick="GoNextMonth">&rsaquo;</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @if (Stats.Count > 0)
     {
         @RenderStatsRow()
     }
+
     @if (!HasData)
     {
-        <div class="empty-chart">No readings yet. Add one on the dedicated page to see this chart.</div>
+        <div class="@(Embedded ? "empty-chart daily-embedded-empty" : "empty-chart")">
+            @(Embedded ? EmptyMessage : $"No readings in {MonthStart.ToString("MMMM yyyy")}. Use the arrows to change months.")
+        </div>
     }
     else
     {
-        <div @ref="_compactHost"
-             class="chart-interactive chart-interactive-compact"
-             @onmousemove="e => OnChartMove(e, false)"
-             @onmouseleave="() => ClearHover(false)"
-             @onclick="OpenExpanded"
-             role="button"
-             tabindex="0"
-             @onkeydown="OnCompactKeyDown"
-             aria-label="@($"{Title} chart. Click to expand.")">
-            @RenderChart(CompactWidth, CompactHeight, false, _hoverIndex)
-            @if (_hoverIndex >= 0)
-            {
-                @RenderTooltip(_hoverIndex, _tooltipLeft, _tooltipTop)
-            }
-            <span class="chart-expand-hint">Click to expand</span>
+        <div class="chart-pan-scroll">
+            <div @ref="_host"
+                 class="chart-interactive @(Embedded ? "chart-interactive-daily" : "chart-interactive-monthly")"
+                 @onmousemove="OnChartMove"
+                 @onmouseleave="ClearHover">
+                @RenderChart(_hoverIndex)
+                @if (_hoverIndex >= 0)
+                {
+                    @RenderTooltip(_hoverIndex, _tooltipLeft, _tooltipTop)
+                }
+            </div>
         </div>
-        <div class="chart-labels">
+        <div class="chart-labels @(Embedded ? "daily-embedded-labels" : "monthly-chart-labels")">
             <span>@StartLabel</span>
+            <span>Hover to trace values</span>
             <span>@EndLabel</span>
         </div>
         @if (Series.Count > 1)
@@ -52,60 +104,10 @@
     }
 </div>
 
-@if (_expanded)
-{
-    <div class="chart-modal-backdrop" @onclick="CloseExpanded" @onkeydown="OnModalKeyDown">
-        <div class="chart-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="@Title expanded chart">
-            <div class="chart-modal-head">
-                <div>
-                    <h3>@Title</h3>
-                    <p>@Subtitle</p>
-                </div>
-                <button type="button" class="chart-modal-close" @onclick="CloseExpanded" aria-label="Close chart">&times;</button>
-            </div>
-            @if (Stats.Count > 0)
-            {
-                <div class="chart-modal-stats">
-                    @RenderStatsRow()
-                </div>
-            }
-            <div class="chart-modal-scroll">
-                <div @ref="_expandedHost"
-                     class="chart-interactive chart-interactive-expanded"
-                     style="width:@($"{ExpandedWidth}px")"
-                     @onmousemove="e => OnChartMove(e, true)"
-                     @onmouseleave="() => ClearHover(true)">
-                    @RenderChart(ExpandedWidth, ExpandedHeight, true, _modalHoverIndex)
-                    @if (_modalHoverIndex >= 0)
-                    {
-                        @RenderTooltip(_modalHoverIndex, _modalTooltipLeft, _modalTooltipTop)
-                    }
-                </div>
-            </div>
-            <div class="chart-modal-foot">
-                <span>@StartLabel</span>
-                <span>Scroll horizontally to browse all readings</span>
-                <span>@EndLabel</span>
-            </div>
-            @if (Series.Count > 1)
-            {
-                <div class="chart-legend chart-modal-legend">
-                    @foreach (var series in Series)
-                    {
-                        <span><i style="background:@series.Color"></i>@series.Name</span>
-                    }
-                </div>
-            }
-        </div>
-    </div>
-}
-
 @code {
-    private const double CompactWidth = 360;
-    private const double CompactHeight = 170;
-    private const double ExpandedHeight = 220;
-    private const double PointSpacing = 52;
-
+    private const double FallbackHeight = 220;
+    private const double EmbeddedFallbackHeight = 180;
+    private const double MinChartWidth = 240;
     private const string OutOfRangeColor = "#b42318";
 
     [Parameter] public string Title { get; set; } = "";
@@ -113,30 +115,43 @@
     [Parameter] public string Accent { get; set; } = "#0f766e";
     [Parameter] public List<ChartSeries> Series { get; set; } = [];
     [Parameter] public List<ChartStatItem> Stats { get; set; } = [];
-    [Parameter] public EventCallback<DateOnly?> OnDateHovered { get; set; }
+    [Parameter] public DateOnly SelectedMonth { get; set; } = FirstOfCurrentMonth();
+    [Parameter] public EventCallback<DateOnly> SelectedMonthChanged { get; set; }
+    [Parameter] public bool CanGoPrevious { get; set; } = true;
+    [Parameter] public bool Embedded { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "No readings";
+    [Parameter] public string? PatientName { get; set; }
+    [Parameter] public string? PatientDateOfBirth { get; set; }
 
-    private ElementReference _compactHost;
-    private ElementReference _expandedHost;
+    private ElementReference _host;
     private IJSObjectReference? _module;
-    private bool _expanded;
+    private DotNetObjectReference<TrendChart>? _self;
+    private bool _observing;
+    private double _hostWidth;
+    private double _hostHeight;
+    private DisplayMode _mode = DisplayMode.Line;
     private int _hoverIndex = -1;
-    private int _modalHoverIndex = -1;
     private double _tooltipLeft;
     private double _tooltipTop;
-    private double _modalTooltipLeft;
-    private double _modalTooltipTop;
 
     private bool HasData => Series.Any(s => s.Points.Count > 0);
-    private int PointCount => Series.Where(s => s.Points.Count > 0).Max(s => s.Points.Count);
-    private double ExpandedWidth => PointCount <= 1 ? CompactWidth : Math.Max(CompactWidth, 52 + (PointCount - 1) * PointSpacing);
-
+    private int PointCount => Series.Where(s => s.Points.Count > 0).Select(s => s.Points.Count).DefaultIfEmpty(0).Max();
+    private double ChartWidth => _hostWidth > 0 ? _hostWidth : MinChartWidth;
+    private double ChartHeight => _hostHeight > 0 ? _hostHeight : (Embedded ? EmbeddedFallbackHeight : FallbackHeight);
+    private DateOnly MonthStart => new(SelectedMonth.Year, SelectedMonth.Month, 1);
+    private bool IsCurrentMonth => MonthStart == FirstOfCurrentMonth();
     private string StartLabel => PrimaryPoints.FirstOrDefault().Label ?? "";
     private string EndLabel => PrimaryPoints.LastOrDefault().Label ?? "";
     private string MinLabel => HasData ? Math.Round(AllValues.Min()).ToString() : "";
     private string MaxLabel => HasData ? Math.Round(AllValues.Max()).ToString() : "";
-
     private IEnumerable<double> AllValues => Series.SelectMany(s => s.Points.Select(p => p.Value));
     private List<ChartPoint> PrimaryPoints => Series.FirstOrDefault(s => s.Points.Count > 0)?.Points ?? [];
+
+    protected override void OnParametersSet()
+    {
+        if (_hoverIndex >= PointCount)
+            _hoverIndex = -1;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -144,18 +159,71 @@
         {
             _module = await JS.InvokeAsync<IJSObjectReference>(
                 "import", "./Components/Widgets/TrendChart.razor.js");
+            _self = DotNetObjectReference.Create(this);
+        }
+
+        if (_module is null) return;
+
+        if (!HasData)
+        {
+            _observing = false;
+            return;
+        }
+
+        if (!_observing)
+        {
+            await _module.InvokeVoidAsync("observeHost", _host, _self);
+            _observing = true;
         }
     }
 
-    private RenderFragment RenderChart(double width, double height, bool expanded, int hoverIndex) => builder =>
+    [JSInvokable]
+    public void OnHostResized(double width, double height)
     {
+        if (Math.Abs(width - _hostWidth) < 0.5 && Math.Abs(height - _hostHeight) < 0.5)
+            return;
+
+        _hostWidth = width;
+        _hostHeight = height;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static DateOnly FirstOfCurrentMonth()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return new DateOnly(today.Year, today.Month, 1);
+    }
+
+    private void SetMode(DisplayMode mode)
+    {
+        if (_mode == mode) return;
+        _mode = mode;
+    }
+
+    private async Task GoPrevMonth()
+    {
+        if (!CanGoPrevious) return;
+        await SelectedMonthChanged.InvokeAsync(MonthStart.AddMonths(-1));
+    }
+
+    private async Task GoNextMonth()
+    {
+        if (IsCurrentMonth) return;
+        await SelectedMonthChanged.InvokeAsync(MonthStart.AddMonths(1));
+    }
+
+    private RenderFragment RenderChart(int hoverIndex) => builder =>
+    {
+        var width = ChartWidth;
+        var height = ChartHeight;
         var scaled = Scale(width, height).ToList();
         var hoverX = hoverIndex >= 0 ? GetHoverX(scaled, hoverIndex) : (double?)null;
 
         builder.OpenElement(0, "svg");
         builder.AddAttribute(1, "viewBox", $"0 0 {width.ToString("0.##")} {height.ToString("0.##")}");
-        builder.AddAttribute(2, "class", expanded ? "trend-svg trend-svg-expanded" : "trend-svg");
-        builder.AddAttribute(3, "aria-hidden", "true");
+        builder.AddAttribute(2, "preserveAspectRatio", "none");
+        builder.AddAttribute(3, "class", "trend-svg trend-svg-monthly");
+        builder.AddAttribute(4, "aria-hidden", "true");
 
         var seq = 5;
         var plotBottom = height - 40;
@@ -187,6 +255,27 @@
 
         foreach (var series in scaled)
         {
+            if (_mode == DisplayMode.Bar)
+            {
+                foreach (var bar in series.Bars)
+                {
+                    var isActive = hoverIndex >= 0 && bar.Index == hoverIndex;
+                    var color = bar.IsOutOfRange ? OutOfRangeColor : series.Color;
+                    var grow = isActive ? 1.6 : 0;
+                    builder.OpenElement(seq++, "rect");
+                    builder.AddAttribute(seq++, "x", (bar.X - grow / 2).ToString("0.##"));
+                    builder.AddAttribute(seq++, "y", (bar.Y - (isActive ? 2 : 0)).ToString("0.##"));
+                    builder.AddAttribute(seq++, "width", (bar.Width + grow).ToString("0.##"));
+                    builder.AddAttribute(seq++, "height", (bar.Height + (isActive ? 2 : 0)).ToString("0.##"));
+                    builder.AddAttribute(seq++, "rx", "2.5");
+                    builder.AddAttribute(seq++, "fill", color);
+                    builder.AddAttribute(seq++, "opacity", isActive ? "1" : "0.88");
+                    if (isActive) builder.AddAttribute(seq++, "class", "chart-bar-active");
+                    builder.CloseElement();
+                }
+                continue;
+            }
+
             if (series.Area is not null)
             {
                 builder.OpenElement(seq++, "path");
@@ -219,7 +308,7 @@
                 builder.OpenElement(seq++, "circle");
                 builder.AddAttribute(seq++, "cx", point.X.ToString("0.##"));
                 builder.AddAttribute(seq++, "cy", point.Y.ToString("0.##"));
-                builder.AddAttribute(seq++, "r", isActive ? "5.2" : "3.4");
+                builder.AddAttribute(seq++, "r", isActive ? "5.6" : "3.4");
                 builder.AddAttribute(seq++, "fill", pointColor);
                 if (isActive) builder.AddAttribute(seq++, "class", "chart-point-active");
                 builder.CloseElement();
@@ -246,7 +335,7 @@
     private RenderFragment RenderTooltip(int index, double left, double top) => builder =>
     {
         builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "chart-tooltip");
+        builder.AddAttribute(1, "class", "chart-tooltip chart-tooltip-fixed");
         builder.AddAttribute(2, "style", $"left:{left.ToString("0.##")}px;top:{top.ToString("0.##")}px");
 
         builder.OpenElement(3, "strong");
@@ -270,80 +359,33 @@
         builder.CloseElement();
     };
 
-    private async Task OnChartMove(MouseEventArgs e, bool modal)
+    private async Task OnChartMove(MouseEventArgs e)
     {
         if (_module is null) return;
 
-        var host = modal ? _expandedHost : _compactHost;
-        var viewWidth = modal ? ExpandedWidth : CompactWidth;
-        var svgX = await _module.InvokeAsync<double>("svgXFromClient", host, e.ClientX);
-        var pixelWidth = await _module.InvokeAsync<double>("hostWidth", host);
-        var index = FindNearestIndex(svgX, viewWidth);
+        var svgX = await _module.InvokeAsync<double>("svgXFromClient", _host, e.ClientX);
+        var index = FindNearestIndex(svgX);
         if (index < 0)
         {
-            ClearHover(modal);
-            StateHasChanged();
+            ClearHover();
             return;
         }
 
-        var scaled = Scale(viewWidth, modal ? ExpandedHeight : CompactHeight).ToList();
-        var hoverX = GetHoverX(scaled, index) ?? svgX;
-        var left = hoverX / viewWidth * pixelWidth;
-        var top = Math.Clamp(e.OffsetY - 52, 8, modal ? 120 : 72);
-
-        if (modal)
-        {
-            _modalHoverIndex = index;
-            _modalTooltipLeft = Math.Clamp(left, 8, Math.Max(8, pixelWidth - 168));
-            _modalTooltipTop = top;
-        }
-        else
-        {
-            _hoverIndex = index;
-            _tooltipLeft = Math.Clamp(left, 8, Math.Max(8, pixelWidth - 168));
-            _tooltipTop = top;
-        }
-
-        await NotifyDateHoveredAsync(index);
+        _hoverIndex = index;
+        _tooltipLeft = e.ClientX + 14;
+        _tooltipTop = Math.Max(8, e.ClientY - 72);
         StateHasChanged();
     }
 
-    private async Task NotifyDateHoveredAsync(int index)
+    private void ClearHover()
     {
-        if (!OnDateHovered.HasDelegate) return;
-        var point = PrimaryPoints.ElementAtOrDefault(index);
-        if (point.RecordedAt == default) return;
-        await OnDateHovered.InvokeAsync(DateOnly.FromDateTime(point.RecordedAt));
-    }
-
-    private void ClearHover(bool modal)
-    {
-        if (modal) _modalHoverIndex = -1;
-        else _hoverIndex = -1;
+        _hoverIndex = -1;
         StateHasChanged();
     }
 
-    private void OnModalKeyDown(KeyboardEventArgs e)
+    private int FindNearestIndex(double svgX)
     {
-        if (e.Key == "Escape") CloseExpanded();
-    }
-
-    private void OpenExpanded() => _expanded = true;
-
-    private void CloseExpanded()
-    {
-        _expanded = false;
-        _modalHoverIndex = -1;
-    }
-
-    private void OnCompactKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key is "Enter" or " ") OpenExpanded();
-    }
-
-    private int FindNearestIndex(double svgX, double chartWidth)
-    {
-        var scaled = Scale(chartWidth, chartWidth == CompactWidth ? CompactHeight : ExpandedHeight).FirstOrDefault();
+        var scaled = Scale(ChartWidth, ChartHeight).FirstOrDefault();
         if (scaled is null || scaled.Points.Count == 0) return -1;
 
         var best = 0;
@@ -394,7 +436,7 @@
     private RenderFragment RenderStatsRow() => builder =>
     {
         builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "chart-stats");
+        builder.AddAttribute(1, "class", Embedded ? "chart-stats daily-embedded-stats" : "chart-stats monthly-chart-stats");
 
         var seq = 2;
         foreach (var stat in Stats)
@@ -438,16 +480,27 @@
         var plotBottom = chartHeight - 40;
         const double plotTop = 22;
         var plotHeight = plotBottom - plotTop;
+        var activeSeries = Series.Where(s => s.Points.Count > 0).ToList();
+        var seriesCount = Math.Max(1, activeSeries.Count);
 
-        foreach (var series in Series.Where(s => s.Points.Count > 0))
+        for (var s = 0; s < activeSeries.Count; s++)
         {
+            var series = activeSeries[s];
             var count = series.Points.Count;
             var points = new List<DrawnPoint>();
+            var bars = new List<DrawnBar>();
             for (var i = 0; i < count; i++)
             {
-                var x = count == 1 ? leftPad + plotWidth / 2 : leftPad + i * (plotWidth / (count - 1));
+                var centerX = count == 1 ? leftPad + plotWidth / 2 : leftPad + i * (plotWidth / (count - 1));
                 var y = plotBottom - ((series.Points[i].Value - min) / (max - min) * plotHeight);
-                points.Add(new DrawnPoint(i, x, y, series.Points[i].IsOutOfRange));
+                points.Add(new DrawnPoint(i, centerX, y, series.Points[i].IsOutOfRange));
+
+                var slot = count == 1 ? plotWidth * 0.36 : plotWidth / count;
+                var groupWidth = Math.Min(slot * 0.72, Math.Max(34, plotWidth / 18));
+                var barW = Math.Max(3.5, groupWidth / seriesCount);
+                var x = centerX - groupWidth / 2 + s * barW;
+                var height = Math.Max(2, plotBottom - y);
+                bars.Add(new DrawnBar(i, x, y, barW - 1.1, height, series.Points[i].IsOutOfRange));
             }
 
             string? area = null;
@@ -457,14 +510,151 @@
                 area = $"M {points[0].X:0.##} {plotBottom} L {line.Replace(" ", " L ")} L {points[^1].X:0.##} {plotBottom} Z";
             }
 
-            yield return new DrawnSeries(series.Color, area, points);
+            yield return new DrawnSeries(series.Color, area, points, bars);
         }
+    }
+
+    private string PrintButtonLabel =>
+        Title.Contains("sugar", StringComparison.OrdinalIgnoreCase)
+            ? "Print blood sugar monthly trend"
+            : "Print blood pressure monthly trend";
+
+    private string PrintDocTitle =>
+        Title.Contains("sugar", StringComparison.OrdinalIgnoreCase)
+            ? "Blood Sugar — Monthly Trend"
+            : "Blood Pressure — Monthly Trend";
+
+    private async Task PrintAsync()
+    {
+        _module ??= await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./Components/Widgets/TrendChart.razor.js");
+        var print = await JS.InvokeAsync<IJSObjectReference>("import", "./js/cardPrint.js");
+
+        var stats = Stats.Select(s => new
+        {
+            label = s.Label,
+            value = s.Value,
+            subValue = s.SubValue,
+            outOfRange = s.IsOutOfRange
+        }).ToList();
+
+        var isBp = Series.Count > 1;
+        var rows = new List<object>();
+        for (var i = 0; i < PointCount; i++)
+        {
+            var when = i < PrimaryPoints.Count ? PrimaryPoints[i].RecordedAt : default;
+            var date = when == default
+                ? (i < PrimaryPoints.Count ? PrimaryPoints[i].Label : "")
+                : when.ToString("MMM d, yyyy");
+            var time = when == default ? "—" : when.ToString("h:mm tt");
+
+            if (isBp)
+            {
+                var sys = Series[0].Points.ElementAtOrDefault(i);
+                var dia = Series.Count > 1 ? Series[1].Points.ElementAtOrDefault(i) : default;
+                var tag = VitalStatus.ForBloodPressure((int)Math.Round(sys.Value), (int)Math.Round(dia.Value));
+                rows.Add(new
+                {
+                    cells = new[]
+                    {
+                        date,
+                        time,
+                        sys.Value.ToString("0"),
+                        dia.Value.ToString("0"),
+                        tag.Label
+                    },
+                    highlight = tag.CssClass == "status-danger"
+                });
+            }
+            else
+            {
+                var point = Series[0].Points[i];
+                var tag = SugarStatusFromPoint(point);
+                var kind = SugarKindFromDetail(point.Detail);
+                rows.Add(new
+                {
+                    cells = new[]
+                    {
+                        date,
+                        time,
+                        $"{point.Value:0} mg/dL",
+                        kind,
+                        tag.Label
+                    },
+                    highlight = tag.CssClass == "status-danger"
+                });
+            }
+        }
+
+        var table = new
+        {
+            heading = $"Readings · {MonthStart:MMMM yyyy}",
+            columns = isBp
+                ? new[] { "Date", "Time", "Systolic", "Diastolic", "Status" }
+                : new[] { "Date", "Time", "Reading", "Kind", "Status" },
+            rows,
+            emptyMessage = $"No readings in {MonthStart:MMMM yyyy}."
+        };
+
+        var legend = Series
+            .Where(s => s.Points.Count > 0)
+            .Select(s => new { name = s.Name, color = s.Color })
+            .ToList();
+
+        var card = _host;
+        await print.InvokeVoidAsync("printCard", card, new
+        {
+            title = PrintDocTitle,
+            subtitle = Subtitle,
+            patientName = PatientName,
+            dateOfBirth = PatientDateOfBirth,
+            periodCaption = "Month",
+            periodLabel = MonthStart.ToString("MMMM yyyy"),
+            stats,
+            tables = new[] { table },
+            includeChart = HasData,
+            chartCaption = "Monthly trend",
+            legend
+        });
+        await print.DisposeAsync();
+    }
+
+    private static StatusTag SugarStatusFromPoint(ChartPoint point)
+    {
+        var kindText = SugarKindFromDetail(point.Detail);
+        if (Enum.TryParse<SugarKind>(kindText, out var kind))
+            return VitalStatus.ForSugar((decimal)point.Value, kind);
+        return point.IsOutOfRange
+            ? new StatusTag("Out of range", "status-danger")
+            : new StatusTag("In range", "status-ok");
+    }
+
+    private static string SugarKindFromDetail(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail) || !detail.Contains(" · ", StringComparison.Ordinal))
+            return "";
+        return detail.Split(" · ").Last().Trim();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null)
-            await _module.DisposeAsync();
+        try
+        {
+            if (_module is not null)
+            {
+                if (_observing)
+                    await _module.InvokeVoidAsync("disposeHost", _host);
+                await _module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        finally
+        {
+            _observing = false;
+            _self?.Dispose();
+        }
     }
 
     public readonly record struct ChartPoint(
@@ -481,6 +671,8 @@
         public List<ChartPoint> Points { get; set; } = [];
     }
 
+    private enum DisplayMode { Line, Bar }
     private sealed record DrawnPoint(int Index, double X, double Y, bool IsOutOfRange);
-    private sealed record DrawnSeries(string Color, string? Area, List<DrawnPoint> Points);
+    private sealed record DrawnBar(int Index, double X, double Y, double Width, double Height, bool IsOutOfRange);
+    private sealed record DrawnSeries(string Color, string? Area, List<DrawnPoint> Points, List<DrawnBar> Bars);
 }

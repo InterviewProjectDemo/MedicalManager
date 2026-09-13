@@ -14,7 +14,7 @@
         <div>
             <p class="eyebrow">Schedule</p>
             <h1>Appointments</h1>
-            <p class="muted">Add or update visits here. The dashboard widget only lists upcoming appointments.</p>
+            <p class="muted">Add or update visits here. Past visits that were not marked Completed or Cancelled show as Missed.</p>
         </div>
         <a class="btn btn-purple" href="@Link("appointments/edit")">Add appointment</a>
     </div>
@@ -33,13 +33,8 @@
             <tbody>
                 @foreach (var item in items)
                 {
-                    var css = item.Status switch
-                    {
-                        AppointmentStatus.Scheduled => "status-ok",
-                        AppointmentStatus.Cancelled => "status-danger",
-                        _ => "status-muted"
-                    };
-                    <tr>
+                    var css = AppointmentRules.StatusCss(item.Status);
+                    <tr class="@(item.Status == AppointmentStatus.Missed ? "appt-row-missed" : null)">
                         <td>
                             @item.StartsAt.ToString("g")
                             @if (item.EndsAt is DateTime ends)

@@ -20,6 +20,9 @@ public class Medication
     [Required, MaxLength(80)]
     public string Frequency { get; set; } = "Once daily";
 
+    [MaxLength(160)]
+    public string? Purpose { get; set; }
+
     [MaxLength(400)]
     public string? Notes { get; set; }
 
