@@ -1,0 +1,83 @@
+services:
+  db:
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
+    container_name: medicalmanager-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-medical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-medicalmanager}
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/certs/server.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - wal_compression=on
+      - -c
+      - checkpoint_completion_target=0.9
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgcerts:/var/lib/postgresql/certs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medical} -d ${POSTGRES_DB:-medicalmanager}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - medical
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: medicalmanager-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      MEDICALMANAGER_DATA_DIR: /data
+      MEDICALMANAGER_PHI_KEY: ${MEDICALMANAGER_PHI_KEY}
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-medicalmanager};Username=${POSTGRES_USER:-medical};Password=${POSTGRES_PASSWORD};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30
+    ports:
+      - "8080:8080"
+    volumes:
+      - appdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/encryption || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - medical
+
+volumes:
+  pgdata:
+  pgcerts:
+  appdata:
+
+networks:
+  medical:
+    driver: bridge

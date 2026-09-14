@@ -18,12 +18,12 @@ public class ProfilePhotoService
         "image/jpeg", "image/png", "image/webp"
     };
 
-    private readonly ApplicationDbContext _db;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly AuthenticationStateProvider _auth;
 
-    public ProfilePhotoService(ApplicationDbContext db, AuthenticationStateProvider auth)
+    public ProfilePhotoService(IDbContextFactory<ApplicationDbContext> dbFactory, AuthenticationStateProvider auth)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _auth = auth;
     }
 
@@ -37,7 +37,8 @@ public class ProfilePhotoService
 
     public async Task<string?> GetPhotoUrlForUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var updatedAt = await _db.PatientProfiles
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var updatedAt = await db.PatientProfiles
             .AsNoTracking()
             .Where(p => p.UserId == userId && p.ProfilePhotoData != null)
             .Select(p => p.ProfilePhotoUpdatedAt)
@@ -50,7 +51,8 @@ public class ProfilePhotoService
         string userId,
         CancellationToken cancellationToken = default)
     {
-        var profile = await _db.PatientProfiles
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await db.PatientProfiles
             .AsNoTracking()
             .Where(p => p.UserId == userId && p.ProfilePhotoData != null)
             .Select(p => new { p.ProfilePhotoData, p.ProfilePhotoContentType })
@@ -92,7 +94,8 @@ public class ProfilePhotoService
         if (normalizedContentType is null)
             return (false, "Only JPG, PNG, and WebP images are allowed.", null);
 
-        var profile = await GetOrCreateProfileAsync(userId!, cancellationToken);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await GetOrCreateProfileAsync(db, userId!, cancellationToken);
 
         await using var memory = new MemoryStream();
         await stream.CopyToAsync(memory, cancellationToken);
@@ -105,7 +108,7 @@ public class ProfilePhotoService
         profile.ProfilePhotoContentType = normalizedContentType;
         profile.ProfilePhotoUpdatedAt = DateTime.UtcNow;
 
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
 
         return (true, null, GetPhotoUrl(userId!, profile.ProfilePhotoUpdatedAt));
     }
@@ -116,14 +119,15 @@ public class ProfilePhotoService
         if (userId is null)
             return;
 
-        var profile = await _db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
         if (profile is null)
             return;
 
         profile.ProfilePhotoData = null;
         profile.ProfilePhotoContentType = null;
         profile.ProfilePhotoUpdatedAt = null;
-        await _db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<(string? UserId, string? Error)> ResolveTargetUserIdAsync(string? targetUserId)
@@ -150,15 +154,16 @@ public class ProfilePhotoService
         return (resolved, null);
     }
 
-    private async Task<PatientProfile> GetOrCreateProfileAsync(string userId, CancellationToken cancellationToken)
+    private static async Task<PatientProfile> GetOrCreateProfileAsync(
+        ApplicationDbContext db, string userId, CancellationToken cancellationToken)
     {
-        var profile = await _db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
         if (profile is not null)
             return profile;
 
         profile = new PatientProfile { UserId = userId };
-        _db.PatientProfiles.Add(profile);
-        await _db.SaveChangesAsync(cancellationToken);
+        db.PatientProfiles.Add(profile);
+        await db.SaveChangesAsync(cancellationToken);
         return profile;
     }
 

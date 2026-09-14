@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using MedicalManager.Components;
 using MedicalManager.Components.Account;
 using MedicalManager.Data;
+using MedicalManager.Data.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,21 +47,42 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddSingleton<IPhiProtector, PhiProtector>();
+
 var configuredConnection = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-var sqliteBuilder = new SqliteConnectionStringBuilder(configuredConnection);
-if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MEDICALMANAGER_DATA_DIR")))
+var usePostgreSql = configuredConnection.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+
+Action<DbContextOptionsBuilder> configureDb = options =>
 {
-    sqliteBuilder.DataSource = Path.Combine(dataDirectory, "app.db");
-}
-else if (!Path.IsPathRooted(sqliteBuilder.DataSource))
-{
-    sqliteBuilder.DataSource = Path.Combine(builder.Environment.ContentRootPath, sqliteBuilder.DataSource);
-}
-Directory.CreateDirectory(Path.GetDirectoryName(sqliteBuilder.DataSource)!);
-var connectionString = sqliteBuilder.ConnectionString;
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(connectionString));
+    if (usePostgreSql)
+    {
+        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+        options.UseNpgsql(configuredConnection, npgsql =>
+        {
+            npgsql.EnableRetryOnFailure(5);
+            npgsql.CommandTimeout(30);
+        });
+    }
+    else
+    {
+        var sqliteBuilder = new SqliteConnectionStringBuilder(configuredConnection);
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MEDICALMANAGER_DATA_DIR")))
+        {
+            sqliteBuilder.DataSource = Path.Combine(dataDirectory, "app.db");
+        }
+        else if (!Path.IsPathRooted(sqliteBuilder.DataSource))
+        {
+            sqliteBuilder.DataSource = Path.Combine(builder.Environment.ContentRootPath, sqliteBuilder.DataSource);
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(sqliteBuilder.DataSource)!);
+        options.UseSqlite(sqliteBuilder.ConnectionString);
+    }
+};
+
+// Factory for Blazor Server page/layout queries that run in parallel on one circuit.
+builder.Services.AddDbContextFactory<ApplicationDbContext>(configureDb);
+builder.Services.AddDbContext<ApplicationDbContext>(configureDb);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -94,6 +116,8 @@ builder.Services.AddScoped<ProfilePhotoService>();
 var app = builder.Build();
 app.UseForwardedHeaders();
 
+app.Services.GetRequiredService<IPhiProtector>().SelfTest();
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -101,9 +125,9 @@ using (var scope = app.Services.CreateScope())
     {
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsLock\"");
     }
-    catch (Microsoft.Data.Sqlite.SqliteException)
+    catch (Exception)
     {
-        // Lock table may not exist yet on first run.
+        // Lock table may not exist yet on first run (SQLite or PostgreSQL).
     }
 }
 
@@ -117,10 +141,20 @@ else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
-    app.UseHttpsRedirection();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.MapGet("/health", () => Results.Ok("ok"));
+app.MapGet("/health/encryption", (IPhiProtector protector) =>
+{
+    protector.SelfTest();
+    return Results.Ok(new
+    {
+        status = "ok",
+        algorithm = "AES-256-GCM",
+        fieldEncryption = true,
+        databaseTls = usePostgreSql
+    });
+});
 
 app.UseAntiforgery();
 

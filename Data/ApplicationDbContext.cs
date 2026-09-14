@@ -1,11 +1,18 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using MedicalManager.Data.Security;
 
 namespace MedicalManager.Data;
 
-public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-    : IdentityDbContext<ApplicationUser>(options)
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
+    private readonly IPhiProtector _phi;
+
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IPhiProtector phi)
+        : base(options)
+    {
+        _phi = phi;
+    }
     public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
     public DbSet<BloodPressureReading> BloodPressureReadings => Set<BloodPressureReading>();
     public DbSet<SugarReading> SugarReadings => Set<SugarReading>();
@@ -105,5 +112,52 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<LabReport>().HasIndex(x => new { x.UserId, x.ReportDate });
         builder.Entity<LabResult>().HasIndex(x => new { x.LabReportId, x.TestCode }).IsUnique();
+
+        ApplyPhiEncryption(builder);
+    }
+
+    private void ApplyPhiEncryption(ModelBuilder builder)
+    {
+        var required = PhiValueConverters.RequiredString(_phi);
+        var optional = PhiValueConverters.OptionalString(_phi);
+        var bytes = PhiValueConverters.OptionalBytes(_phi);
+        var date = PhiValueConverters.OptionalDate(_phi);
+
+        builder.Entity<ApplicationUser>().Property(x => x.FullName)
+            .HasConversion(required)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.PhoneNumber)
+            .HasConversion(optional)
+            .HasColumnType("text");
+
+        builder.Entity<PatientProfile>().Property(x => x.Sex).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.Phone).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
+
+        builder.Entity<BloodPressureReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+
+        builder.Entity<Medication>().Property(x => x.Name).HasConversion(required).HasColumnType("text");
+        builder.Entity<Medication>().Property(x => x.Dosage).HasConversion(required).HasColumnType("text");
+        builder.Entity<Medication>().Property(x => x.Frequency).HasConversion(required).HasColumnType("text");
+        builder.Entity<Medication>().Property(x => x.Purpose).HasConversion(optional).HasColumnType("text");
+        builder.Entity<Medication>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<Medication>().Property(x => x.PrescribedBy).HasConversion(required).HasColumnType("text");
+
+        builder.Entity<Appointment>().Property(x => x.Title).HasConversion(required).HasColumnType("text");
+        builder.Entity<Appointment>().Property(x => x.ProviderName).HasConversion(required).HasColumnType("text");
+        builder.Entity<Appointment>().Property(x => x.Location).HasConversion(required).HasColumnType("text");
+        builder.Entity<Appointment>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+
+        builder.Entity<Doctor>().Property(x => x.Name).HasConversion(required).HasColumnType("text");
+        builder.Entity<Doctor>().Property(x => x.Specialty).HasConversion(required).HasColumnType("text");
+        builder.Entity<Doctor>().Property(x => x.PhoneNumber).HasConversion(required).HasColumnType("text");
+
+        builder.Entity<LabReport>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<MedicationAdministration>().Property(x => x.RecordedByName)
+            .HasConversion(optional)
+            .HasColumnType("text");
     }
 }

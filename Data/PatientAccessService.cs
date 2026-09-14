@@ -6,7 +6,7 @@ namespace MedicalManager.Data;
 
 public sealed class PatientAccessService(
     UserManager<ApplicationUser> users,
-    ApplicationDbContext db)
+    IDbContextFactory<ApplicationDbContext> dbFactory)
 {
     public async Task<PatientScope> ResolveAsync(ClaimsPrincipal principal, string? patientUserId)
     {
@@ -29,6 +29,7 @@ public sealed class PatientAccessService(
             return new PatientScope(current, Patient: null, IsDoctor: true, IsDoctorViewingPatient: false, NeedsPatientSelection: true);
         }
 
+        await using var db = await dbFactory.CreateDbContextAsync();
         var target = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == patientUserId)
             ?? throw new InvalidOperationException("Patient not found.");
 
@@ -46,6 +47,7 @@ public sealed class PatientAccessService(
 
     public async Task EnsureProfileAsync(ApplicationUser user)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         if (await db.PatientProfiles.AnyAsync(p => p.UserId == user.Id))
         {
             return;
@@ -55,8 +57,11 @@ public sealed class PatientAccessService(
         await db.SaveChangesAsync();
     }
 
-    public async Task<PatientProfile?> GetProfileAsync(string userId) =>
-        await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
+    public async Task<PatientProfile?> GetProfileAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
+    }
 }
 
 public sealed record PatientScope(

@@ -2,10 +2,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MedicalManager.Data;
 
-public sealed class LabReportService(ApplicationDbContext db)
+public sealed class LabReportService(IDbContextFactory<ApplicationDbContext> dbFactory)
 {
     public async Task<IReadOnlyList<LabMonthGroup>> GetReportsGroupedByMonthAsync(string userId)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var reports = await db.LabReports
             .AsNoTracking()
             .Include(x => x.Results)
@@ -24,13 +25,15 @@ public sealed class LabReportService(ApplicationDbContext db)
             .ToList();
     }
 
-    public Task<LabReport?> GetReportByIdAsync(int id, string userId) =>
-        db.LabReports
-            .Include(x => x.Results)
-            .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    public async Task<LabReport?> GetReportByIdAsync(int id, string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await GetReportByIdAsync(db, id, userId);
+    }
 
     public async Task SaveReportAsync(LabReport report, IReadOnlyDictionary<string, decimal?> values)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         if (report.Id == 0)
         {
             report.CreatedAt = DateTime.UtcNow;
@@ -66,11 +69,17 @@ public sealed class LabReportService(ApplicationDbContext db)
 
     public async Task DeleteReportAsync(int id, string userId)
     {
-        var report = await GetReportByIdAsync(id, userId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var report = await GetReportByIdAsync(db, id, userId);
         if (report is null) return;
         db.LabReports.Remove(report);
         await db.SaveChangesAsync();
     }
+
+    private static Task<LabReport?> GetReportByIdAsync(ApplicationDbContext db, int id, string userId) =>
+        db.LabReports
+            .Include(x => x.Results)
+            .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
 }
 
 public sealed record LabMonthGroup(DateOnly Month, string Label, IReadOnlyList<LabReport> Reports);

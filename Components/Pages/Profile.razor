@@ -2,9 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Security.Claims
-@using Microsoft.EntityFrameworkCore
 
-@inject ApplicationDbContext Db
 @inject AuthenticationStateProvider Auth
 @inject UserManager<ApplicationUser> UserManager
 @inject PatientAccessService Access

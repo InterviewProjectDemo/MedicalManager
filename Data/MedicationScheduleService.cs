@@ -2,12 +2,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MedicalManager.Data;
 
-public sealed class MedicationScheduleService(ApplicationDbContext db)
+public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbContext> dbFactory)
 {
     public async Task<DailyMedicationSchedule> GetDailyScheduleAsync(string userId, DateOnly date)
     {
-        await EnsureAdministrationRecordsAsync(userId, date);
-        await ApplyAutoMissedAsync(userId, date);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await EnsureAdministrationRecordsAsync(db, userId, date);
+        await ApplyAutoMissedAsync(db, userId, date);
 
         var schedules = await db.MedicationSchedules
             .Include(x => x.Medication)
@@ -45,6 +46,7 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
 
     public async Task<MedicationOverview> GetMedicationOverviewAsync(string userId)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.Medications
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.IsActive)
@@ -68,6 +70,7 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
         DateTime recordedAt,
         string? updatedByUserId)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var record = await db.MedicationAdministrations
             .FirstOrDefaultAsync(x => x.Id == administrationId && x.UserId == userId);
         if (record is null) return;
@@ -81,6 +84,7 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
 
     public async Task EnsureSchedulesForMedicationAsync(int medicationId, IEnumerable<MedicationTimeSlot> slots)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var existing = await db.MedicationSchedules
             .Where(x => x.MedicationId == medicationId)
             .ToListAsync();
@@ -98,7 +102,8 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
         await db.SaveChangesAsync();
     }
 
-    private async Task EnsureAdministrationRecordsAsync(string userId, DateOnly date)
+    private static async Task EnsureAdministrationRecordsAsync(
+        ApplicationDbContext db, string userId, DateOnly date)
     {
         var schedules = await db.MedicationSchedules
             .Include(x => x.Medication)
@@ -133,7 +138,7 @@ public sealed class MedicationScheduleService(ApplicationDbContext db)
         if (added) await db.SaveChangesAsync();
     }
 
-    private async Task ApplyAutoMissedAsync(string userId, DateOnly date)
+    private static async Task ApplyAutoMissedAsync(ApplicationDbContext db, string userId, DateOnly date)
     {
         var now = DateTime.Now;
         if (date > DateOnly.FromDateTime(now)) return;

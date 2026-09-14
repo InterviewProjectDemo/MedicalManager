@@ -19,14 +19,21 @@ public static class IdentitySeeder
         {
             await db.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsLock\"");
         }
-        catch (SqliteException)
+        catch (Exception)
         {
             // Lock table may not exist yet on first run.
         }
 
-        await db.Database.MigrateAsync();
-        await EnsureProfilePhotoColumnsAsync(db);
-        await EnsureMedicationPurposeColumnAsync(db);
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.MigrateAsync();
+            await EnsureProfilePhotoColumnsAsync(db);
+            await EnsureMedicationPurposeColumnAsync(db);
+        }
+        else
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
         foreach (var role in AppRoles.All)
@@ -210,6 +217,7 @@ public static class IdentitySeeder
                     Status = AppointmentStatus.Scheduled,
                     Notes = "Fasting glucose and lipid panel."
                 });
+            await db.SaveChangesAsync();
         }
 
         await EnsureDemoMedicationSchedulesAsync(db, patient.Id);
@@ -232,7 +240,11 @@ public static class IdentitySeeder
 
     private static async Task EnsureDemoPastScheduledAppointmentAsync(ApplicationDbContext db, string patientId)
     {
-        if (await db.Appointments.AnyAsync(x => x.UserId == patientId && x.Title == DemoPastScheduledTitle))
+        var titles = await db.Appointments
+            .Where(x => x.UserId == patientId)
+            .Select(x => x.Title)
+            .ToListAsync();
+        if (titles.Contains(DemoPastScheduledTitle, StringComparer.Ordinal))
             return;
 
         var start = DemoPastVisitStart(DateTime.Today);
@@ -349,7 +361,8 @@ public static class IdentitySeeder
 
     private static async Task EnsureDemoMedicationSchedulesAsync(ApplicationDbContext db, string patientId)
     {
-        if (await db.MedicationSchedules.AnyAsync()) return;
+        if (await db.MedicationSchedules.AnyAsync() || db.MedicationSchedules.Local.Any())
+            return;
 
         var meds = await db.Medications
             .Where(x => x.UserId == patientId && x.IsActive)
@@ -477,10 +490,12 @@ public static class IdentitySeeder
             ["Atorvastatin"] = "Cholesterol"
         };
 
-        var names = purposes.Keys.ToList();
-        var meds = await db.Medications
-            .Where(x => x.UserId == patientId && names.Contains(x.Name))
-            .ToListAsync();
+        var names = purposes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var meds = (await db.Medications
+                .Where(x => x.UserId == patientId)
+                .ToListAsync())
+            .Where(x => names.Contains(x.Name))
+            .ToList();
 
         var changed = false;
         foreach (var med in meds)

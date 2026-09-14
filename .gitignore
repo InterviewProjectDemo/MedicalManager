@@ -23,6 +23,9 @@
 **/[Pp]ackages/*
 !**/[Pp]ackages/build/
 
+# Docker secrets
+.env
+
 # Local SQLite (recreated on startup)
 *.db
 *.db-shm

@@ -4,6 +4,19 @@ Blazor Web App (.NET 10, interactive server) for patients and doctors to track b
 
 ## How to run
 
+### Docker (app + PostgreSQL)
+
+Two containers: Blazor app and a TLS-only PostgreSQL database. Full Windows steps: [DOCKER.md](DOCKER.md).
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\New-DockerEnv.ps1
+docker compose up --build -d
+```
+
+Open [http://localhost:8080](http://localhost:8080). PHI fields are encrypted with AES-256-GCM in the app; the app-to-database connection requires TLS.
+
+### Local development (SQLite)
+
 From this folder:
 
 ```bash
@@ -29,7 +42,9 @@ Patients can also register a new account from **Register**. Doctor accounts are 
 ## What was built
 
 - **ASP.NET Core Identity** with roles `Patient` and `Doctor`
-- **SQLite + EF Core** for local development
+- **SQLite + EF Core** for local development; **PostgreSQL** in Docker
+- **AES-256-GCM** application encryption for names, phones, notes, photos, and other PHI
+- **TLS** between the app container and the database container
 - Clinical records linked to the Identity user, plus a `PatientProfile`
 - Color-coded medical UI (teal / calm blue, green / amber / red status badges)
 
