@@ -58,6 +58,9 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       MEDICALMANAGER_DATA_DIR: /data
       MEDICALMANAGER_PHI_KEY: ${MEDICALMANAGER_PHI_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-medicalmanager};Username=${POSTGRES_USER:-medical};Password=${POSTGRES_PASSWORD};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30
     ports:
       - "8080:8080"

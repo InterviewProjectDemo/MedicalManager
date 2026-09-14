@@ -1,0 +1,203 @@
+@page "/resource"
+@attribute [Authorize]
+@inject ResourceSearchService SearchService
+
+<PageTitle>Resource</PageTitle>
+
+<div class="page-head accent-resource">
+    <div>
+        <p class="eyebrow">One-stop information</p>
+        <h1>Resource</h1>
+        <p class="muted">Trusted links for diabetes, kidney health, and nutrition, plus a search box for any other health question.</p>
+    </div>
+</div>
+
+<div class="resource-search-card">
+    <form class="resource-search-form" @onsubmit="OnSearch" @onsubmit:preventDefault>
+        <label class="resource-search-label" for="resource-query">Ask a health question</label>
+        <div class="resource-search-row">
+            <input id="resource-query"
+                   class="form-control resource-search-input"
+                   type="search"
+                   placeholder="Example: What foods help lower blood sugar?"
+                   maxlength="500"
+                   autocomplete="off"
+                   disabled="@_searching"
+                   @bind="_query"
+                   @bind:event="oninput" />
+            <button type="submit" class="btn btn-teal resource-search-btn" disabled="@(_searching || string.IsNullOrWhiteSpace(_query))">
+                @(_searching ? "Searching…" : "Search")
+            </button>
+        </div>
+    </form>
+    <p class="muted resource-search-hint">Do not enter names, dates of birth, or other personal details. Search uses MedlinePlus and Wikipedia, then an LLM (Groq, ChatGPT, or Gemini if an API key is configured) to organize the answer. This is general education, not medical advice.</p>
+    <div class="resource-chips" aria-label="Suggested questions">
+        @foreach (var suggestion in ResourceCatalog.SuggestedQuestions)
+        {
+            <button type="button" class="resource-chip" disabled="@_searching" @onclick="() => SearchSuggestion(suggestion)">@suggestion</button>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@if (_searching)
+{
+    <div class="table-card resource-answer-card">
+        <p class="muted mb-0">Looking up trusted references and organizing an answer…</p>
+    </div>
+}
+else if (_answer is not null)
+{
+    <article class="resource-answer-card table-card">
+        <p class="eyebrow">Search results</p>
+        <h2>@_answer.Title</h2>
+        <p class="resource-provider">Organized with @_answer.ProviderName</p>
+        @if (!string.IsNullOrWhiteSpace(_answer.Summary))
+        {
+            <p class="resource-summary">@_answer.Summary</p>
+        }
+
+        @if (_answer.Sections.Count > 0)
+        {
+            <div class="resource-section-grid">
+                @foreach (var block in _answer.Sections)
+                {
+                    <div class="resource-section">
+                        <h3>@block.Heading</h3>
+                        <ul>
+                            @foreach (var bullet in block.Bullets)
+                            {
+                                <li>@bullet</li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_answer.OfficialResults.Count > 0)
+        {
+            <h3 class="resource-subhead">Library matches</h3>
+            <ul class="resource-link-list">
+                @foreach (var link in _answer.OfficialResults)
+                {
+                    <li>
+                        <a href="@link.Url" target="_blank" rel="noopener noreferrer">@link.Title</a>
+                        <span>@link.Description</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (_answer.Sources.Count > 0 && !SameLinks(_answer.Sources, _answer.OfficialResults))
+        {
+            <h3 class="resource-subhead">Sources</h3>
+            <ul class="resource-link-list">
+                @foreach (var link in _answer.Sources)
+                {
+                    <li>
+                        <a href="@link.Url" target="_blank" rel="noopener noreferrer">@link.Title</a>
+                        @if (!string.IsNullOrWhiteSpace(link.Description))
+                        {
+                            <span>@link.Description</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (_answer.RelatedTopics.Count > 0)
+        {
+            <h3 class="resource-subhead">Ask a follow-up</h3>
+            <div class="resource-chips">
+                @foreach (var topic in _answer.RelatedTopics)
+                {
+                    <button type="button" class="resource-chip" @onclick="() => SearchSuggestion(topic)">@topic</button>
+                }
+            </div>
+        }
+
+        <p class="resource-disclaimer">This information is for education only. It is not a diagnosis or a substitute for care from your doctor, pharmacist, or dietitian.</p>
+    </article>
+}
+
+<div class="resource-category-grid">
+    @foreach (var category in ResourceCatalog.Categories)
+    {
+        <div class="resource-category-card @category.AccentClass" id="@category.Id">
+            <p class="eyebrow">@category.Name</p>
+            <h2>@category.Name</h2>
+            <p class="muted">@category.Summary</p>
+            <ul class="resource-link-list">
+                @foreach (var link in category.Links)
+                {
+                    <li>
+                        <a href="@link.Url" target="_blank" rel="noopener noreferrer">@link.Title</a>
+                        <span>@link.Description</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    private string _query = "";
+    private bool _searching;
+    private string? _error;
+    private ResourceAnswer? _answer;
+
+    private async Task OnSearch()
+    {
+        await RunSearch(_query);
+    }
+
+    private async Task SearchSuggestion(string suggestion)
+    {
+        _query = suggestion;
+        await RunSearch(suggestion);
+    }
+
+    private async Task RunSearch(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question) || _searching)
+        {
+            return;
+        }
+
+        _error = null;
+        _searching = true;
+        _answer = null;
+
+        try
+        {
+            _answer = await SearchService.SearchAsync(question);
+        }
+        catch (ArgumentException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception)
+        {
+            _error = "Search is temporarily unavailable. Try again in a moment, or use the topic links below.";
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private static bool SameLinks(IReadOnlyList<ResourceLink> left, IReadOnlyList<ResourceLink> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        return left.Select(l => l.Url).SequenceEqual(right.Select(r => r.Url), StringComparer.OrdinalIgnoreCase);
+    }
+}

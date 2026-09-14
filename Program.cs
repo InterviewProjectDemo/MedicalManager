@@ -78,11 +78,17 @@ Action<DbContextOptionsBuilder> configureDb = options =>
         Directory.CreateDirectory(Path.GetDirectoryName(sqliteBuilder.DataSource)!);
         options.UseSqlite(sqliteBuilder.ConnectionString);
     }
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.ConfigureWarnings(w =>
+            w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    }
 };
 
 // Factory for Blazor Server page/layout queries that run in parallel on one circuit.
 builder.Services.AddDbContextFactory<ApplicationDbContext>(configureDb);
-builder.Services.AddDbContext<ApplicationDbContext>(configureDb);
+builder.Services.AddDbContext<ApplicationDbContext>(configureDb, optionsLifetime: ServiceLifetime.Singleton);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -110,7 +116,16 @@ builder.Services.AddHttpClient("OpenFda", client =>
     client.BaseAddress = new Uri("https://api.fda.gov/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.Configure<ResourceSearchOptions>(
+    builder.Configuration.GetSection(ResourceSearchOptions.SectionName));
+builder.Services.AddHttpClient("ResourceSearch", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("MedicalManager/1.0 (patient-education)");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json, application/xml, text/plain");
+});
 builder.Services.AddScoped<MedicationResearchService>();
+builder.Services.AddScoped<ResourceSearchService>();
 builder.Services.AddScoped<ProfilePhotoService>();
 
 var app = builder.Build();

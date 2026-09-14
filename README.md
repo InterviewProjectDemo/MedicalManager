@@ -15,6 +15,14 @@ docker compose up --build -d
 
 Open [http://localhost:8080](http://localhost:8080). PHI fields are encrypted with AES-256-GCM in the app; the app-to-database connection requires TLS.
 
+### AWS (ECS Fargate + RDS)
+
+See [aws/README.md](aws/README.md). After `aws configure`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\Deploy-Aws.ps1
+```
+
 ### Local development (SQLite)
 
 From this folder:
