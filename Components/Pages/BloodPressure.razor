@@ -23,15 +23,133 @@
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>When</th>
-                    <th>Reading</th>
-                    <th>Pulse</th>
-                    <th>Status</th>
+                    <th aria-sort="@AriaSort(BpSort.When)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.When)">
+                            When <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.When)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(BpSort.Reading)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Reading)">
+                            Reading <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Reading)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(BpSort.Pulse)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Pulse)">
+                            Pulse <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Pulse)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(BpSort.Status)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Status)">
+                            Status <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Status)</span>
+                        </button>
+                    </th>
                     <th></th>
+                </tr>
+                <tr class="column-filter-row" @key="_filterVersion">
+                    <th>
+                        <div class="column-filter-dates">
+                            <label>
+                                <span class="visually-hidden">From date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_whenFrom)"
+                                       @onchange="e => _whenFrom = ParseFilterDate(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">To date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_whenTo)"
+                                       @onchange="e => _whenTo = ParseFilterDate(e.Value)" />
+                            </label>
+                        </div>
+                    </th>
+                    <th>
+                        <div class="column-filter-range">
+                            <label>
+                                <span class="visually-hidden">Minimum systolic</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Sys min"
+                                       min="0"
+                                       value="@FormatInt(_sysMin)"
+                                       @oninput="e => _sysMin = ParseFilterInt(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">Maximum systolic</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Sys max"
+                                       min="0"
+                                       value="@FormatInt(_sysMax)"
+                                       @oninput="e => _sysMax = ParseFilterInt(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">Minimum diastolic</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Dia min"
+                                       min="0"
+                                       value="@FormatInt(_diaMin)"
+                                       @oninput="e => _diaMin = ParseFilterInt(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">Maximum diastolic</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Dia max"
+                                       min="0"
+                                       value="@FormatInt(_diaMax)"
+                                       @oninput="e => _diaMax = ParseFilterInt(e.Value)" />
+                            </label>
+                        </div>
+                    </th>
+                    <th>
+                        <div class="column-filter-range">
+                            <label>
+                                <span class="visually-hidden">Minimum pulse</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Min"
+                                       min="0"
+                                       value="@FormatInt(_pulseMin)"
+                                       @oninput="e => _pulseMin = ParseFilterInt(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">Maximum pulse</span>
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="Max"
+                                       min="0"
+                                       value="@FormatInt(_pulseMax)"
+                                       @oninput="e => _pulseMax = ParseFilterInt(e.Value)" />
+                            </label>
+                        </div>
+                    </th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by status</span>
+                            <select class="form-select form-select-sm"
+                                    value="@_statusFilter"
+                                    @onchange="OnStatusFilterChanged">
+                                <option value="">All statuses</option>
+                                @foreach (var status in StatusOptions)
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </label>
+                    </th>
+                    <th>
+                        @if (HasFilters)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                        }
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var item in items)
+                @foreach (var item in VisibleItems)
                 {
                     var tag = VitalStatus.ForBloodPressure(item.Systolic, item.Diastolic);
                     <tr>
@@ -50,6 +168,10 @@
         {
             <p class="muted p-3">No blood pressure readings yet.</p>
         }
+        else if (VisibleItems.Count == 0)
+        {
+            <p class="muted p-3">No readings match the current filters.</p>
+        }
     </div>
 }
 
@@ -57,6 +179,192 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private List<BloodPressureReading> items = [];
+    private BpSort _sort = BpSort.When;
+    private bool _sortAsc;
+
+    private DateOnly? _whenFrom;
+    private DateOnly? _whenTo;
+    private int? _sysMin;
+    private int? _sysMax;
+    private int? _diaMin;
+    private int? _diaMax;
+    private int? _pulseMin;
+    private int? _pulseMax;
+    private string _statusFilter = "";
+
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private static readonly string[] StatusOptions = ["Normal", "Watch", "Elevated", "High", "Crisis"];
+
+    private enum BpSort
+    {
+        When,
+        Reading,
+        Pulse,
+        Status
+    }
+
+    private bool HasFilters =>
+        _whenFrom is not null
+        || _whenTo is not null
+        || _sysMin is not null
+        || _sysMax is not null
+        || _diaMin is not null
+        || _diaMax is not null
+        || _pulseMin is not null
+        || _pulseMax is not null
+        || !string.IsNullOrEmpty(_statusFilter);
+
+    private List<BloodPressureReading> VisibleItems => Sort(Filter(items)).ToList();
+
+    private IEnumerable<BloodPressureReading> Filter(IEnumerable<BloodPressureReading> source)
+    {
+        var query = source;
+        if (_whenFrom is DateOnly from)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) >= from);
+        }
+
+        if (_whenTo is DateOnly to)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) <= to);
+        }
+
+        if (_sysMin is int sysMin)
+        {
+            query = query.Where(x => x.Systolic >= sysMin);
+        }
+
+        if (_sysMax is int sysMax)
+        {
+            query = query.Where(x => x.Systolic <= sysMax);
+        }
+
+        if (_diaMin is int diaMin)
+        {
+            query = query.Where(x => x.Diastolic >= diaMin);
+        }
+
+        if (_diaMax is int diaMax)
+        {
+            query = query.Where(x => x.Diastolic <= diaMax);
+        }
+
+        if (_pulseMin is int pulseMin)
+        {
+            query = query.Where(x => x.Pulse is int pulse && pulse >= pulseMin);
+        }
+
+        if (_pulseMax is int pulseMax)
+        {
+            query = query.Where(x => x.Pulse is int pulse && pulse <= pulseMax);
+        }
+
+        if (!string.IsNullOrEmpty(_statusFilter))
+        {
+            query = query.Where(x => VitalStatus.ForBloodPressure(x.Systolic, x.Diastolic).Label == _statusFilter);
+        }
+
+        return query;
+    }
+
+    private IEnumerable<BloodPressureReading> Sort(IEnumerable<BloodPressureReading> source) => _sort switch
+    {
+        BpSort.Reading => _sortAsc
+            ? source.OrderBy(x => x.Systolic).ThenBy(x => x.Diastolic)
+            : source.OrderByDescending(x => x.Systolic).ThenByDescending(x => x.Diastolic),
+        BpSort.Pulse => _sortAsc
+            ? source.OrderBy(x => x.Pulse ?? int.MaxValue)
+            : source.OrderByDescending(x => x.Pulse ?? int.MinValue),
+        BpSort.Status => _sortAsc
+            ? source.OrderBy(StatusRank)
+            : source.OrderByDescending(StatusRank),
+        _ => _sortAsc
+            ? source.OrderBy(x => x.RecordedAt)
+            : source.OrderByDescending(x => x.RecordedAt)
+    };
+
+    private void SortBy(BpSort column)
+    {
+        if (_sort == column)
+        {
+            _sortAsc = !_sortAsc;
+            return;
+        }
+
+        _sort = column;
+        _sortAsc = column != BpSort.When;
+    }
+
+    private void ClearFilters()
+    {
+        _whenFrom = null;
+        _whenTo = null;
+        _sysMin = null;
+        _sysMax = null;
+        _diaMin = null;
+        _diaMax = null;
+        _pulseMin = null;
+        _pulseMax = null;
+        _statusFilter = "";
+        _filterVersion++;
+    }
+
+    private int? ParseFilterInt(object? value) =>
+        _filterVersion != _appliedFilterVersion ? null : ParseInt(value);
+
+    private DateOnly? ParseFilterDate(object? value) =>
+        _filterVersion != _appliedFilterVersion ? null : ParseDate(value);
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _statusFilter = e.Value?.ToString() ?? "";
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+    }
+
+    private string AriaSort(BpSort column) =>
+        _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+
+    private string SortMark(BpSort column)
+    {
+        if (_sort != column)
+        {
+            return "↕";
+        }
+
+        return _sortAsc ? "↑" : "↓";
+    }
+
+    private static int StatusRank(BloodPressureReading item)
+    {
+        var tag = VitalStatus.ForBloodPressure(item.Systolic, item.Diastolic);
+        return tag.Label switch
+        {
+            "Watch" => 1,
+            "Elevated" => 2,
+            "High" => 3,
+            "Crisis" => 4,
+            _ => 0
+        };
+    }
+
+    private static string FormatDate(DateOnly? date) =>
+        date?.ToString("yyyy-MM-dd") ?? "";
+
+    private static string FormatInt(int? value) =>
+        value?.ToString() ?? "";
+
+    private static DateOnly? ParseDate(object? value) =>
+        DateOnly.TryParse(value?.ToString(), out var date) ? date : null;
+
+    private static int? ParseInt(object? value) =>
+        int.TryParse(value?.ToString(), out var number) ? number : null;
 
     protected override async Task OnParametersSetAsync()
     {
