@@ -23,15 +23,91 @@
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>When</th>
-                    <th>Visit</th>
-                    <th>With whom</th>
-                    <th>Status</th>
+                    <th aria-sort="@AriaSort(ApptSort.When)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(ApptSort.When)">
+                            When <span class="sort-indicator" aria-hidden="true">@SortMark(ApptSort.When)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(ApptSort.Visit)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(ApptSort.Visit)">
+                            Visit <span class="sort-indicator" aria-hidden="true">@SortMark(ApptSort.Visit)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(ApptSort.WithWhom)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(ApptSort.WithWhom)">
+                            With whom <span class="sort-indicator" aria-hidden="true">@SortMark(ApptSort.WithWhom)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(ApptSort.Status)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(ApptSort.Status)">
+                            Status <span class="sort-indicator" aria-hidden="true">@SortMark(ApptSort.Status)</span>
+                        </button>
+                    </th>
                     <th></th>
+                </tr>
+                <tr class="column-filter-row" @key="_filterVersion">
+                    <th>
+                        <div class="column-filter-dates">
+                            <label>
+                                <span class="visually-hidden">From date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_whenFrom)"
+                                       @onchange="e => _whenFrom = ParseFilterDate(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">To date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_whenTo)"
+                                       @onchange="e => _whenTo = ParseFilterDate(e.Value)" />
+                            </label>
+                        </div>
+                    </th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by visit</span>
+                            <input type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search visit"
+                                   value="@_visitFilter"
+                                   @oninput="OnVisitFilterInput" />
+                        </label>
+                    </th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by provider</span>
+                            <input type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search name"
+                                   value="@_withWhomFilter"
+                                   @oninput="OnWithWhomFilterInput" />
+                        </label>
+                    </th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by status</span>
+                            <select class="form-select form-select-sm"
+                                    value="@_statusFilter"
+                                    @onchange="OnStatusFilterChanged">
+                                <option value="">All statuses</option>
+                                @foreach (var status in Enum.GetValues<AppointmentStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </label>
+                    </th>
+                    <th>
+                        @if (HasFilters)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                        }
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var item in items)
+                @foreach (var item in VisibleItems)
                 {
                     var css = AppointmentRules.StatusCss(item.Status);
                     <tr class="@(item.Status == AppointmentStatus.Missed ? "appt-row-missed" : null)">
@@ -59,6 +135,10 @@
         {
             <p class="muted p-3">No appointments yet.</p>
         }
+        else if (VisibleItems.Count == 0)
+        {
+            <p class="muted p-3">No appointments match the current filters.</p>
+        }
     </div>
 }
 
@@ -66,6 +146,154 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private List<Appointment> items = [];
+    private ApptSort _sort = ApptSort.When;
+    private bool _sortAsc;
+
+    private DateOnly? _whenFrom;
+    private DateOnly? _whenTo;
+    private string _visitFilter = "";
+    private string _withWhomFilter = "";
+    private string _statusFilter = "";
+
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private enum ApptSort
+    {
+        When,
+        Visit,
+        WithWhom,
+        Status
+    }
+
+    private bool HasFilters =>
+        _whenFrom is not null
+        || _whenTo is not null
+        || !string.IsNullOrWhiteSpace(_visitFilter)
+        || !string.IsNullOrWhiteSpace(_withWhomFilter)
+        || !string.IsNullOrEmpty(_statusFilter);
+
+    private List<Appointment> VisibleItems => Sort(Filter(items)).ToList();
+
+    private IEnumerable<Appointment> Filter(IEnumerable<Appointment> source)
+    {
+        var query = source;
+        if (_whenFrom is DateOnly from)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.StartsAt) >= from);
+        }
+
+        if (_whenTo is DateOnly to)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.StartsAt) <= to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_visitFilter))
+        {
+            var term = _visitFilter.Trim();
+            query = query.Where(x =>
+                x.Title.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(x.Location)
+                    && x.Location.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(_withWhomFilter))
+        {
+            var term = _withWhomFilter.Trim();
+            query = query.Where(x =>
+                x.ProviderName.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (Enum.TryParse<AppointmentStatus>(_statusFilter, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+
+        return query;
+    }
+
+    private IEnumerable<Appointment> Sort(IEnumerable<Appointment> source) => _sort switch
+    {
+        ApptSort.Visit => _sortAsc
+            ? source.OrderBy(x => x.Title).ThenBy(x => x.StartsAt)
+            : source.OrderByDescending(x => x.Title).ThenByDescending(x => x.StartsAt),
+        ApptSort.WithWhom => _sortAsc
+            ? source.OrderBy(x => x.ProviderName).ThenBy(x => x.StartsAt)
+            : source.OrderByDescending(x => x.ProviderName).ThenByDescending(x => x.StartsAt),
+        ApptSort.Status => _sortAsc
+            ? source.OrderBy(x => x.Status).ThenBy(x => x.StartsAt)
+            : source.OrderByDescending(x => x.Status).ThenByDescending(x => x.StartsAt),
+        _ => _sortAsc
+            ? source.OrderBy(x => x.StartsAt)
+            : source.OrderByDescending(x => x.StartsAt)
+    };
+
+    private void SortBy(ApptSort column)
+    {
+        if (_sort == column)
+        {
+            _sortAsc = !_sortAsc;
+            return;
+        }
+
+        _sort = column;
+        _sortAsc = column != ApptSort.When;
+    }
+
+    private void ClearFilters()
+    {
+        _whenFrom = null;
+        _whenTo = null;
+        _visitFilter = "";
+        _withWhomFilter = "";
+        _statusFilter = "";
+        _filterVersion++;
+    }
+
+    private DateOnly? ParseFilterDate(object? value) =>
+        _filterVersion != _appliedFilterVersion ? null : ParseDate(value);
+
+    private void OnVisitFilterInput(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _visitFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void OnWithWhomFilterInput(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _withWhomFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _statusFilter = e.Value?.ToString() ?? "";
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+    }
+
+    private string AriaSort(ApptSort column) =>
+        _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+
+    private string SortMark(ApptSort column)
+    {
+        if (_sort != column)
+        {
+            return "↕";
+        }
+
+        return _sortAsc ? "↑" : "↓";
+    }
+
+    private static string FormatDate(DateOnly? date) =>
+        date?.ToString("yyyy-MM-dd") ?? "";
+
+    private static DateOnly? ParseDate(object? value) =>
+        DateOnly.TryParse(value?.ToString(), out var date) ? date : null;
 
     protected override async Task OnParametersSetAsync()
     {

@@ -23,21 +23,76 @@
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Specialty</th>
+                    <th aria-sort="@AriaSort(DoctorSort.Name)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(DoctorSort.Name)">
+                            Name <span class="sort-indicator" aria-hidden="true">@SortMark(DoctorSort.Name)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(DoctorSort.Specialty)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(DoctorSort.Specialty)">
+                            Specialty <span class="sort-indicator" aria-hidden="true">@SortMark(DoctorSort.Specialty)</span>
+                        </button>
+                    </th>
                     <th>Phone</th>
-                    <th>Source</th>
+                    <th aria-sort="@AriaSort(DoctorSort.Source)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(DoctorSort.Source)">
+                            Source <span class="sort-indicator" aria-hidden="true">@SortMark(DoctorSort.Source)</span>
+                        </button>
+                    </th>
                     <th></th>
+                </tr>
+                <tr class="column-filter-row" @key="_filterVersion">
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by name</span>
+                            <input type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search name"
+                                   value="@_nameFilter"
+                                   @oninput="OnNameFilterInput" />
+                        </label>
+                    </th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by specialty</span>
+                            <input type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search specialty"
+                                   value="@_specialtyFilter"
+                                   @oninput="OnSpecialtyFilterInput" />
+                        </label>
+                    </th>
+                    <th></th>
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by source</span>
+                            <select class="form-select form-select-sm"
+                                    value="@_sourceFilter"
+                                    @onchange="OnSourceFilterChanged">
+                                <option value="">All sources</option>
+                                @foreach (var source in Enum.GetValues<DoctorSource>())
+                                {
+                                    <option value="@source">@SourceLabel(source)</option>
+                                }
+                            </select>
+                        </label>
+                    </th>
+                    <th>
+                        @if (HasFilters)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                        }
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var item in items)
+                @foreach (var item in VisibleItems)
                 {
                     <tr>
                         <td><strong>@item.Name</strong></td>
                         <td>@(string.IsNullOrWhiteSpace(item.Specialty) ? "—" : item.Specialty)</td>
                         <td>@(string.IsNullOrWhiteSpace(item.PhoneNumber) ? "—" : item.PhoneNumber)</td>
-                        <td><StatusPill Label="@SourceLabel(item)" CssClass="@SourceCss(item)" /></td>
+                        <td><StatusPill Label="@SourceLabel(item.Source)" CssClass="@SourceCss(item.Source)" /></td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-teal" href="@Link($"doctors/edit/{item.Id}")">Update</a>
                         </td>
@@ -49,6 +104,10 @@
         {
             <p class="muted p-3">No doctors yet. Add one manually or enter provider names on appointments and medications.</p>
         }
+        else if (VisibleItems.Count == 0)
+        {
+            <p class="muted p-3">No doctors match the current filters.</p>
+        }
     </div>
 }
 
@@ -56,6 +115,123 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private List<Doctor> items = [];
+    private DoctorSort _sort = DoctorSort.Name;
+    private bool _sortAsc = true;
+
+    private string _nameFilter = "";
+    private string _specialtyFilter = "";
+    private string _sourceFilter = "";
+
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private enum DoctorSort
+    {
+        Name,
+        Specialty,
+        Source
+    }
+
+    private bool HasFilters =>
+        !string.IsNullOrWhiteSpace(_nameFilter)
+        || !string.IsNullOrWhiteSpace(_specialtyFilter)
+        || !string.IsNullOrEmpty(_sourceFilter);
+
+    private List<Doctor> VisibleItems => Sort(Filter(items)).ToList();
+
+    private IEnumerable<Doctor> Filter(IEnumerable<Doctor> source)
+    {
+        var query = source;
+        if (!string.IsNullOrWhiteSpace(_nameFilter))
+        {
+            var term = _nameFilter.Trim();
+            query = query.Where(x => x.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(_specialtyFilter))
+        {
+            var term = _specialtyFilter.Trim();
+            query = query.Where(x =>
+                !string.IsNullOrWhiteSpace(x.Specialty)
+                && x.Specialty.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (Enum.TryParse<DoctorSource>(_sourceFilter, out var doctorSource))
+        {
+            query = query.Where(x => x.Source == doctorSource);
+        }
+
+        return query;
+    }
+
+    private IEnumerable<Doctor> Sort(IEnumerable<Doctor> source) => _sort switch
+    {
+        DoctorSort.Specialty => _sortAsc
+            ? source.OrderBy(SpecialtyKey, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            : source.OrderByDescending(SpecialtyKey, StringComparer.OrdinalIgnoreCase).ThenByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase),
+        DoctorSort.Source => _sortAsc
+            ? source.OrderBy(x => SourceLabel(x.Source), StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            : source.OrderByDescending(x => SourceLabel(x.Source), StringComparer.OrdinalIgnoreCase).ThenByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase),
+        _ => _sortAsc
+            ? source.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            : source.OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase)
+    };
+
+    private void SortBy(DoctorSort column)
+    {
+        if (_sort == column)
+        {
+            _sortAsc = !_sortAsc;
+            return;
+        }
+
+        _sort = column;
+        _sortAsc = true;
+    }
+
+    private void ClearFilters()
+    {
+        _nameFilter = "";
+        _specialtyFilter = "";
+        _sourceFilter = "";
+        _filterVersion++;
+    }
+
+    private void OnNameFilterInput(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _nameFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void OnSpecialtyFilterInput(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _specialtyFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void OnSourceFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _sourceFilter = e.Value?.ToString() ?? "";
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+    }
+
+    private string AriaSort(DoctorSort column) =>
+        _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+
+    private string SortMark(DoctorSort column)
+    {
+        if (_sort != column)
+        {
+            return "↕";
+        }
+
+        return _sortAsc ? "↑" : "↓";
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -69,15 +245,18 @@
 
     private string Link(string path) => CareLinks.To(path, PatientUserId);
 
-    private static string SourceLabel(Doctor doctor) => doctor.Source switch
+    private static string SpecialtyKey(Doctor doctor) =>
+        string.IsNullOrWhiteSpace(doctor.Specialty) ? "" : doctor.Specialty.Trim();
+
+    private static string SourceLabel(DoctorSource source) => source switch
     {
         DoctorSource.Manual => "Manual",
         DoctorSource.FromAppointment => "From appointment",
         DoctorSource.FromMedication => "From medication",
-        _ => doctor.Source.ToString()
+        _ => source.ToString()
     };
 
-    private static string SourceCss(Doctor doctor) => doctor.Source switch
+    private static string SourceCss(DoctorSource source) => source switch
     {
         DoctorSource.Manual => "status-ok",
         DoctorSource.FromAppointment => "status-warn",
