@@ -4,10 +4,10 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 function Get-Aws {
-    $cmd = Get-Command aws -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
     $fallback = Join-Path $env:ProgramFiles "Amazon\AWSCLIV2\aws.exe"
     if (Test-Path $fallback) { return $fallback }
+    $cmd = Get-Command aws -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
     throw "AWS CLI is not installed. Install it, run 'aws configure', then rerun this script."
 }
 
