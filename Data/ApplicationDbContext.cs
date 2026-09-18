@@ -23,6 +23,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
+    public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -112,6 +113,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<LabReport>().HasIndex(x => new { x.UserId, x.ReportDate });
         builder.Entity<LabResult>().HasIndex(x => new { x.LabReportId, x.TestCode }).IsUnique();
+
+        builder.Entity<UserDashboardLayout>()
+            .HasOne(x => x.User)
+            .WithOne(u => u.DashboardLayout)
+            .HasForeignKey<UserDashboardLayout>(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<UserDashboardLayout>().HasIndex(x => x.UserId).IsUnique();
 
         ApplyPhiEncryption(builder);
     }

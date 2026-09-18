@@ -2,7 +2,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div @ref="_card" class="chart-card daily-vitals-card@(CompactEmpty ? " daily-vitals-card--compact-empty" : "")">
+<div @ref="_card" class="chart-card daily-vitals-card@(CompactEmpty ? " daily-vitals-card--compact-empty" : "")" style="border-top: 5px solid @Accent">
     <div class="daily-vitals-body">
         <div class="chart-card-head daily-vitals-head">
             <span class="chart-dot" style="background:@Accent"></span>

@@ -35,6 +35,15 @@ public static class IdentitySeeder
             await db.Database.EnsureCreatedAsync();
         }
 
+        try
+        {
+            await EnsureDashboardLayoutsTableAsync(db);
+        }
+        catch (Exception)
+        {
+            // Table may already exist from EnsureCreated or a prior migration.
+        }
+
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
         foreach (var role in AppRoles.All)
         {
@@ -574,6 +583,39 @@ public static class IdentitySeeder
             if (!wasOpen)
                 await connection.CloseAsync();
         }
+    }
+
+    private static async Task EnsureDashboardLayoutsTableAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "UserDashboardLayouts" (
+                    "Id" INTEGER NOT NULL CONSTRAINT "PK_UserDashboardLayouts" PRIMARY KEY AUTOINCREMENT,
+                    "UserId" TEXT NOT NULL,
+                    "LayoutJson" TEXT NOT NULL,
+                    "UpdatedAt" TEXT NOT NULL,
+                    CONSTRAINT "FK_UserDashboardLayouts_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync(
+                """CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserDashboardLayouts_UserId" ON "UserDashboardLayouts" ("UserId");""");
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "UserDashboardLayouts" (
+                "Id" SERIAL PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "LayoutJson" TEXT NOT NULL,
+                "UpdatedAt" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                CONSTRAINT "FK_UserDashboardLayouts_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserDashboardLayouts_UserId" ON "UserDashboardLayouts" ("UserId");""");
     }
 
     private static async Task TryAddColumnAsync(

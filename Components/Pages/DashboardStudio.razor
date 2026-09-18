@@ -1,0 +1,548 @@
+@page "/dashboard-studio"
+@attribute [Authorize]
+@using System.Security.Claims
+@inject DashboardLayoutService Layouts
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard Studio</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading Dashboard Studio...</p>
+}
+else
+{
+    <div class="page-head accent-studio">
+        <div>
+            <p class="eyebrow">Your workspace</p>
+            <h1>Dashboard Studio</h1>
+            <p class="muted">Choose the widgets you want, arrange them, and set the look. Save once — this layout is yours every time you sign in.</p>
+        </div>
+        <div class="dash-studio-hero-meta">
+            <span class="dash-studio-count">@_enabledCount of @DashboardWidgetCatalog.All.Count widgets on</span>
+            @if (_dirty)
+            {
+                <span class="dash-studio-unsaved" role="status">Unsaved changes</span>
+            }
+            else
+            {
+                <span class="dash-studio-saved-pill" role="status">Saved layout</span>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <div class="dash-studio">
+        <section class="dash-studio-pane dash-studio-library" aria-labelledby="studio-library-title">
+            <header>
+                <h2 id="studio-library-title">Widgets</h2>
+                <p class="muted">Toggle features on or off. Anything you turn on appears on the canvas.</p>
+            </header>
+            <div class="dash-studio-library-list">
+                @foreach (var def in DashboardWidgetCatalog.All)
+                {
+                    var placement = Placement(def.Id);
+                    var enabled = placement.Enabled;
+                    <button type="button"
+                            class="dash-studio-lib-card @(enabled ? "is-on" : null)"
+                            style="--lib-accent:@def.Accent"
+                            aria-pressed="@enabled"
+                            @onclick="() => SetEnabled(def.Id, !enabled)">
+                        <span class="dash-studio-lib-switch" aria-hidden="true"></span>
+                        <span class="dash-studio-lib-copy">
+                            <strong>@def.Title</strong>
+                            <span>@def.Description</span>
+                        </span>
+                    </button>
+                }
+            </div>
+        </section>
+
+        <section class="dash-studio-pane dash-studio-canvas" aria-labelledby="studio-canvas-title">
+            <header>
+                <h2 id="studio-canvas-title">Layout</h2>
+                <p class="muted">Widgets share each row and grow to fill the window. Use 1/3 or 1/2 to sit beside another. Drag or use the arrows.</p>
+            </header>
+            @if (_enabledCount == 0)
+            {
+                <div class="dash-studio-canvas-empty">
+                    <p>Your dashboard would be empty. Turn on at least one widget to continue.</p>
+                </div>
+            }
+            else
+            {
+                <div class="dash-studio-board-scroll">
+                <div class="dash-studio-canvas-list"
+                    @ondragover:preventDefault
+                    @ondrop="OnDropEnd">
+                    @foreach (var row in LayoutRows())
+                    {
+                        <ol class="dash-studio-row">
+                    @foreach (var widget in row)
+                    {
+                        var def = DashboardWidgetCatalog.Find(widget.Id);
+                        if (def is null) continue;
+                        <li class="dash-studio-tile dash-studio-span-@widget.Width @(_dragId == widget.Id ? "is-dragging" : null) @(_dropTargetId == widget.Id ? "is-drop-target" : null)"
+                            style="--tile-accent:@def.Accent; --dash-span:@DashboardWidgetWidth.Span(widget.Width)"
+                            draggable="true"
+                            @key="widget.Id"
+                            @ondragstart="() => OnDragStart(widget.Id)"
+                            @ondragend="OnDragEnd"
+                            @ondragover:preventDefault
+                            @ondragenter="() => _dropTargetId = widget.Id"
+                            @ondrop="() => OnDropOn(widget.Id)">
+                            <button type="button" class="dash-studio-grip" title="Drag to move" aria-label="Drag @def.Title">
+                                <span></span><span></span><span></span>
+                            </button>
+                            <div class="dash-studio-tile-body">
+                                <strong>@def.Title</strong>
+                                <span class="muted">@def.Category</span>
+                            </div>
+                            <div class="dash-studio-tile-tools">
+                                <div class="dash-studio-width" role="group" aria-label="Width for @def.Title">
+                                    @foreach (var width in DashboardWidgetWidth.All)
+                                    {
+                                        <button type="button"
+                                                class="@(widget.Width == width ? "active" : null)"
+                                                @onclick="() => SetWidth(widget.Id, width)">
+                                            @DashboardWidgetWidth.Label(width)
+                                        </button>
+                                    }
+                                </div>
+                                <div class="dash-studio-move" role="group" aria-label="Move @def.Title">
+                                    <button type="button" aria-label="Move @def.Title left" disabled="@IsFirst(widget.Id)" @onclick="() => Move(widget.Id, -1)">←</button>
+                                    <button type="button" aria-label="Move @def.Title up a row" disabled="@IsFirstRow(widget.Id)" @onclick="() => MoveRow(widget.Id, -1)">↑</button>
+                                    <button type="button" aria-label="Move @def.Title down a row" disabled="@IsLastRow(widget.Id)" @onclick="() => MoveRow(widget.Id, 1)">↓</button>
+                                    <button type="button" aria-label="Move @def.Title right" disabled="@IsLast(widget.Id)" @onclick="() => Move(widget.Id, 1)">→</button>
+                                </div>
+                                <button type="button" class="dash-studio-beside" disabled="@IsFirst(widget.Id)" @onclick="() => PlaceToRightOfPrevious(widget.Id)">To the right</button>
+                                <button type="button" class="dash-studio-hide" @onclick="() => SetEnabled(widget.Id, false)">Hide</button>
+                            </div>
+                        </li>
+                    }
+                        </ol>
+                    }
+                </div>
+                </div>
+            }
+        </section>
+
+        <section class="dash-studio-pane dash-studio-look" aria-labelledby="studio-look-title">
+            <header>
+                <h2 id="studio-look-title">Look &amp; feel</h2>
+                <p class="muted">Palette, density, and card style apply to the whole dashboard.</p>
+            </header>
+
+            <h3>Palette</h3>
+            <div class="dash-studio-themes">
+                @foreach (var theme in DashboardThemes.All)
+                {
+                    <button type="button"
+                            class="dash-studio-theme @(_draft.Theme == theme.Id ? "active" : null)"
+                            @onclick="() => SetTheme(theme.Id)">
+                        <span class="dash-studio-swatch" style="background: linear-gradient(135deg, @theme.From, @theme.To)"></span>
+                        <span>
+                            <strong>@theme.Name</strong>
+                            <small>@theme.Description</small>
+                        </span>
+                    </button>
+                }
+            </div>
+
+            <h3>Density</h3>
+            <div class="dash-studio-segment" role="group" aria-label="Density">
+                <button type="button" class="@(_draft.Density == DashboardDensity.Comfortable ? "active" : null)" @onclick="() => SetDensity(DashboardDensity.Comfortable)">Comfortable</button>
+                <button type="button" class="@(_draft.Density == DashboardDensity.Compact ? "active" : null)" @onclick="() => SetDensity(DashboardDensity.Compact)">Compact</button>
+            </div>
+
+            <h3>Cards</h3>
+            <div class="dash-studio-segment" role="group" aria-label="Card style">
+                <button type="button" class="@(_draft.CardStyle == DashboardCardStyle.Elevated ? "active" : null)" @onclick="() => SetCardStyle(DashboardCardStyle.Elevated)">Elevated</button>
+                <button type="button" class="@(_draft.CardStyle == DashboardCardStyle.Outlined ? "active" : null)" @onclick="() => SetCardStyle(DashboardCardStyle.Outlined)">Outlined</button>
+                <button type="button" class="@(_draft.CardStyle == DashboardCardStyle.Glass ? "active" : null)" @onclick="() => SetCardStyle(DashboardCardStyle.Glass)">Glass</button>
+            </div>
+
+            <button type="button"
+                    class="dash-studio-check @( _draft.ShowHero ? "is-on" : null)"
+                    aria-pressed="@_draft.ShowHero"
+                    @onclick="ToggleHero">
+                <span class="dash-studio-lib-switch" aria-hidden="true"></span>
+                Show the greeting banner at the top of the dashboard
+            </button>
+
+            <button type="button" class="btn btn-outline-secondary dash-studio-reset" @onclick="ResetDraft">Restore recommended layout</button>
+        </section>
+    </div>
+
+    <div class="dash-studio-bar" role="region" aria-label="Dashboard Studio actions">
+        <button type="button" class="btn btn-outline-secondary" @onclick="RequestCancel">Cancel</button>
+        <div class="dash-studio-bar-end">
+            <button type="button" class="btn btn-outline-teal" @onclick="OpenPreview" disabled="@(_enabledCount == 0)">Preview</button>
+            <button type="button" class="btn btn-teal" @onclick="SaveAsync" disabled="@(!_dirty || _saving || _enabledCount == 0)">
+                @(_saving ? "Saving…" : "Save")
+            </button>
+        </div>
+    </div>
+}
+
+@if (_previewOpen && _draft is not null)
+{
+    <div class="dash-preview-overlay"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="dash-preview-title"
+         @onkeydown="OnPreviewKey"
+         tabindex="0"
+         @ref="_previewDialog">
+        <div class="dash-preview-chrome">
+            <div>
+                <p class="eyebrow">Preview</p>
+                <h2 id="dash-preview-title">This is how your dashboard will look</h2>
+                <p class="muted">Nothing is saved until you press Save.</p>
+            </div>
+            <div class="dash-preview-actions">
+                <button type="button" class="btn btn-outline-light" @onclick="ClosePreview">Close preview</button>
+                <button type="button" class="btn btn-light" @onclick="SaveFromPreviewAsync" disabled="@(_saving || _enabledCount == 0)">Save this layout</button>
+            </div>
+        </div>
+        <div class="dash-preview-frame">
+            <DashboardLiveView PatientUserId="@PatientUserId" Layout="_draft" IsPreview="true" />
+        </div>
+    </div>
+}
+
+@if (_cancelOpen)
+{
+    <div class="med-update-backdrop" role="dialog" aria-modal="true" aria-labelledby="studio-cancel-title">
+        <div class="med-update-modal">
+            <div class="med-update-head">
+                <div>
+                    <p class="eyebrow">Unsaved layout</p>
+                    <h3 id="studio-cancel-title">Leave without saving?</h3>
+                    <p>Your widget choices and look will go back to the last saved layout.</p>
+                </div>
+            </div>
+            <div class="med-update-foot">
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => _cancelOpen = false">Keep editing</button>
+                <button type="button" class="btn btn-teal" @onclick="ConfirmCancel">Discard changes</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? PatientUserId { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _previewOpen;
+    private bool _cancelOpen;
+    private string? _error;
+    private string? _userId;
+    private string? _dragId;
+    private string? _dropTargetId;
+    private string _savedFingerprint = "";
+    private DashboardLayout _draft = DashboardWidgetCatalog.Default();
+    private ElementReference _previewDialog;
+
+    private bool _dirty => _draft.Fingerprint() != _savedFingerprint;
+    private int _enabledCount => _draft.Widgets.Count(w => w.Enabled);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _draft = await Layouts.GetForUserAsync(_userId ?? "");
+        _savedFingerprint = _draft.Fingerprint();
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_previewOpen)
+        {
+            try { await _previewDialog.FocusAsync(); }
+            catch (Exception) { }
+        }
+    }
+
+    private DashboardWidgetPlacement Placement(string id) =>
+        _draft.Widgets.First(w => w.Id == id);
+
+    private IEnumerable<DashboardWidgetPlacement> EnabledPlacements() =>
+        _draft.VisibleWidgets;
+
+    private bool IsFirst(string id) => EnabledPlacements().FirstOrDefault()?.Id == id;
+    private bool IsLast(string id) => EnabledPlacements().LastOrDefault()?.Id == id;
+
+    private List<List<DashboardWidgetPlacement>> LayoutRows() =>
+        DashboardWidgetWidth.PackRows(EnabledPlacements());
+
+    private bool IsFirstRow(string id)
+    {
+        var rows = LayoutRows();
+        return rows.Count == 0 || rows[0].Any(w => w.Id == id);
+    }
+
+    private bool IsLastRow(string id)
+    {
+        var rows = LayoutRows();
+        return rows.Count == 0 || rows[^1].Any(w => w.Id == id);
+    }
+
+    private void SetEnabled(string id, bool enabled)
+    {
+        var widget = Placement(id);
+        widget.Enabled = enabled;
+        Reindex();
+        _error = null;
+    }
+
+    private void SetWidth(string id, string width)
+    {
+        Placement(id).Width = DashboardWidgetWidth.Normalize(width);
+    }
+
+    private void Move(string id, int delta)
+    {
+        var list = EnabledPlacements().ToList();
+        var index = list.FindIndex(w => w.Id == id);
+        var next = index + delta;
+        if (index < 0 || next < 0 || next >= list.Count) return;
+        (list[index].Order, list[next].Order) = (list[next].Order, list[index].Order);
+        Reindex();
+    }
+
+    private void MoveRow(string id, int rowDelta)
+    {
+        var rows = LayoutRows();
+        var rowIndex = rows.FindIndex(r => r.Any(w => w.Id == id));
+        var targetIndex = rowIndex + rowDelta;
+        if (rowIndex < 0 || targetIndex < 0 || targetIndex >= rows.Count) return;
+
+        var widget = Placement(id);
+        rows[rowIndex].RemoveAll(w => w.Id == id);
+        if (rowDelta > 0)
+            rows[targetIndex].Add(widget);
+        else
+            rows[targetIndex].Insert(0, widget);
+
+        var order = 0;
+        foreach (var row in rows)
+        {
+            foreach (var item in row)
+                item.Order = order++;
+        }
+
+        Reindex();
+    }
+
+    private void PlaceToRightOfPrevious(string id)
+    {
+        var list = EnabledPlacements().ToList();
+        var index = list.FindIndex(w => w.Id == id);
+        if (index <= 0) return;
+
+        var previous = list[index - 1];
+        var current = list[index];
+        var used = OccupiedSpanBefore(list, index);
+        var remaining = 12 - used;
+        var currentSpan = DashboardWidgetWidth.Span(current.Width);
+
+        if (remaining >= 4)
+        {
+            if (currentSpan > remaining)
+                current.Width = DashboardWidgetWidth.FromSpan(remaining);
+        }
+        else
+        {
+            var previousSpan = DashboardWidgetWidth.Span(previous.Width);
+            if (previousSpan >= 12)
+            {
+                previous.Width = DashboardWidgetWidth.Half;
+                current.Width = DashboardWidgetWidth.Half;
+            }
+            else if (previousSpan >= 6)
+            {
+                previous.Width = DashboardWidgetWidth.Third;
+                var room = 12 - (used - previousSpan + 4);
+                current.Width = DashboardWidgetWidth.FromSpan(Math.Max(room, 4));
+            }
+            else
+            {
+                current.Width = DashboardWidgetWidth.Third;
+            }
+        }
+
+        Reindex();
+    }
+
+    private static int OccupiedSpanBefore(IReadOnlyList<DashboardWidgetPlacement> list, int index)
+    {
+        var used = 0;
+        for (var i = 0; i < index; i++)
+        {
+            var span = DashboardWidgetWidth.Span(list[i].Width);
+            if (used > 0 && used + span > 12)
+                used = 0;
+            used += span;
+        }
+
+        return used;
+    }
+
+    private void OnDragStart(string id)
+    {
+        _dragId = id;
+        _dropTargetId = null;
+    }
+
+    private void OnDragEnd()
+    {
+        _dragId = null;
+        _dropTargetId = null;
+    }
+
+    private void OnDropOn(string targetId)
+    {
+        if (string.IsNullOrWhiteSpace(_dragId) || _dragId == targetId)
+        {
+            OnDragEnd();
+            return;
+        }
+
+        var list = EnabledPlacements().ToList();
+        var from = list.FindIndex(w => w.Id == _dragId);
+        var to = list.FindIndex(w => w.Id == targetId);
+        if (from < 0 || to < 0)
+        {
+            OnDragEnd();
+            return;
+        }
+
+        var item = list[from];
+        list.RemoveAt(from);
+        if (from < to)
+            to--;
+        var insertAt = Math.Min(to + 1, list.Count);
+        list.Insert(insertAt, item);
+        for (var i = 0; i < list.Count; i++)
+            list[i].Order = i;
+        Reindex();
+        OnDragEnd();
+    }
+
+    private void OnDropEnd() { }
+
+    private void Reindex()
+    {
+        var order = 0;
+        foreach (var widget in _draft.Widgets.Where(w => w.Enabled).OrderBy(w => w.Order).ThenBy(w => w.Id))
+            widget.Order = order++;
+        foreach (var widget in _draft.Widgets.Where(w => !w.Enabled))
+            widget.Order = 100 + order++;
+    }
+
+    private void SetTheme(string theme)
+    {
+        _draft.Theme = DashboardThemes.Normalize(theme);
+    }
+
+    private void SetDensity(string density)
+    {
+        _draft.Density = DashboardDensity.Normalize(density);
+    }
+
+    private void SetCardStyle(string style)
+    {
+        _draft.CardStyle = DashboardCardStyle.Normalize(style);
+    }
+
+    private void ToggleHero()
+    {
+        _draft.ShowHero = !_draft.ShowHero;
+    }
+
+    private void ResetDraft()
+    {
+        _draft = DashboardWidgetCatalog.Default();
+        _error = null;
+    }
+
+    private void OpenPreview()
+    {
+        if (_enabledCount == 0)
+        {
+            _error = "Turn on at least one widget before previewing.";
+            return;
+        }
+        _previewOpen = true;
+    }
+
+    private void ClosePreview() => _previewOpen = false;
+
+    private void OnPreviewKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            ClosePreview();
+    }
+
+    private async Task SaveFromPreviewAsync()
+    {
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId))
+        {
+            _error = "You must be signed in to save a dashboard layout.";
+            return;
+        }
+        if (_enabledCount == 0)
+        {
+            _error = "Keep at least one widget on before saving.";
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Layouts.SaveForUserAsync(_userId, _draft);
+            _savedFingerprint = _draft.Fingerprint();
+            _previewOpen = false;
+            Navigation.NavigateTo(CareLinks.To("", PatientUserId), forceLoad: false);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void RequestCancel()
+    {
+        if (_dirty)
+        {
+            _cancelOpen = true;
+            return;
+        }
+        ConfirmCancel();
+    }
+
+    private void ConfirmCancel()
+    {
+        _cancelOpen = false;
+        Navigation.NavigateTo(CareLinks.To("", PatientUserId), forceLoad: false);
+    }
+}

@@ -127,6 +127,7 @@ builder.Services.AddHttpClient("ResourceSearch", client =>
 builder.Services.AddScoped<MedicationResearchService>();
 builder.Services.AddScoped<ResourceSearchService>();
 builder.Services.AddScoped<ProfilePhotoService>();
+builder.Services.AddScoped<DashboardLayoutService>();
 
 var app = builder.Build();
 app.UseForwardedHeaders();

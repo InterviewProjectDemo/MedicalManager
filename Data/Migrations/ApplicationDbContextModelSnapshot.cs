@@ -458,6 +458,31 @@ namespace MedicalManager.Migrations
                     b.ToTable("SugarReadings");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.UserDashboardLayout", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LayoutJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserDashboardLayouts");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -725,6 +750,17 @@ namespace MedicalManager.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.UserDashboardLayout", b =>
+                {
+                    b.HasOne("MedicalManager.Data.ApplicationUser", "User")
+                        .WithOne("DashboardLayout")
+                        .HasForeignKey("MedicalManager.Data.UserDashboardLayout", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -838,6 +874,8 @@ namespace MedicalManager.Migrations
                     b.Navigation("LabReports");
 
                     b.Navigation("Medications");
+
+                    b.Navigation("DashboardLayout");
 
                     b.Navigation("Profile");
 
