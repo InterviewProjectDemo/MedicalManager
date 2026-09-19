@@ -27,12 +27,12 @@
             @foreach (var row in rows)
             {
                 <tr>
-                    <td>
+                    <td data-label="Patient">
                         <strong>@row.Name</strong>
                         <div class="muted">@row.Email</div>
                     </td>
-                    <td>@(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}")</td>
-                    <td>@(row.Sugar is null ? "—" : $"{row.Sugar.Value:0} {row.Sugar.Unit}")</td>
+                    <td data-label="Latest BP">@(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}")</td>
+                    <td data-label="Latest sugar">@(row.Sugar is null ? "—" : $"{row.Sugar.Value:0} {row.Sugar.Unit}")</td>
                     <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
                         <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.Id)">Dashboard</a>
                         <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", row.Id)">BP</a>

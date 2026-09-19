@@ -111,19 +111,19 @@
                 {
                     var css = AppointmentRules.StatusCss(item.Status);
                     <tr class="@(item.Status == AppointmentStatus.Missed ? "appt-row-missed" : null)">
-                        <td>
+                        <td data-label="When">
                             @item.StartsAt.ToString("g")
                             @if (item.EndsAt is DateTime ends)
                             {
                                 <div class="muted">until @ends.ToString("t")</div>
                             }
                         </td>
-                        <td>
+                        <td data-label="Visit">
                             <strong>@item.Title</strong>
                             <div class="muted">@item.Location</div>
                         </td>
-                        <td>@item.ProviderName</td>
-                        <td><StatusPill Label="@item.Status.ToString()" CssClass="@css" /></td>
+                        <td data-label="With whom">@item.ProviderName</td>
+                        <td data-label="Status"><StatusPill Label="@item.Status.ToString()" CssClass="@css" /></td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-secondary" href="@Link($"appointments/edit/{item.Id}")">Update</a>
                         </td>

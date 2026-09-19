@@ -23,6 +23,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
+    public DbSet<ToDoItem> ToDoItems => Set<ToDoItem>();
     public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -114,6 +115,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<LabReport>().HasIndex(x => new { x.UserId, x.ReportDate });
         builder.Entity<LabResult>().HasIndex(x => new { x.LabReportId, x.TestCode }).IsUnique();
 
+        builder.Entity<ToDoItem>()
+            .HasOne(x => x.User)
+            .WithMany(u => u.ToDoItems)
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ToDoItem>().HasIndex(x => new { x.UserId, x.FinishBy });
+
         builder.Entity<UserDashboardLayout>()
             .HasOne(x => x.User)
             .WithOne(u => u.DashboardLayout)
@@ -165,6 +174,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Doctor>().Property(x => x.PhoneNumber).HasConversion(required).HasColumnType("text");
 
         builder.Entity<LabReport>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<ToDoItem>().Property(x => x.Description).HasConversion(required).HasColumnType("text");
+        builder.Entity<ToDoItem>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<MedicationAdministration>().Property(x => x.RecordedByName)
             .HasConversion(optional)
             .HasColumnType("text");

@@ -2,6 +2,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    min-height: 100dvh;
 }
 
 main {
@@ -51,6 +52,7 @@ main {
 .legend-item.sugar { background: #f2994a; }
 .legend-item.meds { background: #27ae60; }
 .legend-item.appt { background: #9b51e0; }
+.legend-item.todo { background: #db2777; }
 
 .top-row {
     background-color: #f7f7f7;
@@ -80,12 +82,25 @@ main {
     }
 
 @media (max-width: 640.98px) {
-    .top-row {
-        justify-content: space-between;
+    .sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 1040;
+        padding-top: env(safe-area-inset-top);
     }
 
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
+    .top-row {
+        display: none;
+    }
+
+    article.content {
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+        padding-bottom: calc(5.7rem + env(safe-area-inset-bottom));
+    }
+
+    .legend {
+        display: none;
     }
 }
 
@@ -139,3 +154,11 @@ main {
         right: 0.75rem;
         top: 0.5rem;
     }
+
+@media (max-width: 640.98px) {
+    #blazor-error-ui {
+        bottom: calc(3.6rem + env(safe-area-inset-bottom));
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}

@@ -458,6 +458,41 @@ namespace MedicalManager.Migrations
                     b.ToTable("SugarReadings");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.ToDoItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FinishBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDone")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "FinishBy");
+
+                    b.ToTable("ToDoItems");
+                });
+
             modelBuilder.Entity("MedicalManager.Data.UserDashboardLayout", b =>
                 {
                     b.Property<int>("Id")
@@ -750,6 +785,17 @@ namespace MedicalManager.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.ToDoItem", b =>
+                {
+                    b.HasOne("MedicalManager.Data.ApplicationUser", "User")
+                        .WithMany("ToDoItems")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("MedicalManager.Data.UserDashboardLayout", b =>
                 {
                     b.HasOne("MedicalManager.Data.ApplicationUser", "User")
@@ -880,6 +926,8 @@ namespace MedicalManager.Migrations
                     b.Navigation("Profile");
 
                     b.Navigation("SugarReadings");
+
+                    b.Navigation("ToDoItems");
                 });
 
             modelBuilder.Entity("MedicalManager.Data.LabReport", b =>

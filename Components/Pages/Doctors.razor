@@ -89,10 +89,19 @@
                 @foreach (var item in VisibleItems)
                 {
                     <tr>
-                        <td><strong>@item.Name</strong></td>
-                        <td>@(string.IsNullOrWhiteSpace(item.Specialty) ? "—" : item.Specialty)</td>
-                        <td>@(string.IsNullOrWhiteSpace(item.PhoneNumber) ? "—" : item.PhoneNumber)</td>
-                        <td><StatusPill Label="@SourceLabel(item.Source)" CssClass="@SourceCss(item.Source)" /></td>
+                        <td data-label="Name"><strong>@item.Name</strong></td>
+                        <td data-label="Specialty">@(string.IsNullOrWhiteSpace(item.Specialty) ? "—" : item.Specialty)</td>
+                        <td data-label="Phone">
+                            @if (string.IsNullOrWhiteSpace(item.PhoneNumber))
+                            {
+                                <span>—</span>
+                            }
+                            else
+                            {
+                                <a href="@($"tel:{item.PhoneNumber}")">@item.PhoneNumber</a>
+                            }
+                        </td>
+                        <td data-label="Source"><StatusPill Label="@SourceLabel(item.Source)" CssClass="@SourceCss(item.Source)" /></td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-teal" href="@Link($"doctors/edit/{item.Id}")">Update</a>
                         </td>

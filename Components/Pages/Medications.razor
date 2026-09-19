@@ -76,13 +76,13 @@
                 @foreach (var item in VisibleItems)
                 {
                     <tr>
-                        <td>
+                        <td data-label="Medication">
                             <strong>@item.Name</strong>
                             <div class="muted">@item.Notes</div>
                         </td>
-                        <td>@item.Dosage</td>
-                        <td>@item.Frequency</td>
-                        <td>
+                        <td data-label="Dosage">@item.Dosage</td>
+                        <td data-label="Frequency">@item.Frequency</td>
+                        <td data-label="Status">
                             <StatusPill Label="@(item.IsActive ? "Active" : "Stopped")" CssClass="@(item.IsActive ? "status-ok" : "status-muted")" />
                         </td>
                         <td class="text-end">

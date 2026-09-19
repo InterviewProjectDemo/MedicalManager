@@ -1,0 +1,379 @@
+@page "/todos"
+@attribute [Authorize]
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>To Do</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-todo">
+        <div>
+            <p class="eyebrow">Follow-up</p>
+            <h1>To Do</h1>
+            <p class="muted">Track tasks by due date and priority. Overdue items stay highlighted until they are finished or rescheduled.</p>
+        </div>
+        <a class="btn btn-todo" href="@Link("todos/edit")">Add to-do</a>
+    </div>
+
+    <div class="table-card">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th aria-sort="@AriaSort(TodoSort.Description)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(TodoSort.Description)">
+                            Description <span class="sort-indicator" aria-hidden="true">@SortMark(TodoSort.Description)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(TodoSort.FinishBy)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(TodoSort.FinishBy)">
+                            Finish By <span class="sort-indicator" aria-hidden="true">@SortMark(TodoSort.FinishBy)</span>
+                        </button>
+                    </th>
+                    <th aria-sort="@AriaSort(TodoSort.Priority)">
+                        <button type="button" class="sort-th-btn" @onclick="() => SortBy(TodoSort.Priority)">
+                            Priority <span class="sort-indicator" aria-hidden="true">@SortMark(TodoSort.Priority)</span>
+                        </button>
+                    </th>
+                    <th>Notes</th>
+                    <th>Reschedule</th>
+                    <th>Update</th>
+                </tr>
+                <tr class="column-filter-row" @key="_filterVersion">
+                    <th>
+                        <label class="column-filter-select">
+                            <span class="visually-hidden">Filter by description</span>
+                            <input type="search"
+                                   class="form-control form-control-sm"
+                                   placeholder="Search description"
+                                   value="@_descriptionFilter"
+                                   @oninput="OnDescriptionFilterInput" />
+                        </label>
+                    </th>
+                    <th>
+                        <div class="column-filter-dates">
+                            <label>
+                                <span class="visually-hidden">From date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_finishFrom)"
+                                       @onchange="e => _finishFrom = ParseFilterDate(e.Value)" />
+                            </label>
+                            <label>
+                                <span class="visually-hidden">To date</span>
+                                <input type="date"
+                                       class="form-control form-control-sm"
+                                       value="@FormatDate(_finishTo)"
+                                       @onchange="e => _finishTo = ParseFilterDate(e.Value)" />
+                            </label>
+                        </div>
+                    </th>
+                    <th class="column-filter-priority">
+                        <div class="column-filter-checks" role="group" aria-label="Filter by priority">
+                            <button type="button"
+                                    class="column-filter-check @(_priorityFilters.Count == 0 ? "is-on" : null)"
+                                    aria-pressed="@(_priorityFilters.Count == 0)"
+                                    disabled="@(_priorityFilters.Count == 0)"
+                                    @onclick="ClearPriorityFilter">
+                                All
+                            </button>
+                            @foreach (var priority in Enum.GetValues<ToDoPriority>())
+                            {
+                                var selected = _priorityFilters.Contains(priority);
+                                <button type="button"
+                                        class="column-filter-check @(selected ? "is-on" : null)"
+                                        aria-pressed="@selected"
+                                        @onclick="() => TogglePriority(priority)">
+                                    @priority
+                                </button>
+                            }
+                        </div>
+                    </th>
+                    <th></th>
+                    <th></th>
+                    <th>
+                        @if (HasFilters)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                        }
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in VisibleItems)
+                {
+                    var overdue = ToDoRules.IsOverdue(item, DateTime.Now);
+                    <tr class="@(overdue ? "appt-row-missed" : item.IsDone ? "todo-row-done" : null)">
+                        <td data-label="Description">
+                            <strong>@item.Description</strong>
+                            @if (item.IsDone)
+                            {
+                                <div class="muted">Done</div>
+                            }
+                        </td>
+                        <td data-label="Finish By">
+                            @item.FinishBy.ToString("g")
+                            @if (overdue)
+                            {
+                                <div><StatusPill Label="Overdue" CssClass="status-danger" /></div>
+                            }
+                        </td>
+                        <td data-label="Priority">
+                            <StatusPill Label="@item.Priority.ToString()" CssClass="@ToDoRules.PriorityCss(item.Priority)" />
+                        </td>
+                        <td data-label="Notes">
+                            <span class="todo-notes" title="@item.Notes">@Truncate(item.Notes)</span>
+                        </td>
+                        <td data-label="Reschedule">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    disabled="@item.IsDone"
+                                    @onclick="() => OpenReschedule(item)">
+                                Reschedule
+                            </button>
+                        </td>
+                        <td class="text-end" data-label="Update">
+                            <a class="btn btn-sm btn-outline-todo" href="@Link($"todos/edit/{item.Id}")">Update</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (items.Count == 0)
+        {
+            <p class="muted p-3">No to-do items yet.</p>
+        }
+        else if (VisibleItems.Count == 0)
+        {
+            <p class="muted p-3">No to-do items match the current filters.</p>
+        }
+    </div>
+}
+
+@if (_rescheduleItem is not null)
+{
+    <div class="med-update-backdrop" @onclick="CancelReschedule">
+        <div class="med-update-modal todo-reschedule-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Reschedule to-do">
+            <div class="med-update-head">
+                <div>
+                    <h3>Reschedule</h3>
+                    <p>@_rescheduleItem.Description</p>
+                </div>
+                <button type="button" class="med-update-close" @onclick="CancelReschedule" aria-label="Close">&times;</button>
+            </div>
+            <EditForm Model="_rescheduleForm" OnValidSubmit="SaveRescheduleAsync">
+                <DataAnnotationsValidator />
+                <div class="med-update-body">
+                    <div class="mb-0">
+                        <label class="form-label" for="todoFinishBy">Finish by</label>
+                        <InputDate Type="InputDateType.DateTimeLocal"
+                                   id="todoFinishBy"
+                                   class="form-control"
+                                   @bind-Value="_rescheduleForm.FinishBy" />
+                        <ValidationMessage For="@(() => _rescheduleForm.FinishBy)" />
+                    </div>
+                </div>
+                <div class="med-update-foot">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelReschedule">Cancel</button>
+                    <button type="submit" class="btn btn-todo" disabled="@_saving">Save date</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private List<ToDoItem> items = [];
+    private TodoSort _sort = TodoSort.FinishBy;
+    private bool _sortAsc = true;
+
+    private DateOnly? _finishFrom;
+    private DateOnly? _finishTo;
+    private string _descriptionFilter = "";
+    private readonly HashSet<ToDoPriority> _priorityFilters = [];
+
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private ToDoItem? _rescheduleItem;
+    private RescheduleForm _rescheduleForm = new();
+    private bool _saving;
+
+    private enum TodoSort
+    {
+        Description,
+        FinishBy,
+        Priority
+    }
+
+    private bool HasFilters =>
+        _finishFrom is not null
+        || _finishTo is not null
+        || !string.IsNullOrWhiteSpace(_descriptionFilter)
+        || _priorityFilters.Count > 0;
+
+    private List<ToDoItem> VisibleItems => Sort(Filter(items)).ToList();
+
+    private IEnumerable<ToDoItem> Filter(IEnumerable<ToDoItem> source)
+    {
+        var query = source;
+        if (_finishFrom is DateOnly from)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.FinishBy) >= from);
+        }
+
+        if (_finishTo is DateOnly to)
+        {
+            query = query.Where(x => DateOnly.FromDateTime(x.FinishBy) <= to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_descriptionFilter))
+        {
+            var term = _descriptionFilter.Trim();
+            query = query.Where(x =>
+                x.Description.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(x.Notes)
+                    && x.Notes.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (_priorityFilters.Count > 0)
+        {
+            query = query.Where(x => _priorityFilters.Contains(x.Priority));
+        }
+
+        return query;
+    }
+
+    private IEnumerable<ToDoItem> Sort(IEnumerable<ToDoItem> source) => _sort switch
+    {
+        TodoSort.Description => _sortAsc
+            ? source.OrderBy(x => x.Description).ThenBy(x => x.FinishBy)
+            : source.OrderByDescending(x => x.Description).ThenByDescending(x => x.FinishBy),
+        TodoSort.Priority => _sortAsc
+            ? source.OrderBy(x => x.Priority).ThenBy(x => x.FinishBy)
+            : source.OrderByDescending(x => x.Priority).ThenByDescending(x => x.FinishBy),
+        _ => _sortAsc
+            ? source.OrderBy(x => x.IsDone).ThenBy(x => x.FinishBy)
+            : source.OrderByDescending(x => x.FinishBy).ThenBy(x => x.IsDone)
+    };
+
+    private void SortBy(TodoSort column)
+    {
+        if (_sort == column)
+        {
+            _sortAsc = !_sortAsc;
+            return;
+        }
+
+        _sort = column;
+        _sortAsc = true;
+    }
+
+    private void ClearFilters()
+    {
+        _finishFrom = null;
+        _finishTo = null;
+        _descriptionFilter = "";
+        _priorityFilters.Clear();
+        _filterVersion++;
+    }
+
+    private void ClearPriorityFilter()
+    {
+        if (_priorityFilters.Count == 0) return;
+        _priorityFilters.Clear();
+    }
+
+    private DateOnly? ParseFilterDate(object? value) =>
+        _filterVersion != _appliedFilterVersion ? null : ParseDate(value);
+
+    private void OnDescriptionFilterInput(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _descriptionFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void TogglePriority(ToDoPriority priority)
+    {
+        if (!_priorityFilters.Add(priority))
+        {
+            _priorityFilters.Remove(priority);
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+    }
+
+    private string AriaSort(TodoSort column) =>
+        _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+
+    private string SortMark(TodoSort column)
+    {
+        if (_sort != column)
+        {
+            return "↕";
+        }
+
+        return _sortAsc ? "↑" : "↓";
+    }
+
+    private static string FormatDate(DateOnly? date) =>
+        date?.ToString("yyyy-MM-dd") ?? "";
+
+    private static DateOnly? ParseDate(object? value) =>
+        DateOnly.TryParse(value?.ToString(), out var date) ? date : null;
+
+    private static string Truncate(string? text, int max = 80)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "—";
+        var value = text.Trim();
+        return value.Length <= max ? value : value[..max].TrimEnd() + "…";
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is string id)
+        {
+            items = await Records.GetToDosAsync(id);
+        }
+    }
+
+    private void OpenReschedule(ToDoItem item)
+    {
+        _rescheduleItem = item;
+        _rescheduleForm = new RescheduleForm { FinishBy = item.FinishBy };
+    }
+
+    private void CancelReschedule()
+    {
+        _rescheduleItem = null;
+        _saving = false;
+    }
+
+    private async Task SaveRescheduleAsync()
+    {
+        if (_rescheduleItem is null || scope?.PatientId is null) return;
+        _saving = true;
+        await Records.RescheduleToDoAsync(_rescheduleItem.Id, scope.PatientId, _rescheduleForm.FinishBy);
+        items = await Records.GetToDosAsync(scope.PatientId);
+        _rescheduleItem = null;
+        _saving = false;
+    }
+
+    private string Link(string path) => CareLinks.To(path, PatientUserId);
+
+    private sealed class RescheduleForm
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public DateTime FinishBy { get; set; }
+    }
+}

@@ -17,5 +17,6 @@ public class ApplicationUser : IdentityUser
     public ICollection<Appointment> Appointments { get; set; } = [];
     public ICollection<Doctor> Doctors { get; set; } = [];
     public ICollection<LabReport> LabReports { get; set; } = [];
+    public ICollection<ToDoItem> ToDoItems { get; set; } = [];
     public UserDashboardLayout? DashboardLayout { get; set; }
 }

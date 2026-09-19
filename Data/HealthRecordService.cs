@@ -208,6 +208,48 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         await db.SaveChangesAsync();
     }
 
+    public async Task<List<ToDoItem>> GetToDosAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.ToDoItems.Where(x => x.UserId == userId)
+            .OrderBy(x => x.IsDone)
+            .ThenBy(x => x.FinishBy)
+            .ThenBy(x => x.Priority)
+            .ToListAsync();
+    }
+
+    public async Task<ToDoItem?> GetToDoByIdAsync(int id, string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.ToDoItems.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    }
+
+    public async Task SaveToDoAsync(ToDoItem item)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        if (item.Id == 0) db.ToDoItems.Add(item);
+        else db.ToDoItems.Update(item);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task RescheduleToDoAsync(int id, string userId, DateTime finishBy)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await db.ToDoItems.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+        if (item is null) return;
+        item.FinishBy = finishBy;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DeleteToDoAsync(int id, string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await db.ToDoItems.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+        if (item is null) return;
+        db.ToDoItems.Remove(item);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<DashboardSnapshot> GetDashboardAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -217,7 +259,8 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         var meds = await GetMedicationsAsync(db, userId, activeOnly: true);
         var upcoming = await GetUpcomingAppointmentsAsync(db, userId);
         var missedThisMonth = await GetMissedAppointmentsThisMonthAsync(db, userId);
-        return new DashboardSnapshot(bp, sugar, meds, upcoming, missedThisMonth);
+        var openToDos = await GetOpenToDosAsync(db, userId);
+        return new DashboardSnapshot(bp, sugar, meds, upcoming, missedThisMonth, openToDos);
     }
 
     private static Task<List<BloodPressureReading>> GetBloodPressureAsync(
@@ -263,6 +306,20 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
             .Take(take)
             .ToListAsync();
 
+    private static async Task<List<ToDoItem>> GetOpenToDosAsync(
+        ApplicationDbContext db, string userId)
+    {
+        var items = await db.ToDoItems
+            .Where(x => x.UserId == userId && !x.IsDone)
+            .ToListAsync();
+        var now = DateTime.Now;
+        return items
+            .OrderBy(x => ToDoRules.IsNearTermHigh(x, now) ? 0 : 1)
+            .ThenBy(x => x.FinishBy)
+            .ThenBy(x => x.Priority)
+            .ToList();
+    }
+
     private static Task<List<Appointment>> GetMissedAppointmentsThisMonthAsync(
         ApplicationDbContext db, string userId)
     {
@@ -303,4 +360,5 @@ public sealed record DashboardSnapshot(
     List<SugarReading> Sugar,
     List<Medication> Medications,
     List<Appointment> UpcomingAppointments,
-    List<Appointment> MissedThisMonth);
+    List<Appointment> MissedThisMonth,
+    List<ToDoItem> OpenToDos);

@@ -42,7 +42,7 @@
         </div>
 
         var active = months.FirstOrDefault(m => m.Month == selectedMonth) ?? months[0];
-        <div class="table-card lab-table-wrap">
+        <div class="table-card lab-table-wrap lab-desktop-table">
             <div class="lab-table-head">
                 <h2>@active.Label</h2>
                 <span class="muted">@active.Reports.Count report@(active.Reports.Count == 1 ? "" : "s")</span>
@@ -101,6 +101,47 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <div class="lab-mobile-list" aria-label="@active.Label lab reports">
+            <div class="lab-table-head">
+                <h2>@active.Label</h2>
+                <span class="muted">@active.Reports.Count report@(active.Reports.Count == 1 ? "" : "s")</span>
+            </div>
+            @foreach (var report in active.Reports)
+            {
+                var resultMap = report.Results.ToDictionary(r => r.TestCode, StringComparer.OrdinalIgnoreCase);
+                <article class="lab-report-card">
+                    <div class="lab-report-card-head">
+                        <div>
+                            <h3>@report.ReportDate.ToString("MMM d, yyyy")</h3>
+                            @if (!string.IsNullOrWhiteSpace(report.Notes))
+                            {
+                                <p class="muted lab-note-hint mb-0">@report.Notes</p>
+                            }
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-teal"
+                                @onclick="() => OpenEdit(report.Id, report.ReportDate)">
+                            Edit
+                        </button>
+                    </div>
+                    <div class="lab-result-grid">
+                        @foreach (var test in LabTestDefinitions.All)
+                        {
+                            if (resultMap.TryGetValue(test.Code, out var result))
+                            {
+                                <div class="lab-result-chip">
+                                    <span>@test.Name</span>
+                                    <span class="lab-value @LabTestDefinitions.CssClass(test.Code, result.Value)">
+                                        @FormatValue(result.Value) <small>@test.Unit</small>
+                                    </span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </article>
+            }
         </div>
     }
 }

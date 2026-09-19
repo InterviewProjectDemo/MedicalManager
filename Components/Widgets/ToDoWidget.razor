@@ -1,0 +1,236 @@
+@inject IJSRuntime JS
+@implements IDisposable
+
+<section class="panel accent-todo">
+    <div class="panel-head">
+        <h2>To Do</h2>
+        @if (ManageHref is not null)
+        {
+            <a class="widget-link" href="@ManageHref">Manage</a>
+        }
+    </div>
+    @if (AttentionCount > 0)
+    {
+        <div class="todo-attention">
+            <p class="todo-attention-count" role="status">@ToDoRules.AttentionCountLabel(AttentionCount)</p>
+            <p class="todo-attention-typewriter todo-attention-tone-@_toneIndex" aria-hidden="true">
+                @if (_typedPriority.Length > 0)
+                {
+                    <span class="todo-attention-priority">@_typedPriority</span>
+                }
+                <span class="todo-attention-body">@_typedBody</span>
+                @if (!_prefersReducedMotion && (_typedPriority.Length > 0 || _typedBody.Length > 0))
+                {
+                    <span class="todo-attention-caret"></span>
+                }
+            </p>
+            <span class="visually-hidden" role="status">@_announcedText</span>
+        </div>
+    }
+    @if (SortedItems.Count == 0)
+    {
+        <p class="muted">No open to-dos.</p>
+    }
+    else
+    {
+        <ul class="timeline">
+            @foreach (var item in PageItems)
+            {
+                var overdue = ToDoRules.IsOverdue(item, DateTime.Now);
+                <li class="@(overdue ? "todo-widget-overdue" : null)">
+                    <div>
+                        <strong>@item.Description</strong>
+                        <span>@item.Priority@(string.IsNullOrWhiteSpace(item.Notes) ? null : $" · {item.Notes}")</span>
+                    </div>
+                    <em>
+                        @item.FinishBy.ToString("ddd, MMM d · h:mm tt")
+                        @if (overdue)
+                        {
+                            <span class="todo-widget-overdue-flag">Overdue</span>
+                        }
+                    </em>
+                </li>
+            }
+        </ul>
+        @if (SortedItems.Count > PageSize)
+        {
+            <nav class="todo-widget-pager" aria-label="To Do pages">
+                <button type="button"
+                        class="btn btn-sm btn-outline-todo"
+                        disabled="@(_page <= 0)"
+                        @onclick="PreviousPage">
+                    Previous
+                </button>
+                <span class="todo-widget-page">@(_page + 1) of @PageCount</span>
+                <button type="button"
+                        class="btn btn-sm btn-outline-todo"
+                        disabled="@(_page >= PageCount - 1)"
+                        @onclick="NextPage">
+                    Next
+                </button>
+            </nav>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<ToDoItem> Items { get; set; } = [];
+    [Parameter] public string? ManageHref { get; set; }
+
+    internal const int PageSize = 6;
+
+    internal const int AttentionToneCount = 6;
+
+    private int _page;
+    private string _typedPriority = "";
+    private string _typedBody = "";
+    private string _announcedText = "";
+    private bool _prefersReducedMotion;
+    private int _attentionIndex;
+    private int _toneIndex;
+    private readonly CancellationTokenSource _cts = new();
+    private Task? _typewriterTask;
+
+    private IReadOnlyList<ToDoItem> SortedItems
+    {
+        get
+        {
+            var now = DateTime.Now;
+            return Items
+                .Where(x => !x.IsDone)
+                .OrderBy(x => ToDoRules.IsNearTermHigh(x, now) ? 0 : 1)
+                .ThenBy(x => x.FinishBy)
+                .ThenBy(x => x.Priority)
+                .ToList();
+        }
+    }
+
+    private IReadOnlyList<ToDoItem> AttentionItems
+    {
+        get
+        {
+            var now = DateTime.Now;
+            return SortedItems.Where(x => ToDoRules.IsNearTermHigh(x, now)).ToList();
+        }
+    }
+
+    private int AttentionCount => AttentionItems.Count;
+    private int PageCount => Math.Max(1, (int)Math.Ceiling(SortedItems.Count / (double)PageSize));
+    private IEnumerable<ToDoItem> PageItems => SortedItems.Skip(_page * PageSize).Take(PageSize);
+
+    protected override void OnParametersSet()
+    {
+        if (_page >= PageCount) _page = PageCount - 1;
+        if (_page < 0) _page = 0;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            _prefersReducedMotion = await JS.InvokeAsync<bool>("mmPrefersReducedMotion");
+        }
+        catch (JSDisconnectedException)
+        {
+            return;
+        }
+        catch (JSException)
+        {
+            _prefersReducedMotion = false;
+        }
+
+        _typewriterTask = RunTypewriterAsync(_cts.Token);
+    }
+
+    private void PreviousPage()
+    {
+        if (_page <= 0) return;
+        _page--;
+    }
+
+    private void NextPage()
+    {
+        if (_page >= PageCount - 1) return;
+        _page++;
+    }
+
+    private void ClearTypedLine()
+    {
+        _typedPriority = "";
+        _typedBody = "";
+        _announcedText = "";
+    }
+
+    private async Task TypeSegmentAsync(Action<char> append, string text, CancellationToken ct)
+    {
+        foreach (var ch in text)
+        {
+            ct.ThrowIfCancellationRequested();
+            append(ch);
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(55, ct);
+        }
+    }
+
+    private async Task RunTypewriterAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var items = AttentionItems;
+                if (items.Count == 0)
+                {
+                    if (_typedPriority.Length > 0 || _typedBody.Length > 0 || _announcedText.Length > 0)
+                    {
+                        ClearTypedLine();
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    await Task.Delay(1000, ct);
+                    continue;
+                }
+
+                if (_attentionIndex >= items.Count) _attentionIndex = 0;
+                var item = items[_attentionIndex];
+                var now = DateTime.Now;
+                var priority = ToDoRules.AttentionPriorityLabel(item);
+                var body = $" · {ToDoRules.AttentionBody(item, now)}";
+                var message = ToDoRules.AttentionLine(item, now);
+                _toneIndex = _attentionIndex % AttentionToneCount;
+
+                if (_prefersReducedMotion)
+                {
+                    _typedPriority = priority;
+                    _typedBody = body;
+                    _announcedText = message;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(4000, ct);
+                    if (items.Count > 1) _attentionIndex++;
+                    continue;
+                }
+
+                _typedPriority = "";
+                _typedBody = "";
+                await InvokeAsync(StateHasChanged);
+                await TypeSegmentAsync(ch => _typedPriority += ch, priority, ct);
+                await TypeSegmentAsync(ch => _typedBody += ch, body, ct);
+
+                _announcedText = message;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(2800, ct);
+                if (items.Count > 1) _attentionIndex++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

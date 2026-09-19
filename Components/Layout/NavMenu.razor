@@ -1,75 +1,50 @@
 ﻿@rendermode InteractiveServer
-
 @implements IDisposable
-
 @using System.Security.Claims
-
 @inject NavigationManager NavigationManager
-
 @inject AuthenticationStateProvider Auth
-
 @inject ProfilePhotoService PhotoService
 
-
-
 <div class="top-row nav-header navbar navbar-dark">
-
     <div class="nav-brand-block">
-
         <div class="nav-brand-row">
+            <button type="button"
+                    class="navbar-toggler @(_navOpen ? "is-open" : null)"
+                    title="Navigation menu"
+                    aria-label="@(_navOpen ? "Close navigation menu" : "Open navigation menu")"
+                    aria-expanded="@_navOpen"
+                    aria-controls="app-drawer"
+                    @onclick="ToggleNav">
+                <span class="navbar-toggler-icon" aria-hidden="true"></span>
+            </button>
 
             <a class="navbar-brand" href="@Href("")">
-
                 <span class="brand-medical">Medical</span><span class="brand-manager"> Manager</span>
-
             </a>
 
             <AuthorizeView>
-
                 <Authorized Context="authContext">
-
                     <button type="button"
-
                             class="nav-avatar @(!string.IsNullOrWhiteSpace(_photoUrl) ? "nav-avatar-has-photo" : null)"
-
                             title="@authContext.User.Identity?.Name"
-
                             aria-label="Change profile photo"
-
                             @onclick="OpenPhotoModal">
-
                         @if (!string.IsNullOrWhiteSpace(_photoUrl))
-
                         {
-
                             <img src="@_photoUrl" alt="" class="nav-avatar-img" />
-
                         }
-
                         else
-
                         {
-
                             @GetInitials(authContext.User)
-
                         }
-
                     </button>
-
                 </Authorized>
-
                 <NotAuthorized>
-
                     <span class="nav-avatar nav-avatar-guest" aria-hidden="true">
-
                         <span class="nav-avatar-icon"></span>
-
                     </span>
-
                 </NotAuthorized>
-
             </AuthorizeView>
-
         </div>
 
         <p class="nav-tagline" aria-live="polite">
@@ -81,403 +56,264 @@
                 <span class="nav-notice nav-notice-missed">Follow up on missed items</span>
             </span>
         </p>
-
     </div>
-
 </div>
 
+@if (_navOpen)
+{
+    <div class="nav-backdrop" @onclick="CloseNav"></div>
+}
 
-
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-
-    <nav class="nav flex-column">
-
+<div id="app-drawer" class="nav-scrollable @(_navOpen ? "open" : null)">
+    <div class="nav-drawer-toolbar">
+        <strong>Menu</strong>
+        <button type="button" class="nav-drawer-close" aria-label="Close menu" @onclick="CloseNav">&times;</button>
+    </div>
+    <nav class="nav flex-column" aria-label="Main">
         <AuthorizeView>
-
             <Authorized Context="authContext">
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-dash" href="@Href("")" Match="NavLinkMatch.All">
-
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-studio" href="@Href("dashboard-studio")">
-
                         <span class="bi bi-layout-nav-menu" aria-hidden="true"></span> Dashboard Studio
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-providers" href="@Href("profile")">
-
                         <span class="bi bi-person-circle-nav-menu" aria-hidden="true"></span> Profile
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-bp" href="@Href("blood-pressure")">
-
                         <span class="bi bi-heart-nav-menu" aria-hidden="true"></span> Blood pressure
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-sugar" href="@Href("sugar")">
-
                         <span class="bi bi-droplet-nav-menu" aria-hidden="true"></span> Sugar
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-labs" href="@Href("labs")">
-
                         <span class="bi bi-flask-nav-menu" aria-hidden="true"></span> Labs
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-meds" href="@Href("medications")">
-
                         <span class="bi bi-pill-nav-menu" aria-hidden="true"></span> Medications
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-medcheck" href="@Href("med-check")">
-
                         <span class="bi bi-search-heart-nav-menu" aria-hidden="true"></span> Med Check
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-appt" href="@Href("appointments")">
-
                         <span class="bi bi-calendar-nav-menu" aria-hidden="true"></span> Appointments
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
+                    <NavLink class="nav-link nav-todo" href="@Href("todos")">
+                        <span class="bi bi-check2-square-nav-menu" aria-hidden="true"></span> To Do
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
                     <NavLink class="nav-link nav-providers" href="@Href("doctors")">
-
                         <span class="bi bi-stethoscope-nav-menu" aria-hidden="true"></span> Doctors
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-resource" href="@Href("resource")">
-
                         <span class="bi bi-journal-nav-menu" aria-hidden="true"></span> Resource
-
                     </NavLink>
-
                 </div>
-
                 <AuthorizeView Roles="@AppRoles.Doctor" Context="doctor">
-
                     <div class="nav-item px-3">
-
                         <NavLink class="nav-link nav-doctor" href="patients">
-
                             <span class="bi bi-people-nav-menu" aria-hidden="true"></span> Patients
-
                         </NavLink>
-
                     </div>
-
                 </AuthorizeView>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link" href="Account/Manage">
-
                         <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> @authContext.User.Identity?.Name
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <form action="Account/Logout" method="post">
-
                         <AntiforgeryToken />
-
                         <input type="hidden" name="ReturnUrl" value="@currentUrl" />
-
                         <button type="submit" class="nav-link">
-
                             <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
-
                         </button>
-
                     </form>
-
                 </div>
-
             </Authorized>
-
             <NotAuthorized>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link nav-dash" href="Account/Login">
-
                         <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Login
-
                     </NavLink>
-
                 </div>
-
                 <div class="nav-item px-3">
-
                     <NavLink class="nav-link" href="Account/Register">
-
                         <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Register
-
                     </NavLink>
-
                 </div>
-
             </NotAuthorized>
-
         </AuthorizeView>
-
     </nav>
-
 </div>
-
-
 
 <AuthorizeView>
-
-    <Authorized Context="authContext">
-
-        <ProfilePhotoModal Visible="_photoModalOpen"
-
-                           VisibleChanged="OnPhotoModalVisibleChanged"
-
-                           PhotoSaved="OnPhotoSaved" />
-
+    <Authorized>
+        <nav class="mobile-tabbar" aria-label="Primary">
+            <NavLink class="mobile-tab" href="@Href("")" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
+                Home
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("blood-pressure")">
+                <span class="bi bi-heart-nav-menu" aria-hidden="true"></span>
+                BP
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("medications")">
+                <span class="bi bi-pill-nav-menu" aria-hidden="true"></span>
+                Meds
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("appointments")">
+                <span class="bi bi-calendar-nav-menu" aria-hidden="true"></span>
+                Appts
+            </NavLink>
+            <button type="button"
+                    class="mobile-tab @(_navOpen || IsMoreSection ? "active" : null)"
+                    @onclick="ToggleNav">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span>
+                More
+            </button>
+        </nav>
     </Authorized>
-
 </AuthorizeView>
 
-
+<AuthorizeView>
+    <Authorized Context="authContext">
+        <ProfilePhotoModal Visible="_photoModalOpen"
+                           VisibleChanged="OnPhotoModalVisibleChanged"
+                           PhotoSaved="OnPhotoSaved" />
+    </Authorized>
+</AuthorizeView>
 
 @code {
-
     private string? currentUrl;
-
     private string? selectedPatientId;
-
     private string? _userId;
-
     private string? _photoUrl;
-
     private bool _photoModalOpen;
+    private bool _navOpen;
 
-
+    private bool IsMoreSection
+    {
+        get
+        {
+            var path = (currentUrl ?? "").Split('?', '#')[0].Trim('/');
+            return path is not ""
+                and not "blood-pressure"
+                and not "medications"
+                and not "appointments"
+                && !path.StartsWith("blood-pressure/", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("medications/", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("appointments/", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
-
     {
-
         UpdateFromUri();
-
         NavigationManager.LocationChanged += OnLocationChanged;
-
         await LoadPhotoAsync();
-
     }
-
-
 
     private async Task LoadPhotoAsync()
-
     {
-
         var state = await Auth.GetAuthenticationStateAsync();
-
         _userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
-
         if (string.IsNullOrWhiteSpace(_userId))
-
         {
-
             _photoUrl = null;
-
             return;
-
         }
-
-
 
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
-
     }
 
+    private void ToggleNav() => _navOpen = !_navOpen;
 
+    private void CloseNav() => _navOpen = false;
 
     private void OpenPhotoModal()
-
     {
-
         _photoModalOpen = true;
-
     }
-
-
 
     private Task OnPhotoModalVisibleChanged(bool visible)
-
     {
-
         _photoModalOpen = visible;
-
         return Task.CompletedTask;
-
     }
-
-
 
     private Task OnPhotoSaved(string? photoUrl)
-
     {
-
         _photoUrl = photoUrl;
-
         return InvokeAsync(StateHasChanged);
-
     }
-
-
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-
     {
-
+        _navOpen = false;
         UpdateFromUri();
-
         InvokeAsync(StateHasChanged);
-
     }
-
-
 
     private void UpdateFromUri()
-
     {
-
         currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-
         selectedPatientId = null;
-
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
-
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query)
-
             .TryGetValue("patientUserId", out var value))
-
         {
-
             selectedPatientId = value.ToString();
-
         }
-
     }
-
-
 
     private string Href(string path) => CareLinks.To(path, selectedPatientId);
 
-
-
     private static string GetInitials(System.Security.Claims.ClaimsPrincipal user)
-
     {
-
         var name = user.Identity?.Name;
-
         if (string.IsNullOrWhiteSpace(name))
-
             return "?";
 
-
-
         if (name.Contains('@'))
-
             name = name.Split('@')[0];
 
-
-
         var parts = name.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
-
         if (parts.Length >= 2)
-
             return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}";
-
         if (parts.Length == 1 && parts[0].Length >= 2)
-
             return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}";
-
         if (parts.Length == 1)
-
             return char.ToUpperInvariant(parts[0][0]).ToString();
 
-
-
         return "?";
-
     }
-
-
 
     public void Dispose()
-
     {
-
         NavigationManager.LocationChanged -= OnLocationChanged;
-
     }
-
 }
-
-

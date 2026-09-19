@@ -232,6 +232,7 @@ public static class IdentitySeeder
         await EnsureDemoMedicationSchedulesAsync(db, patient.Id);
         await EnsureDemoLabReportsAsync(db, patient.Id);
         await EnsureDemoPastScheduledAppointmentAsync(db, patient.Id);
+        await EnsureDemoToDosAsync(db, patient.Id);
         await db.SaveChangesAsync();
     }
 
@@ -268,6 +269,115 @@ public static class IdentitySeeder
             Status = AppointmentStatus.Scheduled,
             Notes = "Left Scheduled so dashboard auto-miss can demonstrate Missed."
         });
+    }
+
+    private static async Task EnsureDemoToDosAsync(ApplicationDbContext db, string patientId)
+    {
+        var today = DateTime.Today;
+        var existing = await db.ToDoItems
+            .Where(x => x.UserId == patientId)
+            .Select(x => x.Description)
+            .ToListAsync();
+        var known = existing.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in DemoToDos(patientId, today))
+        {
+            if (known.Contains(item.Description)) continue;
+            db.ToDoItems.Add(item);
+        }
+    }
+
+    private static IEnumerable<ToDoItem> DemoToDos(string patientId, DateTime today)
+    {
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Refill Lisinopril",
+            FinishBy = today.AddDays(1).AddHours(17),
+            Priority = ToDoPriority.High,
+            Notes = "Pharmacy closes at 6pm."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Call clinic about missed cardiology visit",
+            FinishBy = today.AddDays(-1).AddHours(12),
+            Priority = ToDoPriority.High,
+            Notes = "Reschedule the follow-up that showed as missed."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Confirm fasting instructions",
+            FinishBy = today.AddHours(18),
+            Priority = ToDoPriority.High,
+            Notes = "Water is fine; skip breakfast."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Schedule pharmacy delivery",
+            FinishBy = today.AddDays(2).AddHours(11),
+            Priority = ToDoPriority.High,
+            Notes = "Ask about weekend hours."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Fast before lab work",
+            FinishBy = today.AddDays(10).AddHours(7),
+            Priority = ToDoPriority.Medium,
+            Notes = "Nothing to eat after midnight."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Bring home BP log to appointment",
+            FinishBy = today.AddDays(3).AddHours(9),
+            Priority = ToDoPriority.Medium,
+            Notes = "Last 7 days of morning readings."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Pack insurance card",
+            FinishBy = today.AddDays(6).AddHours(8),
+            Priority = ToDoPriority.Medium,
+            Notes = "Keep it with the medication list."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Review nutrition notes",
+            FinishBy = today.AddDays(5).AddHours(18),
+            Priority = ToDoPriority.Low,
+            Notes = "Focus on lower-sodium dinners."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Update emergency contact",
+            FinishBy = today.AddDays(8).AddHours(16),
+            Priority = ToDoPriority.Low,
+            Notes = "Clinic portal profile."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Download visit summary",
+            FinishBy = today.AddDays(12).AddHours(14),
+            Priority = ToDoPriority.Medium,
+            Notes = "Save the last cardiology note."
+        };
+        yield return new ToDoItem
+        {
+            UserId = patientId,
+            Description = "Pick up glucose test strips",
+            FinishBy = today.AddDays(-4).AddHours(16),
+            Priority = ToDoPriority.Low,
+            IsDone = true,
+            Notes = "Completed last week."
+        };
     }
 
     private static async Task EnsureDemoLabReportsAsync(ApplicationDbContext db, string patientId)

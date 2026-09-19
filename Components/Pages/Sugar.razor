@@ -129,10 +129,10 @@
                 {
                     var tag = VitalStatus.ForSugar(item.Value, item.Kind);
                     <tr>
-                        <td>@item.RecordedAt.ToString("g")</td>
-                        <td>@item.Value.ToString("0.#") @item.Unit</td>
-                        <td>@item.Kind</td>
-                        <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
+                        <td data-label="When">@item.RecordedAt.ToString("g")</td>
+                        <td data-label="Value">@item.Value.ToString("0.#") @item.Unit</td>
+                        <td data-label="Type">@item.Kind</td>
+                        <td data-label="Status"><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-warning" href="@Link($"sugar/edit/{item.Id}")">Update</a>
                         </td>

@@ -1,0 +1,104 @@
+@page "/todos/edit"
+@page "/todos/edit/{Id:int}"
+@attribute [Authorize]
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "Add" : "Update") to-do</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (model is not null)
+{
+    <PatientBanner Scope="scope" />
+    <div class="page-head accent-todo">
+        <div>
+            <p class="eyebrow">To Do</p>
+            <h1>@(Id is null ? "Add to-do" : "Update to-do")</h1>
+        </div>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="Save" class="form-card">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label">Description</label>
+                <InputText class="form-control" @bind-Value="model.Description" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Priority</label>
+                <InputSelect class="form-select" @bind-Value="model.Priority">
+                    @foreach (var priority in Enum.GetValues<ToDoPriority>())
+                    {
+                        <option value="@priority">@priority</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Finish by</label>
+                <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.FinishBy" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-check mt-4">
+                    <InputCheckbox class="form-check-input" @bind-Value="model.IsDone" />
+                    <span class="form-check-label">Mark as done</span>
+                </label>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes</label>
+                <InputTextArea class="form-control" @bind-Value="model.Notes" />
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-todo">Save</button>
+            <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is not null)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+            }
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+    private PatientScope? scope;
+    private ToDoItem? model;
+    private string Back => CareLinks.To("todos", PatientUserId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        if (scope.PatientId is not string patientId) return;
+        if (Id is int id)
+        {
+            model = await Records.GetToDoByIdAsync(id, patientId);
+        }
+        model ??= new ToDoItem
+        {
+            UserId = patientId,
+            FinishBy = DateTime.Now.AddDays(1).Date.AddHours(9)
+        };
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await Records.SaveToDoAsync(model);
+        Nav.NavigateTo(Back);
+    }
+
+    private async Task Delete()
+    {
+        if (Id is int id && scope?.PatientId is not null)
+        {
+            await Records.DeleteToDoAsync(id, scope.PatientId);
+        }
+        Nav.NavigateTo(Back);
+    }
+}

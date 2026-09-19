@@ -53,6 +53,7 @@ public static class DashboardWidgetIds
     public const string DayAppointments = "day-appointments";
     public const string MissedAppointments = "missed-appointments";
     public const string UpcomingAppointments = "upcoming-appointments";
+    public const string ToDo = "todos";
 }
 
 public static class DashboardWidgetWidth
@@ -177,6 +178,7 @@ public static class DashboardWidgetCatalog
         new(DashboardWidgetIds.DailySugar, "Daily blood sugar", "Glucose readings by time with high, low, and average.", "Vitals", "#f2994a", DashboardWidgetWidth.Half),
         new(DashboardWidgetIds.UpcomingAppointments, "Upcoming appointments", "What is next on the calendar.", "Appointments", "#9b51e0", DashboardWidgetWidth.Half),
         new(DashboardWidgetIds.MissedAppointments, "Missing appointments", "This month's visits that passed unmarked.", "Appointments", "#b42318", DashboardWidgetWidth.Half),
+        new(DashboardWidgetIds.ToDo, "To Do", "Open tasks by finish date, with overdue items and near-term high-priority alerts.", "Follow-up", "#db2777", DashboardWidgetWidth.Half),
         new(DashboardWidgetIds.MedOverview, "Medication overview", "Active prescriptions with purpose and dose.", "Medications", "#27ae60", DashboardWidgetWidth.Full),
         new(DashboardWidgetIds.TrendBp, "Blood pressure trend", "Month-by-month systolic and diastolic chart.", "Trends", "#2f80ed", DashboardWidgetWidth.Half),
         new(DashboardWidgetIds.TrendSugar, "Blood sugar trend", "Month-by-month glucose chart.", "Trends", "#f2994a", DashboardWidgetWidth.Half),
@@ -190,6 +192,7 @@ public static class DashboardWidgetCatalog
         (DashboardWidgetIds.DailySugar, DashboardWidgetWidth.Half),
         (DashboardWidgetIds.UpcomingAppointments, DashboardWidgetWidth.Half),
         (DashboardWidgetIds.MissedAppointments, DashboardWidgetWidth.Half),
+        (DashboardWidgetIds.ToDo, DashboardWidgetWidth.Half),
         (DashboardWidgetIds.MedOverview, DashboardWidgetWidth.Full),
         (DashboardWidgetIds.TrendBp, DashboardWidgetWidth.Half),
         (DashboardWidgetIds.TrendSugar, DashboardWidgetWidth.Half),

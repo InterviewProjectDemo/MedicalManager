@@ -1,64 +1,65 @@
-﻿@inherits LayoutComponentBase
-@implements IDisposable
-@inject NavigationManager NavigationManager
-
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <nav class="legend" aria-label="Quick navigation">
-                <a class="legend-item bp" href="@Href("blood-pressure")">Blood Pressure</a>
-                <a class="legend-item sugar" href="@Href("sugar")">Blood Sugar</a>
-                <a class="legend-item meds" href="@Href("medications")">Medications</a>
-                <a class="legend-item appt" href="@Href("appointments")">Appointments</a>
-            </nav>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
-
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
-
-@code {
-    private string? selectedPatientId;
-
-    protected override void OnInitialized()
-    {
-        UpdateFromUri();
-        NavigationManager.LocationChanged += OnLocationChanged;
-    }
-
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-    {
-        UpdateFromUri();
-        StateHasChanged();
-    }
-
-    private void UpdateFromUri()
-    {
-        selectedPatientId = null;
-        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
-        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query)
-            .TryGetValue("patientUserId", out var value))
-        {
-            selectedPatientId = value.ToString();
-        }
-    }
-
-    private string Href(string path) => CareLinks.To(path, selectedPatientId);
-
-    public void Dispose()
-    {
-        NavigationManager.LocationChanged -= OnLocationChanged;
-    }
-}
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager NavigationManager
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <nav class="legend" aria-label="Quick navigation">
+                <a class="legend-item bp" href="@Href("blood-pressure")">Blood Pressure</a>
+                <a class="legend-item sugar" href="@Href("sugar")">Blood Sugar</a>
+                <a class="legend-item meds" href="@Href("medications")">Medications</a>
+                <a class="legend-item appt" href="@Href("appointments")">Appointments</a>
+                <a class="legend-item todo" href="@Href("todos")">To Do</a>
+            </nav>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private string? selectedPatientId;
+
+    protected override void OnInitialized()
+    {
+        UpdateFromUri();
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        UpdateFromUri();
+        StateHasChanged();
+    }
+
+    private void UpdateFromUri()
+    {
+        selectedPatientId = null;
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query)
+            .TryGetValue("patientUserId", out var value))
+        {
+            selectedPatientId = value.ToString();
+        }
+    }
+
+    private string Href(string path) => CareLinks.To(path, selectedPatientId);
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}
