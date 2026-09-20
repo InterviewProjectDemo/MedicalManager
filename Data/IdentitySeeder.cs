@@ -36,6 +36,8 @@ public static class IdentitySeeder
             await db.Database.EnsureCreatedAsync();
         }
 
+        await EnsureOnboardingColumnsAsync(db);
+
         try
         {
             await EnsureDashboardLayoutsTableAsync(db);
@@ -52,6 +54,15 @@ public static class IdentitySeeder
         catch (Exception)
         {
             // Table may already exist from EnsureCreated or a prior migration.
+        }
+
+        try
+        {
+            await EnsureOnboardingColumnsAsync(db);
+        }
+        catch (Exception)
+        {
+            // Columns may already exist from EnsureCreated or a prior migration.
         }
 
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
@@ -719,37 +730,48 @@ public static class IdentitySeeder
 
     private static async Task EnsureOnboardingColumnsAsync(ApplicationDbContext db)
     {
-        if (!db.Database.IsSqlite())
+        if (db.Database.IsSqlite())
         {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                await using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT name FROM pragma_table_info('PatientProfiles')";
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        columns.Add(reader.GetString(0));
+                }
+
+                await TryAddColumnAsync(db, columns, "HasCompletedOnboarding",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "HasCompletedOnboarding" INTEGER NOT NULL DEFAULT 0""");
+                await TryAddColumnAsync(db, columns, "OnboardingCompletedAt",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "OnboardingCompletedAt" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
             return;
         }
 
-        var connection = db.Database.GetDbConnection();
-        var wasOpen = connection.State == System.Data.ConnectionState.Open;
-        if (!wasOpen)
-            await connection.OpenAsync();
-
-        try
-        {
-            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            await using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = "SELECT name FROM pragma_table_info('PatientProfiles')";
-                await using var reader = await cmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                    columns.Add(reader.GetString(0));
-            }
-
-            await TryAddColumnAsync(db, columns, "HasCompletedOnboarding",
-                """ALTER TABLE "PatientProfiles" ADD COLUMN "HasCompletedOnboarding" INTEGER NOT NULL DEFAULT 0""");
-            await TryAddColumnAsync(db, columns, "OnboardingCompletedAt",
-                """ALTER TABLE "PatientProfiles" ADD COLUMN "OnboardingCompletedAt" TEXT NULL""");
-        }
-        finally
-        {
-            if (!wasOpen)
-                await connection.CloseAsync();
-        }
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            ALTER TABLE "PatientProfiles"
+            ADD COLUMN IF NOT EXISTS "HasCompletedOnboarding" BOOLEAN NOT NULL DEFAULT FALSE;
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            ALTER TABLE "PatientProfiles"
+            ADD COLUMN IF NOT EXISTS "OnboardingCompletedAt" TIMESTAMP WITHOUT TIME ZONE NULL;
+            """);
     }
 
     private static async Task EnsureDashboardLayoutsTableAsync(ApplicationDbContext db)
