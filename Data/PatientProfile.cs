@@ -28,4 +28,8 @@ public class PatientProfile
     public string? ProfilePhotoContentType { get; set; }
 
     public DateTime? ProfilePhotoUpdatedAt { get; set; }
+
+    public bool HasCompletedOnboarding { get; set; }
+
+    public DateTime? OnboardingCompletedAt { get; set; }
 }

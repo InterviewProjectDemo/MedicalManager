@@ -2,6 +2,8 @@
 @attribute [Authorize]
 @inject DashboardLayoutService Layouts
 @inject AuthenticationStateProvider Auth
+@inject PatientAccessService Access
+@inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -23,6 +25,12 @@ else
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
+        if (await Access.NeedsOnboardingAsync(state.User))
+        {
+            Navigation.NavigateTo("/onboarding");
+            return;
+        }
+
         var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         layout = await Layouts.GetForUserAsync(userId ?? "");
     }

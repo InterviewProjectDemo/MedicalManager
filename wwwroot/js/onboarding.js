@@ -1,0 +1,451 @@
+window.mmOnboarding = {
+    _speakToken: 0,
+    _visemeTimer: null,
+    _currentViseme: 0,
+    _reducedMotion: false,
+    _imagesPreloaded: false,
+    _visemeMinMs: 130,
+    _visemeMaxMs: 175,
+
+    /** Adjacent-only viseme transitions — avoid jarring closed→wide→closed jumps. */
+    _visemeTransitions: {
+        0: [0, 1, 4],
+        1: [0, 1, 2, 4],
+        2: [1, 2, 3, 5],
+        3: [2, 3, 5],
+        4: [0, 1, 4, 2],
+        5: [2, 3, 5, 1]
+    },
+
+    isSpeechSupported() {
+        return "speechSynthesis" in window;
+    },
+
+    /** Score voices for a warm, caring tone — prefer female/neutral English voices. */
+    pickWarmVoice(voices) {
+        if (!voices?.length) return null;
+
+        const warmNamePatterns = [
+            /samantha/i, /zira/i, /karen/i, /victoria/i, /moira/i, /fiona/i,
+            /google uk english female/i, /google us english/i, /microsoft (aria|jenny|michelle)/i,
+            /female/i, /natural/i
+        ];
+
+        const english = voices.filter(v => v.lang?.startsWith("en"));
+        const pool = english.length ? english : voices;
+
+        let best = null;
+        let bestScore = -1;
+
+        for (const voice of pool) {
+            let score = 0;
+            const name = voice.name || "";
+
+            for (let i = 0; i < warmNamePatterns.length; i++) {
+                if (warmNamePatterns[i].test(name)) {
+                    score += 10 - i;
+                }
+            }
+
+            if (/local/i.test(name)) score += 2;
+            if (voice.default) score += 1;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = voice;
+            }
+        }
+
+        return best ?? pool[0] ?? null;
+    },
+
+    preloadPresenterImages() {
+        if (this._imagesPreloaded) return;
+        for (let i = 0; i <= 5; i++) {
+            const img = new Image();
+            img.src = `images/onboarding-presenter-${i}.jpg`;
+        }
+        this._imagesPreloaded = true;
+    },
+
+    setPresenterViseme(index) {
+        const viseme = Math.max(0, Math.min(5, index | 0));
+        if (viseme === this._currentViseme) return;
+        this._currentViseme = viseme;
+        document.querySelectorAll("[data-walkthrough-presenter]").forEach((el) => {
+            el.dataset.viseme = String(viseme);
+        });
+    },
+
+    _nextVisemeDelay() {
+        return this._visemeMinMs + Math.floor(Math.random() * (this._visemeMaxMs - this._visemeMinMs + 1));
+    },
+
+    _nextViseme() {
+        const options = this._visemeTransitions[this._currentViseme] ?? [0, 1, 2];
+        const next = options[Math.floor(Math.random() * options.length)];
+        this.setPresenterViseme(next);
+    },
+
+    /** Single source of truth for mouth movement — one debounced timer, no onboundary. */
+    _startVisemeCycle() {
+        if (this._reducedMotion || this._visemeTimer) return;
+        const tick = () => {
+            this._nextViseme();
+            this._visemeTimer = setTimeout(tick, this._nextVisemeDelay());
+        };
+        this._visemeTimer = setTimeout(tick, this._nextVisemeDelay());
+    },
+
+    _stopVisemeCycle() {
+        if (this._visemeTimer) {
+            clearTimeout(this._visemeTimer);
+            this._visemeTimer = null;
+        }
+    },
+
+    setPresenterSpeaking(speaking) {
+        document.querySelectorAll("[data-walkthrough-presenter]").forEach((el) => {
+            el.classList.toggle("is-speaking", !!speaking);
+        });
+
+        if (speaking && !this._reducedMotion) {
+            this._startVisemeCycle();
+        } else {
+            this._stopVisemeCycle();
+            this.setPresenterViseme(0);
+        }
+    },
+
+    _applyWarmVoice(utterance) {
+        utterance.rate = 0.88;
+        utterance.pitch = 0.95;
+        utterance.volume = 0.88;
+        utterance.lang = "en-US";
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = this.pickWarmVoice(voices);
+        if (preferred) {
+            utterance.voice = preferred;
+        }
+    },
+
+    /** Split long narration into sentence-sized chunks so browsers finish every phrase. */
+    _splitSpeechChunks(text) {
+        const trimmed = (text || "").trim();
+        if (!trimmed) return [];
+
+        const sentences = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+        if (!sentences?.length) return [trimmed];
+
+        const chunks = [];
+        let current = "";
+
+        for (const sentence of sentences) {
+            const piece = sentence.trim();
+            if (!piece) continue;
+
+            const candidate = current ? `${current} ${piece}` : piece;
+            if (candidate.length > 180 && current) {
+                chunks.push(current);
+                current = piece;
+            } else {
+                current = candidate;
+            }
+        }
+
+        if (current) chunks.push(current);
+        return chunks.length ? chunks : [trimmed];
+    },
+
+    speak(text, muted) {
+        if (muted || !text || !window.speechSynthesis) {
+            return;
+        }
+
+        this._speakToken += 1;
+        window.speechSynthesis.cancel();
+        void this.speakAsync(text, false);
+    },
+
+    /** Returns a promise that resolves when speech finishes (or immediately if muted/unsupported). */
+    speakAsync(text, muted) {
+        if (muted || !text || !window.speechSynthesis) {
+            return Promise.resolve();
+        }
+
+        const token = ++this._speakToken;
+        window.speechSynthesis.cancel();
+
+        const chunks = this._splitSpeechChunks(text);
+        if (!chunks.length) {
+            return Promise.resolve();
+        }
+
+        const speakChunk = (index) => new Promise((resolve) => {
+            if (token !== this._speakToken) {
+                resolve();
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(chunks[index]);
+            this._applyWarmVoice(utterance);
+
+            const finish = () => {
+                if (token !== this._speakToken) {
+                    resolve();
+                    return;
+                }
+                if (index === chunks.length - 1) {
+                    this.setPresenterSpeaking(false);
+                }
+                resolve();
+            };
+
+            utterance.onstart = () => {
+                if (token === this._speakToken) {
+                    this.setPresenterSpeaking(true);
+                }
+            };
+            utterance.onend = finish;
+            utterance.onerror = finish;
+
+            window.speechSynthesis.speak(utterance);
+        });
+
+        return chunks.reduce(
+            (chain, _, index) => chain.then(() => speakChunk(index)),
+            Promise.resolve()
+        );
+    },
+
+    cancelSpeech() {
+        this._speakToken += 1;
+        this._stopVisemeCycle();
+        this.setPresenterSpeaking(false);
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    },
+
+    walkthrough: {
+        _session: null,
+
+        scenes: [
+            {
+                id: "dashboard",
+                title: "Your Dashboard at a Glance",
+                narration: "Let's start with your dashboard — your personalized home screen. Here you'll see blood pressure trends, medications due today, upcoming appointments, and your to-do list at a glance. You can customize which widgets appear using Dashboard Studio from the menu.",
+                durationMs: 24000
+            },
+            {
+                id: "medication",
+                title: "Adding a Medication",
+                narration: "To add a medication, open Medications from the menu and tap Add. Enter the medication name, dose, and schedule — just the basics for now. Medical Manager helps you track reminders so nothing is missed on busy days.",
+                durationMs: 23000
+            },
+            {
+                id: "blood-pressure",
+                title: "Logging Blood Pressure",
+                narration: "For blood pressure, open Blood Pressure from the menu and tap Add. Enter your systolic, diastolic, and pulse, then save. Your readings build a gentle trend chart on the dashboard so patterns are easier to spot over time.",
+                durationMs: 23000
+            },
+            {
+                id: "todo",
+                title: "Creating a To Do",
+                narration: "For anything you don't want to forget, visit To Do and tap Add. Write a short description, set a finish-by date, and choose a priority. It's a simple way to keep health tasks organized and top of mind.",
+                durationMs: 22000
+            },
+            {
+                id: "closing",
+                title: "You're Ready!",
+                narration: "That's the essentials — dashboard, medications, blood pressure, and to-dos. You're ready to explore on your own. We're glad you're here, and we wish you well on your health journey.",
+                durationMs: 16000
+            }
+        ],
+
+        start(rootId, options) {
+            this.stop();
+
+            const root = document.getElementById(rootId);
+            if (!root) return;
+
+            const reducedMotion = !!options?.reducedMotion;
+            const muted = !!options?.muted;
+            const dotNetRef = options?.dotNetRef ?? null;
+
+            window.mmOnboarding._reducedMotion = reducedMotion;
+            window.mmOnboarding.preloadPresenterImages();
+            window.mmOnboarding.setPresenterViseme(0);
+
+            const sceneEls = root.querySelectorAll("[data-walkthrough-scene]");
+            const titleEl = root.querySelector("[data-walkthrough-title]");
+            const progressEl = root.querySelector("[data-walkthrough-progress]");
+            const timeEl = root.querySelector("[data-walkthrough-time]");
+            const playBtn = root.querySelector("[data-walkthrough-play]");
+            const totalMs = this.scenes.reduce((sum, s) => sum + s.durationMs, 0);
+
+            let index = 0;
+            let paused = false;
+            let sceneTimer = null;
+            let progressTimer = null;
+            let sceneStartedAt = 0;
+            let elapsedBeforePause = 0;
+            let globalElapsed = 0;
+            let scenePlayPromise = null;
+            let scenePlayResolve = null;
+
+            const formatTime = (ms) => {
+                const sec = Math.max(0, Math.floor(ms / 1000));
+                const m = Math.floor(sec / 60);
+                const s = sec % 60;
+                return `${m}:${s.toString().padStart(2, "0")}`;
+            };
+
+            const setPlayIcon = (playing) => {
+                if (!playBtn) return;
+                playBtn.textContent = playing ? "⏸" : "▶";
+                playBtn.setAttribute("aria-label", playing ? "Pause walkthrough" : "Play walkthrough");
+            };
+
+            const updateProgress = () => {
+                const scene = this.scenes[index];
+                const sceneElapsed = paused
+                    ? elapsedBeforePause
+                    : elapsedBeforePause + (Date.now() - sceneStartedAt);
+                const priorMs = this.scenes.slice(0, index).reduce((sum, s) => sum + s.durationMs, 0);
+                globalElapsed = Math.min(totalMs, priorMs + sceneElapsed);
+                const pct = (globalElapsed / totalMs) * 100;
+
+                if (progressEl) progressEl.style.width = `${pct}%`;
+                if (timeEl) timeEl.textContent = `${formatTime(globalElapsed)} / ${formatTime(totalMs)}`;
+            };
+
+            const showSceneVisuals = (i) => {
+                index = i;
+                const scene = this.scenes[i];
+                elapsedBeforePause = 0;
+                sceneStartedAt = Date.now();
+
+                sceneEls.forEach((el) => {
+                    el.classList.toggle("active", el.dataset.walkthroughScene === scene.id);
+                });
+
+                if (titleEl) titleEl.textContent = scene.title;
+                updateProgress();
+            };
+
+            const waitForScene = async (i) => {
+                const scene = this.scenes[i];
+                showSceneVisuals(i);
+
+                scenePlayPromise = new Promise((resolve) => {
+                    scenePlayResolve = resolve;
+                });
+
+                if (!muted && window.speechSynthesis) {
+                    await window.mmOnboarding.speakAsync(scene.narration, false);
+                } else {
+                    const waitMs = reducedMotion ? 8000 : scene.durationMs;
+                    await new Promise((resolve) => {
+                        sceneTimer = setTimeout(resolve, waitMs);
+                    });
+                }
+
+                if (scenePlayResolve) {
+                    scenePlayResolve();
+                    scenePlayResolve = null;
+                    scenePlayPromise = null;
+                }
+
+                if (!paused) {
+                    await new Promise((resolve) => {
+                        sceneTimer = setTimeout(resolve, reducedMotion ? 400 : 600);
+                    });
+                }
+            };
+
+            const playScenes = async (startIndex = 0) => {
+                for (let i = startIndex; i < this.scenes.length; i++) {
+                    if (paused) return;
+                    await waitForScene(i);
+                    if (paused) return;
+                }
+                finish();
+            };
+
+            const finish = () => {
+                this.stop();
+                if (dotNetRef) {
+                    dotNetRef.invokeMethodAsync("OnWalkthroughComplete").catch(() => { });
+                }
+            };
+
+            const pause = () => {
+                if (paused) return;
+                paused = true;
+                elapsedBeforePause += Date.now() - sceneStartedAt;
+                clearTimeout(sceneTimer);
+                window.mmOnboarding.cancelSpeech();
+                if (scenePlayResolve) {
+                    scenePlayResolve();
+                    scenePlayResolve = null;
+                    scenePlayPromise = null;
+                }
+                setPlayIcon(false);
+            };
+
+            const resume = () => {
+                if (!paused) return;
+                paused = false;
+                sceneStartedAt = Date.now();
+                setPlayIcon(true);
+                playScenes(index);
+            };
+
+            const skip = () => finish();
+
+            const onPlayClick = () => (paused ? resume() : pause());
+            const onSkipClick = () => skip();
+            const onCloseClick = () => skip();
+
+            if (playBtn) playBtn.addEventListener("click", onPlayClick);
+            root.querySelector("[data-walkthrough-skip]")?.addEventListener("click", onSkipClick);
+            root.querySelector("[data-walkthrough-close]")?.addEventListener("click", onCloseClick);
+
+            progressTimer = setInterval(updateProgress, 250);
+
+            this._session = {
+                root,
+                pause,
+                resume,
+                skip,
+                cleanup: () => {
+                    clearTimeout(sceneTimer);
+                    clearInterval(progressTimer);
+                    window.mmOnboarding.cancelSpeech();
+                    if (playBtn) playBtn.removeEventListener("click", onPlayClick);
+                    root.querySelector("[data-walkthrough-skip]")?.removeEventListener("click", onSkipClick);
+                    root.querySelector("[data-walkthrough-close]")?.removeEventListener("click", onCloseClick);
+                }
+            };
+
+            setPlayIcon(true);
+            playScenes(0);
+        },
+
+        stop() {
+            if (this._session) {
+                this._session.cleanup();
+                this._session = null;
+            }
+            window.mmOnboarding.cancelSpeech();
+        }
+    }
+};
+
+if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+    };
+}

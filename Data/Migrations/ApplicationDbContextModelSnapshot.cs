@@ -389,8 +389,14 @@ namespace MedicalManager.Migrations
                     b.Property<DateOnly?>("DateOfBirth")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("HasCompletedOnboarding")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("OnboardingCompletedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Phone")

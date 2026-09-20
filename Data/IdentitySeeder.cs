@@ -29,6 +29,7 @@ public static class IdentitySeeder
             await db.Database.MigrateAsync();
             await EnsureProfilePhotoColumnsAsync(db);
             await EnsureMedicationPurposeColumnAsync(db);
+            await EnsureOnboardingColumnsAsync(db);
         }
         else
         {
@@ -38,6 +39,15 @@ public static class IdentitySeeder
         try
         {
             await EnsureDashboardLayoutsTableAsync(db);
+        }
+        catch (Exception)
+        {
+            // Table may already exist from EnsureCreated or a prior migration.
+        }
+
+        try
+        {
+            await EnsureToDoItemsTableAsync(db);
         }
         catch (Exception)
         {
@@ -65,9 +75,21 @@ public static class IdentitySeeder
                 DateOfBirth = new DateOnly(1988, 4, 12),
                 Sex = "Female",
                 Phone = "555-0142",
-                Notes = "Demo patient monitoring blood pressure and glucose."
+                Notes = "Demo patient monitoring blood pressure and glucose.",
+                HasCompletedOnboarding = true,
+                OnboardingCompletedAt = DateTime.UtcNow
             });
             await db.SaveChangesAsync();
+        }
+        else
+        {
+            var demoProfile = await db.PatientProfiles.FirstOrDefaultAsync(x => x.UserId == patient.Id);
+            if (demoProfile is not null && !demoProfile.HasCompletedOnboarding)
+            {
+                demoProfile.HasCompletedOnboarding = true;
+                demoProfile.OnboardingCompletedAt ??= DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
         }
 
         await EnsurePatientProfilesAsync(db, users);
@@ -695,6 +717,41 @@ public static class IdentitySeeder
         }
     }
 
+    private static async Task EnsureOnboardingColumnsAsync(ApplicationDbContext db)
+    {
+        if (!db.Database.IsSqlite())
+        {
+            return;
+        }
+
+        var connection = db.Database.GetDbConnection();
+        var wasOpen = connection.State == System.Data.ConnectionState.Open;
+        if (!wasOpen)
+            await connection.OpenAsync();
+
+        try
+        {
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "SELECT name FROM pragma_table_info('PatientProfiles')";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    columns.Add(reader.GetString(0));
+            }
+
+            await TryAddColumnAsync(db, columns, "HasCompletedOnboarding",
+                """ALTER TABLE "PatientProfiles" ADD COLUMN "HasCompletedOnboarding" INTEGER NOT NULL DEFAULT 0""");
+            await TryAddColumnAsync(db, columns, "OnboardingCompletedAt",
+                """ALTER TABLE "PatientProfiles" ADD COLUMN "OnboardingCompletedAt" TEXT NULL""");
+        }
+        finally
+        {
+            if (!wasOpen)
+                await connection.CloseAsync();
+        }
+    }
+
     private static async Task EnsureDashboardLayoutsTableAsync(ApplicationDbContext db)
     {
         if (db.Database.IsSqlite())
@@ -726,6 +783,45 @@ public static class IdentitySeeder
             """);
         await db.Database.ExecuteSqlRawAsync(
             """CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserDashboardLayouts_UserId" ON "UserDashboardLayouts" ("UserId");""");
+    }
+
+    private static async Task EnsureToDoItemsTableAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "ToDoItems" (
+                    "Id" INTEGER NOT NULL CONSTRAINT "PK_ToDoItems" PRIMARY KEY AUTOINCREMENT,
+                    "UserId" TEXT NOT NULL,
+                    "Description" TEXT NOT NULL,
+                    "FinishBy" TEXT NOT NULL,
+                    "Priority" INTEGER NOT NULL,
+                    "Notes" TEXT NULL,
+                    "IsDone" INTEGER NOT NULL,
+                    CONSTRAINT "FK_ToDoItems_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync(
+                """CREATE INDEX IF NOT EXISTS "IX_ToDoItems_UserId_FinishBy" ON "ToDoItems" ("UserId", "FinishBy");""");
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "ToDoItems" (
+                "Id" SERIAL PRIMARY KEY,
+                "UserId" TEXT NOT NULL,
+                "Description" TEXT NOT NULL,
+                "FinishBy" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                "Priority" INTEGER NOT NULL,
+                "Notes" TEXT NULL,
+                "IsDone" BOOLEAN NOT NULL,
+                CONSTRAINT "FK_ToDoItems_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ToDoItems_UserId_FinishBy" ON "ToDoItems" ("UserId", "FinishBy");""");
     }
 
     private static async Task TryAddColumnAsync(

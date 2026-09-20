@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace MedicalManager.Data;
@@ -62,6 +63,59 @@ public sealed class PatientAccessService(
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
     }
+
+    public async Task<bool> NeedsOnboardingAsync(ClaimsPrincipal principal)
+    {
+        if (!principal.IsInRole(AppRoles.Patient))
+        {
+            return false;
+        }
+
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return false;
+        }
+
+        var profile = await GetProfileAsync(userId);
+        return profile is not { HasCompletedOnboarding: true };
+    }
+
+    public async Task<string> ResolvePostAuthRedirectAsync(ApplicationUser user, string? returnUrl)
+    {
+        if (!await users.IsInRoleAsync(user, AppRoles.Patient))
+        {
+            return NormalizeReturnUrl(returnUrl);
+        }
+
+        var profile = await GetProfileAsync(user.Id);
+        if (profile is { HasCompletedOnboarding: true })
+        {
+            return NormalizeReturnUrl(returnUrl);
+        }
+
+        var destination = NormalizeReturnUrl(returnUrl);
+        if (destination.Contains("/onboarding", StringComparison.OrdinalIgnoreCase))
+        {
+            return destination;
+        }
+
+        return QueryHelpers.AddQueryString("/onboarding", "returnUrl", destination);
+    }
+
+    public async Task CompleteOnboardingAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        profile.HasCompletedOnboarding = true;
+        profile.OnboardingCompletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    private static string NormalizeReturnUrl(string? returnUrl) =>
+        string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl;
 }
 
 public sealed record PatientScope(

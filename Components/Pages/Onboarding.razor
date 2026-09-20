@@ -1,0 +1,689 @@
+@page "/onboarding"
+@layout OnboardingLayout
+@attribute [Authorize(Roles = AppRoles.Patient)]
+@implements IDisposable
+@implements IAsyncDisposable
+@inject UserManager<ApplicationUser> UserManager
+@inject PatientAccessService Access
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider Auth
+@inject IJSRuntime JS
+
+<PageTitle>Welcome to Medical Manager</PageTitle>
+
+@if (_loading)
+{
+    <div class="onboarding-card onboarding-loading">
+        <p class="muted">Preparing your welcome tour…</p>
+    </div>
+}
+else if (_steps.Length == 0)
+{
+    <div class="onboarding-card onboarding-loading">
+        <p class="muted">Loading…</p>
+    </div>
+}
+else
+{
+    <div class="onboarding-card">
+        <header class="onboarding-head">
+            <p class="onboarding-eyebrow">Medical Manager</p>
+            <h1>@CurrentStep.Title</h1>
+            @if (!string.IsNullOrWhiteSpace(CurrentStep.Subtitle))
+            {
+                <p class="onboarding-subtitle">@CurrentStep.Subtitle</p>
+            }
+        </header>
+
+        <div class="onboarding-body" aria-live="polite">
+            @if (CurrentStep.QuickStartCards is { Length: > 0 } cards)
+            {
+                <div class="onboarding-demo-grid" aria-label="Quick start topics">
+                    @for (var i = 0; i < cards.Length; i++)
+                    {
+                        var card = cards[i];
+                        var cardClass = GetDemoCardClass(i);
+                        <div class="onboarding-demo-card @cardClass">
+                            <span class="onboarding-demo-icon" aria-hidden="true">@card.Icon</span>
+                            <div class="onboarding-demo-text">
+                                <strong>@card.Label</strong>
+                                <span>@card.Hint</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @foreach (var paragraph in _completedParagraphs)
+            {
+                <p class="onboarding-paragraph">@paragraph</p>
+            }
+            @if (!string.IsNullOrEmpty(_typedText) || _isTypingActive)
+            {
+                <p class="onboarding-paragraph onboarding-typing" aria-hidden="true">
+                    @_typedText
+                    @if (_isTypingActive && !_prefersReducedMotion)
+                    {
+                        <span class="onboarding-caret"></span>
+                    }
+                </p>
+            }
+            <span class="visually-hidden" role="status">@_announcedText</span>
+        </div>
+
+        <footer class="onboarding-foot">
+            <div class="onboarding-progress" aria-label="Tour progress">
+                @for (var i = 0; i < _steps.Length; i++)
+                {
+                    var index = i;
+                    <button type="button"
+                            class="onboarding-dot @(index == _stepIndex ? "active" : index < _stepIndex ? "done" : null)"
+                            aria-label="@($"Step {index + 1} of {_steps.Length}")"
+                            disabled="@(index > _stepIndex)"
+                            @onclick="() => GoToStep(index)">
+                    </button>
+                }
+            </div>
+
+            <div class="onboarding-actions">
+                @if (_speechSupported)
+                {
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary onboarding-voice-btn"
+                            aria-pressed="@(!_voiceMuted)"
+                            aria-label="@(_voiceMuted ? "Unmute voice guide" : "Mute voice guide")"
+                            @onclick="ToggleVoice">
+                        @(_voiceMuted ? "🔇 Voice off" : "🔊 Voice on")
+                    </button>
+                }
+
+                @if (_stepIndex < _steps.Length - 1)
+                {
+                    <button type="button" class="btn btn-link onboarding-skip" @onclick="SkipTour">Skip for now</button>
+                    <button type="button"
+                            class="btn btn-primary onboarding-next"
+                            disabled="@(!_stepTypingComplete)"
+                            @onclick="NextStep">
+                        Next
+                    </button>
+                }
+                else if (_showVideoPrompt)
+                {
+                    <div class="onboarding-video-prompt" role="region" aria-label="Video walkthrough offer">
+                        <p class="onboarding-video-prompt-text">
+                            Would you like a brief video walkthrough of the application?
+                        </p>
+                        <div class="onboarding-video-prompt-actions">
+                            <button type="button"
+                                    class="btn btn-outline-secondary onboarding-video-no"
+                                    disabled="@_completing"
+                                    @onclick="DeclineWalkthroughAsync">
+                                No thanks
+                            </button>
+                            <button type="button"
+                                    class="btn btn-primary onboarding-video-yes"
+                                    disabled="@_completing"
+                                    @onclick="StartWalkthroughAsync">
+                                Yes, show me
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="btn btn-primary onboarding-next"
+                            disabled="true"
+                            aria-busy="true">
+                        @(_stepTypingComplete ? "Finishing voice…" : "Please wait…")
+                    </button>
+                }
+            </div>
+        </footer>
+    </div>
+}
+
+@if (_showWalkthrough)
+{
+    <div class="walkthrough-overlay" role="dialog" aria-modal="true" aria-label="Video walkthrough">
+        <div class="walkthrough-player" id="walkthrough-root">
+            <header class="walkthrough-header">
+                <div class="walkthrough-header-left">
+                    <span class="walkthrough-badge">Video Walkthrough</span>
+                    <h2 data-walkthrough-title>Your Dashboard at a Glance</h2>
+                </div>
+                <button type="button" class="walkthrough-close" data-walkthrough-close aria-label="Close walkthrough">✕</button>
+            </header>
+
+            <div class="walkthrough-stage">
+                <aside class="walkthrough-presenter" aria-label="Walkthrough presenter">
+                    <div class="walkthrough-avatar" data-walkthrough-presenter data-viseme="0">
+                        <div class="walkthrough-avatar-frame">
+                            <img src="images/onboarding-presenter-0.jpg"
+                                 alt="Dr. Morgan, your guide"
+                                 class="presenter-viseme viseme-0"
+                                 width="160"
+                                 height="200" />
+                            <img src="images/onboarding-presenter-1.jpg"
+                                 alt=""
+                                 aria-hidden="true"
+                                 class="presenter-viseme viseme-1"
+                                 width="160"
+                                 height="200" />
+                            <img src="images/onboarding-presenter-2.jpg"
+                                 alt=""
+                                 aria-hidden="true"
+                                 class="presenter-viseme viseme-2"
+                                 width="160"
+                                 height="200" />
+                            <img src="images/onboarding-presenter-3.jpg"
+                                 alt=""
+                                 aria-hidden="true"
+                                 class="presenter-viseme viseme-3"
+                                 width="160"
+                                 height="200" />
+                            <img src="images/onboarding-presenter-4.jpg"
+                                 alt=""
+                                 aria-hidden="true"
+                                 class="presenter-viseme viseme-4"
+                                 width="160"
+                                 height="200" />
+                            <img src="images/onboarding-presenter-5.jpg"
+                                 alt=""
+                                 aria-hidden="true"
+                                 class="presenter-viseme viseme-5"
+                                 width="160"
+                                 height="200" />
+                        </div>
+                    </div>
+                    <div class="walkthrough-presenter-meta">
+                        <p class="walkthrough-presenter-name">Dr. Morgan</p>
+                        <p class="walkthrough-presenter-role">Your health guide</p>
+                    </div>
+                </aside>
+
+                <div class="walkthrough-scenes">
+                    <div class="walkthrough-scene active" data-walkthrough-scene="dashboard">
+                        <div class="walkthrough-mock walkthrough-mock-dashboard">
+                            <div class="walkthrough-mock-bar"><span></span><span></span><span></span></div>
+                            <div class="walkthrough-mock-title">Dashboard</div>
+                            <div class="walkthrough-mock-widgets">
+                                <div class="walkthrough-mock-widget highlight"><span class="mock-icon">🩺</span><strong>BP Trend</strong><span class="mock-chart"></span></div>
+                                <div class="walkthrough-mock-widget"><span class="mock-icon">💊</span><strong>Medications</strong><span class="mock-line"></span></div>
+                                <div class="walkthrough-mock-widget"><span class="mock-icon">📅</span><strong>Appointments</strong><span class="mock-line short"></span></div>
+                                <div class="walkthrough-mock-widget"><span class="mock-icon">✓</span><strong>To Do</strong><span class="mock-line"></span></div>
+                            </div>
+                            <button type="button" class="walkthrough-mock-btn">Customize</button>
+                        </div>
+                    </div>
+
+                    <div class="walkthrough-scene" data-walkthrough-scene="medication">
+                        <div class="walkthrough-mock walkthrough-mock-form">
+                            <div class="walkthrough-mock-bar"><span></span><span></span><span></span></div>
+                            <div class="walkthrough-mock-title">Add Medication</div>
+                            <div class="walkthrough-mock-field"><label>Name</label><div class="mock-input filled">Lisinopril</div></div>
+                            <div class="walkthrough-mock-field"><label>Dose</label><div class="mock-input filled">10 mg</div></div>
+                            <div class="walkthrough-mock-field"><label>Schedule</label><div class="mock-input filled">Once daily, morning</div></div>
+                            <button type="button" class="walkthrough-mock-btn primary">Save</button>
+                        </div>
+                    </div>
+
+                    <div class="walkthrough-scene" data-walkthrough-scene="blood-pressure">
+                        <div class="walkthrough-mock walkthrough-mock-form">
+                            <div class="walkthrough-mock-bar"><span></span><span></span><span></span></div>
+                            <div class="walkthrough-mock-title">Add Blood Pressure</div>
+                            <div class="walkthrough-mock-row">
+                                <div class="walkthrough-mock-field"><label>Systolic</label><div class="mock-input filled">120</div></div>
+                                <div class="walkthrough-mock-field"><label>Diastolic</label><div class="mock-input filled">78</div></div>
+                            </div>
+                            <div class="walkthrough-mock-field"><label>Pulse</label><div class="mock-input filled">72 bpm</div></div>
+                            <button type="button" class="walkthrough-mock-btn primary">Save Reading</button>
+                        </div>
+                    </div>
+
+                    <div class="walkthrough-scene" data-walkthrough-scene="todo">
+                        <div class="walkthrough-mock walkthrough-mock-form">
+                            <div class="walkthrough-mock-bar"><span></span><span></span><span></span></div>
+                            <div class="walkthrough-mock-title">Add To Do</div>
+                            <div class="walkthrough-mock-field"><label>Description</label><div class="mock-input filled">Refill prescription</div></div>
+                            <div class="walkthrough-mock-field"><label>Finish By</label><div class="mock-input filled">Friday</div></div>
+                            <div class="walkthrough-mock-field"><label>Priority</label><div class="mock-input filled">Medium</div></div>
+                            <button type="button" class="walkthrough-mock-btn primary">Add Task</button>
+                        </div>
+                    </div>
+
+                    <div class="walkthrough-scene" data-walkthrough-scene="closing">
+                        <div class="walkthrough-mock walkthrough-mock-closing">
+                            <div class="walkthrough-mock-check">✓</div>
+                            <h3>You're all set!</h3>
+                            <p>Dashboard, medications, blood pressure, and to-dos — you're ready to explore.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="walkthrough-controls">
+                <div class="walkthrough-progress-track" aria-hidden="true">
+                    <div class="walkthrough-progress-fill" data-walkthrough-progress style="width: 0%"></div>
+                </div>
+                <div class="walkthrough-controls-row">
+                    <button type="button" class="walkthrough-play" data-walkthrough-play aria-label="Pause walkthrough">⏸</button>
+                    <span class="walkthrough-time" data-walkthrough-time>0:00 / 1:48</span>
+                    <button type="button" class="walkthrough-skip" data-walkthrough-skip>Skip</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private bool _loading = true;
+    private bool _completing;
+    private bool _prefersReducedMotion;
+    private bool _voiceMuted;
+    private bool _speechSupported;
+    private bool _stepTypingComplete;
+    private bool _showVideoPrompt;
+    private bool _showWalkthrough;
+    private bool _isTypingActive;
+    private int _stepIndex;
+    private int _paragraphIndex;
+    private string _typedText = "";
+    private string _announcedText = "";
+    private string _displayName = "there";
+    private readonly List<string> _completedParagraphs = [];
+    private CancellationTokenSource _typingCts = new();
+    private Task? _typewriterTask;
+    private DotNetObjectReference<Onboarding>? _dotNetRef;
+    private OnboardingStep[] _steps = [];
+
+    private OnboardingStep CurrentStep => _steps[_stepIndex];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/Account/Login");
+            return;
+        }
+
+        var profile = await Access.GetProfileAsync(userId);
+        if (profile is { HasCompletedOnboarding: true })
+        {
+            Navigation.NavigateTo(NormalizeReturnUrl(ReturnUrl));
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        _displayName = user?.DisplayName ?? "there";
+        _steps = BuildSteps(_displayName, FirstName(_displayName));
+        _loading = false;
+    }
+
+    private static string FirstName(string displayName)
+    {
+        var parts = displayName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? parts[0] : displayName;
+    }
+
+    private string GetDemoCardClass(int index)
+    {
+        if (index < _completedParagraphs.Count) return "done";
+        if (index == _completedParagraphs.Count && (_isTypingActive || !string.IsNullOrEmpty(_typedText))) return "active";
+        return "pending";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_loading)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+
+            try
+            {
+                _prefersReducedMotion = await JS.InvokeAsync<bool>("mmPrefersReducedMotion");
+                _speechSupported = await JS.InvokeAsync<bool>("mmOnboarding.isSpeechSupported");
+            }
+            catch (JSDisconnectedException)
+            {
+                return;
+            }
+            catch (JSException)
+            {
+                _prefersReducedMotion = false;
+                _speechSupported = false;
+            }
+
+            RestartStepTyping();
+        }
+
+        if (_showWalkthrough && !_walkthroughStarted)
+        {
+            _walkthroughStarted = true;
+            await StartWalkthroughPlayerAsync();
+        }
+    }
+
+    private bool _walkthroughStarted;
+
+    private static OnboardingStep[] BuildSteps(string displayName, string firstName) =>
+    [
+        new(
+            $"Welcome, {displayName}!",
+            "We're glad you're here",
+            [
+                $"We're so glad you're here, {firstName}. Let's take a moment together — Medical Manager is your calm, organized home for the health details that matter day to day.",
+                "You can open it on your phone or computer whenever you need it. The same gentle dashboard follows you wherever care happens."
+            ]),
+        new(
+            "Why it helps",
+            "A little less worry, a little more clarity",
+            [
+                "Instead of scattered notes, you can keep blood pressure, blood sugar, medications, appointments, and to-dos in one reassuring place.",
+                "Soft color-coded charts help you notice gentle trends early — so you and your care team can adjust while things are still manageable."
+            ]),
+        new(
+            "Your quick start",
+            "Four simple things to try first",
+            [
+                "Let's start with blood pressure. In the menu, open Blood Pressure and tap Add. Enter your systolic, diastolic, and pulse, then save. Those readings build a trend on your dashboard so patterns are easier to spot over time.",
+                "Next, medications. Open Medications from the menu and tap Add. Enter the name, dose, and schedule — just the basics for now. We'll help you track reminders and stay on course on busy days.",
+                "For anything you don't want to forget, visit To Do and tap Add. Write a short description, set Finish By, and choose a priority. It's a kind way to make sure nothing slips away.",
+                "Finally, make the dashboard yours. Open Dashboard Studio from the menu — or tap Customize on your home screen. Turn widgets on or off and arrange vitals, to-dos, and appointments the way you like."
+            ],
+            QuickStartCards:
+            [
+                new("🩺", "Blood pressure", "Menu → Add reading"),
+                new("💊", "Medication", "Name, dose, schedule"),
+                new("✓", "To Do", "Description & priority"),
+                new("📊", "Dashboard", "Studio or Customize")
+            ]),
+        new(
+            $"You're all set, {firstName}",
+            "Good luck on your health journey",
+            [
+                $"{firstName}, you're all set. Good luck on your health journey — we're truly glad you're here.",
+                "If you'd like, we can walk you through the app with a brief video below. Otherwise, choose No thanks and we'll open your personalized dashboard."
+            ])
+    ];
+
+    private void RestartStepTyping()
+    {
+        _typingCts.Cancel();
+        _typingCts.Dispose();
+        _typingCts = new CancellationTokenSource();
+        _completedParagraphs.Clear();
+        _paragraphIndex = 0;
+        _typedText = "";
+        _announcedText = "";
+        _stepTypingComplete = false;
+        _isTypingActive = false;
+
+        _typewriterTask = RunStepTypingAsync(_typingCts.Token);
+    }
+
+    private async Task RunStepTypingAsync(CancellationToken ct)
+    {
+        try
+        {
+            CancelSpeechSafe();
+            var paragraphs = CurrentStep.Paragraphs;
+            var isFinalStep = _stepIndex == _steps.Length - 1;
+            Task? lastSpeechTask = null;
+
+            for (; _paragraphIndex < paragraphs.Length; _paragraphIndex++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var text = paragraphs[_paragraphIndex];
+
+                if (_prefersReducedMotion)
+                {
+                    _completedParagraphs.Add(text);
+                    _announcedText = text;
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
+                _typedText = "";
+                _isTypingActive = true;
+                await InvokeAsync(StateHasChanged);
+                lastSpeechTask = SpeakAsyncSafe(text);
+
+                foreach (var ch in text)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    _typedText += ch;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(48, ct);
+                }
+
+                _isTypingActive = false;
+                _completedParagraphs.Add(text);
+                _announcedText = text;
+                _typedText = "";
+                await InvokeAsync(StateHasChanged);
+
+                if (lastSpeechTask is not null)
+                {
+                    try
+                    {
+                        await lastSpeechTask;
+                    }
+                    catch (JSDisconnectedException)
+                    {
+                        return;
+                    }
+                }
+
+                if (_paragraphIndex < paragraphs.Length - 1)
+                {
+                    await Task.Delay(600, ct);
+                }
+            }
+
+            _stepTypingComplete = true;
+
+            if (isFinalStep)
+            {
+                _showVideoPrompt = true;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void NextStep()
+    {
+        if (_stepIndex >= _steps.Length - 1) return;
+        _stepIndex++;
+        _stepTypingComplete = false;
+        RestartStepTyping();
+    }
+
+    private void GoToStep(int index)
+    {
+        if (index >= _stepIndex || index < 0 || index >= _steps.Length) return;
+        _stepIndex = index;
+        _stepTypingComplete = false;
+        RestartStepTyping();
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (_completing) return;
+        _completing = true;
+
+        var state = await Auth.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            await Access.CompleteOnboardingAsync(userId);
+        }
+
+        CancelSpeechSafe();
+        Navigation.NavigateTo(NormalizeReturnUrl(ReturnUrl));
+    }
+
+    private async Task SkipTour()
+    {
+        await CompleteAsync();
+    }
+
+    private async Task DeclineWalkthroughAsync()
+    {
+        await CompleteAsync();
+    }
+
+    private async Task StartWalkthroughAsync()
+    {
+        _walkthroughStarted = false;
+        _showWalkthrough = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartWalkthroughPlayerAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmOnboarding.walkthrough.start", "walkthrough-root", new
+            {
+                reducedMotion = _prefersReducedMotion,
+                muted = _voiceMuted,
+                dotNetRef = _dotNetRef
+            });
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+            await OnWalkthroughComplete();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnWalkthroughComplete()
+    {
+        StopWalkthroughSafe();
+        _showWalkthrough = false;
+        _walkthroughStarted = false;
+        await CompleteAsync();
+    }
+
+    private void ToggleVoice()
+    {
+        _voiceMuted = !_voiceMuted;
+        if (_voiceMuted)
+        {
+            CancelSpeechSafe();
+        }
+        else if (_isTypingActive && !string.IsNullOrEmpty(_typedText))
+        {
+            var current = CurrentStep.Paragraphs.ElementAtOrDefault(_paragraphIndex);
+            if (!string.IsNullOrEmpty(current))
+            {
+                SpeakSafe(current);
+            }
+        }
+    }
+
+    private void SpeakSafe(string text)
+    {
+        if (_voiceMuted || _prefersReducedMotion || !_speechSupported) return;
+
+        try
+        {
+            _ = JS.InvokeVoidAsync("mmOnboarding.speak", text, _voiceMuted);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private Task? SpeakAsyncSafe(string text)
+    {
+        if (_voiceMuted || _prefersReducedMotion || !_speechSupported) return null;
+
+        try
+        {
+            return JS.InvokeAsync<object>("mmOnboarding.speakAsync", text, _voiceMuted).AsTask();
+        }
+        catch (JSDisconnectedException)
+        {
+            return null;
+        }
+        catch (JSException)
+        {
+            return null;
+        }
+    }
+
+    private void StopWalkthroughSafe()
+    {
+        try
+        {
+            _ = JS.InvokeVoidAsync("mmOnboarding.walkthrough.stop");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private void CancelSpeechSafe()
+    {
+        try
+        {
+            _ = JS.InvokeVoidAsync("mmOnboarding.cancelSpeech");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private static string NormalizeReturnUrl(string? returnUrl) =>
+        string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl;
+
+    public void Dispose()
+    {
+        _typingCts.Cancel();
+        _typingCts.Dispose();
+        CancelSpeechSafe();
+        StopWalkthroughSafe();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (_dotNetRef is not null)
+        {
+            _dotNetRef.Dispose();
+        }
+
+        await ValueTask.CompletedTask;
+    }
+
+    private sealed record OnboardingStep(
+        string Title,
+        string Subtitle,
+        string[] Paragraphs,
+        QuickStartCard[]? QuickStartCards = null);
+
+    private sealed record QuickStartCard(string Icon, string Label, string Hint);
+}

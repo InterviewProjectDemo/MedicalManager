@@ -126,7 +126,8 @@
         else
         {
             await SignInManager.SignInAsync(user, isPersistent: false);
-            RedirectManager.RedirectTo(ReturnUrl);
+            var redirect = await Access.ResolvePostAuthRedirectAsync(user, ReturnUrl);
+            RedirectManager.RedirectTo(redirect);
         }
     }
 

@@ -10,6 +10,7 @@
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
+@inject PatientAccessService Access
 
 <PageTitle>Log in</PageTitle>
 
@@ -138,7 +139,11 @@
         if (result.Succeeded)
         {
             Logger.LogInformation("User logged in.");
-            RedirectManager.RedirectTo(ReturnUrl);
+            var user = await UserManager.GetUserAsync(HttpContext.User);
+            var redirect = user is not null
+                ? await Access.ResolvePostAuthRedirectAsync(user, ReturnUrl)
+                : ReturnUrl;
+            RedirectManager.RedirectTo(redirect);
         }
         else if (result.RequiresTwoFactor)
         {
