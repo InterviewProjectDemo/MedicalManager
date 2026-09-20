@@ -81,6 +81,9 @@ $params = @(
     "PhiKey=$($secrets.MEDICALMANAGER_PHI_KEY)",
     "DbName=$($secrets.POSTGRES_DB)"
 )
+if ($secrets.ContainsKey("EMAIL_SMTP_PASSWORD") -and -not [string]::IsNullOrWhiteSpace($secrets.EMAIL_SMTP_PASSWORD)) {
+    $params += "EmailSmtpPassword=$($secrets.EMAIL_SMTP_PASSWORD)"
+}
 
 Write-Host "Deploying CloudFormation stack $stack (RDS can take 10+ minutes)..."
 & $aws cloudformation deploy `

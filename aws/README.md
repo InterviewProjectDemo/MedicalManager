@@ -9,6 +9,8 @@ This deploys the same two-tier design as Docker Compose:
 
 PHI still uses the app AES-256-GCM key from `.env` (`MEDICALMANAGER_PHI_KEY`). The connection string is stored in Secrets Manager and injected into the task.
 
+Welcome and password-reset emails are sent from `medmgr.us@gmail.com` via Gmail SMTP when `EMAIL_SMTP_PASSWORD` is set in `.env` (a [Google App Password](https://support.google.com/accounts/answer/185833) for that account). The deploy script passes it into the `medicalmanager/runtime` secret as `emailSmtpPassword`, which ECS maps to `Email__Smtp__Password`. Do not commit the app password.
+
 ## What you need
 
 1. An AWS account and an IAM user or role that can create ECR, ECS, RDS, VPC security groups, ALB, IAM roles, CloudWatch Logs, and Secrets Manager.

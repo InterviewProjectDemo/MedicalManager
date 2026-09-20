@@ -38,6 +38,18 @@ You can also open `MedicalManager.slnx` in Visual Studio or Cursor and press F5.
 
 SQLite is created and migrated on startup (`Data/app.db`). Demo users and sample clinical data are seeded automatically.
 
+### Email (welcome + password reset)
+
+Registration sends a welcome email; forgot-password sends a reset link. Both come from `medmgr.us@gmail.com` via Gmail SMTP (`smtp.gmail.com:587`, STARTTLS).
+
+1. Enable 2-Step Verification on the Gmail account.
+2. Create an [App Password](https://support.google.com/accounts/answer/185833) for Medical Manager.
+3. Configure locally (pick one):
+   - User secrets: `dotnet user-secrets set "Email:Smtp:Password" "your-app-password"`
+   - Environment: `Email__Smtp__Password=your-app-password` (or add `EMAIL_SMTP_PASSWORD` to `.env` for Docker)
+
+If no password is configured in Development, emails are not sent; the app logs a warning and writes the plain-text body to the console. Production (ECS/Docker) should always set the password — see [aws/README.md](aws/README.md).
+
 ## Demo logins
 
 | Role | Email | Password |

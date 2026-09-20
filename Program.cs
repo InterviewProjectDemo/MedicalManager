@@ -104,7 +104,10 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, UserClaimsPrincipalFactory<ApplicationUser, IdentityRole>>();
 
-builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddSingleton<SmtpEmailSender>();
+builder.Services.AddSingleton<IAppEmailSender>(sp => sp.GetRequiredService<SmtpEmailSender>());
+builder.Services.AddSingleton<IEmailSender<ApplicationUser>>(sp => sp.GetRequiredService<SmtpEmailSender>());
 builder.Services.AddScoped<HealthRecordService>();
 builder.Services.AddScoped<DoctorService>();
 builder.Services.AddScoped<MedicationScheduleService>();

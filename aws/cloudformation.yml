@@ -24,6 +24,11 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 16
+  EmailSmtpPassword:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Gmail App Password for medmgr.us@gmail.com (optional until email is enabled)
   DbName:
     Type: String
     Default: medicalmanager
@@ -115,7 +120,7 @@ Resources:
     Properties:
       Name: medicalmanager/runtime
       Description: Database URL and PHI encryption key for MedicalManager
-      SecretString: !Sub '{"connection":"Host=${DbInstance.Endpoint.Address};Port=5432;Database=${DbName};Username=${DbUsername};Password=${DbPassword};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30","phiKey":"${PhiKey}"}'
+      SecretString: !Sub '{"connection":"Host=${DbInstance.Endpoint.Address};Port=5432;Database=${DbName};Username=${DbUsername};Password=${DbPassword};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30","phiKey":"${PhiKey}","emailSmtpPassword":"${EmailSmtpPassword}"}'
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -191,11 +196,17 @@ Resources:
               Value: "true"
             - Name: MEDICALMANAGER_DATA_DIR
               Value: /data
+            - Name: Email__FromAddress
+              Value: medmgr.us@gmail.com
+            - Name: Email__Smtp__User
+              Value: medmgr.us@gmail.com
           Secrets:
             - Name: ConnectionStrings__DefaultConnection
               ValueFrom: !Sub "${AppSecret}:connection::"
             - Name: MEDICALMANAGER_PHI_KEY
               ValueFrom: !Sub "${AppSecret}:phiKey::"
+            - Name: Email__Smtp__Password
+              ValueFrom: !Sub "${AppSecret}:emailSmtpPassword::"
           HealthCheck:
             Command:
               - CMD-SHELL
