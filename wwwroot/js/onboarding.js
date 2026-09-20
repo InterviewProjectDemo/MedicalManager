@@ -6,6 +6,13 @@ window.mmOnboarding = {
     _imagesPreloaded: false,
     _visemeMinMs: 130,
     _visemeMaxMs: 175,
+    _speechUnlocked: false,
+    _resumeTimer: null,
+    _gestureArmed: false,
+    _unlockNotified: false,
+    _dotNetRef: null,
+    /** Test hook: delay speakAsync resolution (ms) to simulate iOS onend hang. */
+    debugHangMs: 0,
 
     /** Adjacent-only viseme transitions — avoid jarring closed→wide→closed jumps. */
     _visemeTransitions: {
@@ -19,6 +26,108 @@ window.mmOnboarding = {
 
     isSpeechSupported() {
         return "speechSynthesis" in window;
+    },
+
+    _isAppleTouch() {
+        const ua = navigator.userAgent || "";
+        return /iPad|iPhone|iPod/.test(ua)
+            || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    },
+
+    _isAndroid() {
+        return /Android/i.test(navigator.userAgent || "");
+    },
+
+    /** iOS/Android block speech until a real user gesture unlocks the synth. */
+    _requiresSpeechGesture() {
+        return this._isAppleTouch() || this._isAndroid();
+    },
+
+    needsSpeechUnlock() {
+        return this.isSpeechSupported() && !this._speechUnlocked && this._requiresSpeechGesture();
+    },
+
+    isSpeechUnlocked() {
+        return this._speechUnlocked;
+    },
+
+    _startResumeWatch() {
+        if (this._resumeTimer || !window.speechSynthesis) return;
+        this._resumeTimer = setInterval(() => {
+            try {
+                if (window.speechSynthesis.speaking && window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+            } catch {
+                /* ignore */
+            }
+        }, 4000);
+    },
+
+    _stopResumeWatch() {
+        if (this._resumeTimer) {
+            clearInterval(this._resumeTimer);
+            this._resumeTimer = null;
+        }
+    },
+
+    /** Must run inside a user gesture on iOS — empty utterance unlocks speechSynthesis. */
+    unlockSpeech() {
+        if (!window.speechSynthesis) return false;
+        try {
+            window.speechSynthesis.getVoices();
+            const unlock = new SpeechSynthesisUtterance(" ");
+            unlock.volume = 0.01;
+            unlock.rate = 2;
+            unlock.pitch = 1;
+            unlock.lang = "en-US";
+            window.speechSynthesis.speak(unlock);
+            window.speechSynthesis.resume();
+            this._speechUnlocked = true;
+            this._startResumeWatch();
+            return true;
+        } catch {
+            this._speechUnlocked = true;
+            this._startResumeWatch();
+            return false;
+        }
+    },
+
+    _notifyUnlocked() {
+        if (this._unlockNotified) return;
+        this._unlockNotified = true;
+        if (this._dotNetRef) {
+            this._dotNetRef.invokeMethodAsync("OnSpeechUnlocked").catch(() => { });
+        }
+    },
+
+    unlockFromUserGesture() {
+        this.unlockSpeech();
+        this._notifyUnlocked();
+    },
+
+    /** Capture taps so Blazor's delayed @onclick still unlocks iOS speech. */
+    armGestureUnlock(dotNetRef) {
+        this._dotNetRef = dotNetRef ?? this._dotNetRef;
+        if (this._gestureArmed) return;
+        this._gestureArmed = true;
+
+        const onGesture = () => {
+            if (this._speechUnlocked || !this._requiresSpeechGesture()) return;
+            this.unlockSpeech();
+            this._notifyUnlocked();
+        };
+
+        document.addEventListener("pointerdown", onGesture, { capture: true, passive: true });
+        document.addEventListener("touchstart", onGesture, { capture: true, passive: true });
+        document.addEventListener("click", onGesture, { capture: true, passive: true });
+    },
+
+    _estimateChunkMs(text) {
+        const rate = 0.88;
+        const charsPerSec = 14 * rate;
+        const raw = (String(text || "").length / charsPerSec) * 1000 + 2500;
+        return Math.min(20000, Math.max(8000, Math.round(raw)));
     },
 
     /** Score voices for a warm, caring tone — prefer female/neutral English voices. */
@@ -163,19 +272,26 @@ window.mmOnboarding = {
             return;
         }
 
-        this._speakToken += 1;
-        window.speechSynthesis.cancel();
         void this.speakAsync(text, false);
     },
 
-    /** Returns a promise that resolves when speech finishes (or immediately if muted/unsupported). */
+    /** Resolves when speech finishes, errors, or the watchdog times out. Never hangs on missing onend. */
     speakAsync(text, muted) {
         if (muted || !text || !window.speechSynthesis) {
             return Promise.resolve();
         }
 
+        if (!this._speechUnlocked && this._requiresSpeechGesture()) {
+            return Promise.resolve();
+        }
+
         const token = ++this._speakToken;
-        window.speechSynthesis.cancel();
+        try {
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.resume();
+        } catch {
+            /* ignore */
+        }
 
         const chunks = this._splitSpeechChunks(text);
         if (!chunks.length) {
@@ -191,7 +307,11 @@ window.mmOnboarding = {
             const utterance = new SpeechSynthesisUtterance(chunks[index]);
             this._applyWarmVoice(utterance);
 
+            let settled = false;
             const finish = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(watchdog);
                 if (token !== this._speakToken) {
                     resolve();
                     return;
@@ -202,21 +322,60 @@ window.mmOnboarding = {
                 resolve();
             };
 
+            const watchdog = setTimeout(finish, this._estimateChunkMs(chunks[index]));
+
             utterance.onstart = () => {
                 if (token === this._speakToken) {
+                    this._speechUnlocked = true;
                     this.setPresenterSpeaking(true);
+                    this._startResumeWatch();
+                    try {
+                        window.speechSynthesis.resume();
+                    } catch {
+                        /* ignore */
+                    }
                 }
             };
             utterance.onend = finish;
             utterance.onerror = finish;
 
-            window.speechSynthesis.speak(utterance);
+            const startSpeak = () => {
+                if (token !== this._speakToken) {
+                    finish();
+                    return;
+                }
+                try {
+                    window.speechSynthesis.speak(utterance);
+                    window.speechSynthesis.resume();
+                } catch {
+                    finish();
+                }
+            };
+
+            if (this._isAppleTouch()) {
+                setTimeout(startSpeak, 40);
+            } else {
+                startSpeak();
+            }
         });
 
-        return chunks.reduce(
+        const spoken = chunks.reduce(
             (chain, _, index) => chain.then(() => speakChunk(index)),
             Promise.resolve()
         );
+
+        if (this.debugHangMs < 0) {
+            void spoken;
+            return new Promise(() => { });
+        }
+
+        if (this.debugHangMs > 0) {
+            void spoken;
+            const hangMs = this.debugHangMs;
+            return new Promise((resolve) => setTimeout(resolve, hangMs));
+        }
+
+        return spoken;
     },
 
     cancelSpeech() {
@@ -275,6 +434,7 @@ window.mmOnboarding = {
             const dotNetRef = options?.dotNetRef ?? null;
 
             window.mmOnboarding._reducedMotion = reducedMotion;
+            window.mmOnboarding.unlockSpeech();
             window.mmOnboarding.preloadPresenterImages();
             window.mmOnboarding.setPresenterViseme(0);
 
@@ -343,7 +503,7 @@ window.mmOnboarding = {
                     scenePlayResolve = resolve;
                 });
 
-                if (!muted && window.speechSynthesis) {
+                if (!muted && window.speechSynthesis && window.mmOnboarding._speechUnlocked) {
                     await window.mmOnboarding.speakAsync(scene.narration, false);
                 } else {
                     const waitMs = reducedMotion ? 8000 : scene.durationMs;

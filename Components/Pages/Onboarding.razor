@@ -69,6 +69,20 @@ else
                 </p>
             }
             <span class="visually-hidden" role="status">@_announcedText</span>
+
+            @if (_showVoiceUnlock && _speechSupported && !_voiceMuted && !_prefersReducedMotion)
+            {
+                <div class="onboarding-voice-unlock" role="status">
+                    <button type="button"
+                            class="btn btn-primary onboarding-voice-unlock-btn"
+                            onclick="window.mmOnboarding.unlockFromUserGesture()">
+                        Tap to hear the guide
+                    </button>
+                    <p class="onboarding-voice-unlock-hint">
+                        On this device, voice starts after a tap. You can keep reading either way.
+                    </p>
+                </div>
+            }
         </div>
 
         <footer class="onboarding-foot">
@@ -135,7 +149,7 @@ else
                             class="btn btn-primary onboarding-next"
                             disabled="true"
                             aria-busy="true">
-                        @(_stepTypingComplete ? "Finishing voice…" : "Please wait…")
+                        Please wait…
                     </button>
                 }
             </div>
@@ -285,6 +299,8 @@ else
     private bool _prefersReducedMotion;
     private bool _voiceMuted;
     private bool _speechSupported;
+    private bool _speechUnlocked;
+    private bool _showVoiceUnlock;
     private bool _stepTypingComplete;
     private bool _showVideoPrompt;
     private bool _showWalkthrough;
@@ -348,6 +364,9 @@ else
             {
                 _prefersReducedMotion = await JS.InvokeAsync<bool>("mmPrefersReducedMotion");
                 _speechSupported = await JS.InvokeAsync<bool>("mmOnboarding.isSpeechSupported");
+                _showVoiceUnlock = !_prefersReducedMotion
+                    && await JS.InvokeAsync<bool>("mmOnboarding.needsSpeechUnlock");
+                await JS.InvokeVoidAsync("mmOnboarding.armGestureUnlock", _dotNetRef);
             }
             catch (JSDisconnectedException)
             {
@@ -357,6 +376,7 @@ else
             {
                 _prefersReducedMotion = false;
                 _speechSupported = false;
+                _showVoiceUnlock = false;
             }
 
             RestartStepTyping();
@@ -422,6 +442,7 @@ else
         _typedText = "";
         _announcedText = "";
         _stepTypingComplete = false;
+        _showVideoPrompt = false;
         _isTypingActive = false;
 
         _typewriterTask = RunStepTypingAsync(_typingCts.Token);
@@ -432,19 +453,27 @@ else
         try
         {
             CancelSpeechSafe();
+            var stepIndex = _stepIndex;
             var paragraphs = CurrentStep.Paragraphs;
-            var isFinalStep = _stepIndex == _steps.Length - 1;
-            Task? lastSpeechTask = null;
+            var isFinalStep = stepIndex == _steps.Length - 1;
 
-            for (; _paragraphIndex < paragraphs.Length; _paragraphIndex++)
+            for (var i = 0; i < paragraphs.Length; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                var text = paragraphs[_paragraphIndex];
+                if (_stepIndex != stepIndex) return;
+
+                _paragraphIndex = i;
+                var text = paragraphs[i];
+                var isLastParagraph = i == paragraphs.Length - 1;
 
                 if (_prefersReducedMotion)
                 {
                     _completedParagraphs.Add(text);
                     _announcedText = text;
+                    if (_stepIndex == stepIndex)
+                    {
+                        MarkStepReadyIfComplete(isLastParagraph, isFinalStep);
+                    }
                     await InvokeAsync(StateHasChanged);
                     continue;
                 }
@@ -452,11 +481,12 @@ else
                 _typedText = "";
                 _isTypingActive = true;
                 await InvokeAsync(StateHasChanged);
-                lastSpeechTask = SpeakAsyncSafe(text);
+                var lastSpeechTask = SpeakAsyncSafe(text);
 
                 foreach (var ch in text)
                 {
                     ct.ThrowIfCancellationRequested();
+                    if (_stepIndex != stepIndex) return;
                     _typedText += ch;
                     await InvokeAsync(StateHasChanged);
                     await Task.Delay(48, ct);
@@ -466,38 +496,72 @@ else
                 _completedParagraphs.Add(text);
                 _announcedText = text;
                 _typedText = "";
+                if (_stepIndex == stepIndex)
+                {
+                    MarkStepReadyIfComplete(isLastParagraph, isFinalStep);
+                }
                 await InvokeAsync(StateHasChanged);
 
-                if (lastSpeechTask is not null)
-                {
-                    try
-                    {
-                        await lastSpeechTask;
-                    }
-                    catch (JSDisconnectedException)
-                    {
-                        return;
-                    }
-                }
+                await WaitForSpeechOrTimeoutAsync(lastSpeechTask, text, ct);
 
-                if (_paragraphIndex < paragraphs.Length - 1)
+                if (!isLastParagraph)
                 {
                     await Task.Delay(600, ct);
                 }
             }
-
-            _stepTypingComplete = true;
-
-            if (isFinalStep)
-            {
-                _showVideoPrompt = true;
-            }
-
-            await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void MarkStepReadyIfComplete(bool isLastParagraph, bool isFinalStep)
+    {
+        if (!isLastParagraph) return;
+
+        _stepTypingComplete = true;
+        if (isFinalStep)
+        {
+            _showVideoPrompt = true;
+        }
+    }
+
+    private async Task WaitForSpeechOrTimeoutAsync(Task? speechTask, string text, CancellationToken ct)
+    {
+        if (speechTask is null)
+        {
+            ct.ThrowIfCancellationRequested();
+            return;
+        }
+
+        try
+        {
+            var timeout = Task.Delay(EstimateSpeechWaitMs(text), ct);
+            var winner = await Task.WhenAny(speechTask, timeout);
+            ct.ThrowIfCancellationRequested();
+            if (winner == speechTask)
+            {
+                await speechTask;
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+    }
+
+    private static int EstimateSpeechWaitMs(string text)
+    {
+        var length = string.IsNullOrEmpty(text) ? 0 : text.Length;
+        var chunks = Math.Max(1, (int)Math.Ceiling(length / 180.0));
+        var raw = (int)(length / (14 * 0.88) * 1000) + 2500 * chunks;
+        return Math.Clamp(raw, 8000, 20000 * chunks);
     }
 
     private void NextStep()
@@ -578,20 +642,37 @@ else
         await CompleteAsync();
     }
 
+    [JSInvokable]
+    public async Task OnSpeechUnlocked()
+    {
+        var alreadyUnlocked = _speechUnlocked;
+        _speechUnlocked = true;
+        _showVoiceUnlock = false;
+        await InvokeAsync(StateHasChanged);
+
+        if (alreadyUnlocked || _voiceMuted || _prefersReducedMotion || !_speechSupported) return;
+
+        var current = CurrentStep.Paragraphs.ElementAtOrDefault(_paragraphIndex);
+        if (!string.IsNullOrEmpty(current))
+        {
+            SpeakSafe(current);
+        }
+    }
+
     private void ToggleVoice()
     {
         _voiceMuted = !_voiceMuted;
         if (_voiceMuted)
         {
             CancelSpeechSafe();
+            return;
         }
-        else if (_isTypingActive && !string.IsNullOrEmpty(_typedText))
+
+        _showVoiceUnlock = false;
+        var current = CurrentStep.Paragraphs.ElementAtOrDefault(_paragraphIndex);
+        if (!string.IsNullOrEmpty(current))
         {
-            var current = CurrentStep.Paragraphs.ElementAtOrDefault(_paragraphIndex);
-            if (!string.IsNullOrEmpty(current))
-            {
-                SpeakSafe(current);
-            }
+            SpeakSafe(current);
         }
     }
 

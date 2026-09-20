@@ -3139,6 +3139,28 @@ body:has(.nav-scrollable.open) {
     }
 }
 
+/* Visible only when Blazor marks the circuit failed — OnboardingLayout has no scoped CSS. */
+#blazor-error-ui {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
 /* First-login onboarding tour */
 .onboarding-shell {
     min-height: 100vh;
@@ -3274,6 +3296,35 @@ body:has(.nav-scrollable.open) {
     font-weight: 500;
 }
 
+.onboarding-voice-unlock {
+    margin: 0 0 1rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 12px;
+    background: #ecfdf5;
+    border: 1px solid #99f6e4;
+    text-align: center;
+}
+
+.onboarding-voice-unlock-btn {
+    width: 100%;
+    min-height: 2.75rem;
+    background: #0f766e;
+    border-color: #0f766e;
+    font-weight: 600;
+}
+
+.onboarding-voice-unlock-btn:hover {
+    background: #0d9488;
+    border-color: #0d9488;
+}
+
+.onboarding-voice-unlock-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.82rem;
+    color: #475569;
+    line-height: 1.4;
+}
+
 .onboarding-caret {
     display: inline-block;
     width: 2px;
@@ -3393,6 +3444,16 @@ body:has(.nav-scrollable.open) {
     .onboarding-skip {
         width: 100%;
         text-align: center;
+    }
+
+    .onboarding-voice-unlock {
+        margin-bottom: 0.85rem;
+        padding: 0.75rem 0.8rem;
+    }
+
+    .onboarding-voice-unlock-btn {
+        min-height: 3rem;
+        font-size: 1.02rem;
     }
 }
 
