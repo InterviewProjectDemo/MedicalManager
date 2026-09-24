@@ -19,6 +19,18 @@ public class PatientProfile
     [MaxLength(40)]
     public string? Phone { get; set; }
 
+    [MaxLength(300)]
+    public string? HomeAddress { get; set; }
+
+    /// <summary>
+    /// How the reminder call should say this person's name, for example "nah-VEEN SHAR-mah".
+    /// When empty, the call uses a pronunciation dictionary and then the spelling.
+    /// </summary>
+    [MaxLength(200)]
+    public string? NamePronunciation { get; set; }
+
+    public bool AppointmentRemindersEnabled { get; set; } = true;
+
     [MaxLength(400)]
     public string? Notes { get; set; }
 

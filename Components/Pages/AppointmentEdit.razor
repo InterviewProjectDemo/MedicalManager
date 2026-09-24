@@ -33,7 +33,11 @@
             </div>
             <div class="col-md-6">
                 <label class="form-label">Location</label>
-                <InputText class="form-control" @bind-Value="model.Location" />
+                <InputText class="form-control" @bind-Value="model.Location" placeholder="Clinic name and street address" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Purpose</label>
+                <InputText class="form-control" @bind-Value="model.Purpose" placeholder="Follow-up, lab work, annual exam" />
             </div>
             <div class="col-md-6">
                 <label class="form-label">Status</label>
@@ -57,6 +61,11 @@
                 <InputTextArea class="form-control" @bind-Value="model.Notes" />
             </div>
         </div>
+        <p class="muted mt-3 mb-0">
+            One day before this visit, Medical Manager calls and texts the phone number on the patient profile.
+            One hour before, it calls again. The call says the patient's full name, the time, the purpose, and where to go.
+            A home address on the profile lets the reminder include drive time.
+        </p>
         <div class="form-actions">
             <button type="submit" class="btn btn-purple">Save</button>
             <a class="btn btn-outline-secondary" href="@Back">Cancel</a>

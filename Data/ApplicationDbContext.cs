@@ -20,6 +20,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MedicationSchedule> MedicationSchedules => Set<MedicationSchedule>();
     public DbSet<MedicationAdministration> MedicationAdministrations => Set<MedicationAdministration>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
+    public DbSet<AppointmentReminder> AppointmentReminders => Set<AppointmentReminder>();
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
@@ -92,6 +93,16 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<SugarReading>().HasIndex(x => new { x.UserId, x.RecordedAt });
         builder.Entity<Appointment>().HasIndex(x => new { x.UserId, x.StartsAt });
 
+        builder.Entity<AppointmentReminder>()
+            .HasOne(x => x.Appointment)
+            .WithMany()
+            .HasForeignKey(x => x.AppointmentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<AppointmentReminder>()
+            .HasIndex(x => new { x.AppointmentId, x.Kind, x.Channel, x.StartsAtSnapshot })
+            .IsUnique();
+
         builder.Entity<Doctor>()
             .HasOne(x => x.User)
             .WithMany(u => u.Doctors)
@@ -150,6 +161,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<PatientProfile>().Property(x => x.Sex).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.Phone).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.HomeAddress).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.NamePronunciation).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
@@ -167,6 +180,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Appointment>().Property(x => x.Title).HasConversion(required).HasColumnType("text");
         builder.Entity<Appointment>().Property(x => x.ProviderName).HasConversion(required).HasColumnType("text");
         builder.Entity<Appointment>().Property(x => x.Location).HasConversion(required).HasColumnType("text");
+        builder.Entity<Appointment>().Property(x => x.Purpose).HasConversion(optional).HasColumnType("text");
         builder.Entity<Appointment>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
 
         builder.Entity<Doctor>().Property(x => x.Name).HasConversion(required).HasColumnType("text");

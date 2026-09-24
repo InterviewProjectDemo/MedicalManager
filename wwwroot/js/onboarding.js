@@ -25,7 +25,7 @@ window.mmOnboarding = {
     },
 
     isSpeechSupported() {
-        return "speechSynthesis" in window;
+        return typeof Audio !== "undefined" || "speechSynthesis" in window;
     },
 
     _isAppleTouch() {
@@ -71,24 +71,19 @@ window.mmOnboarding = {
         }
     },
 
-    /** Must run inside a user gesture on iOS — empty utterance unlocks speechSynthesis. */
+    /** Must run inside a user gesture so later human-voice playback is allowed. */
     unlockSpeech() {
-        if (!window.speechSynthesis) return false;
         try {
-            window.speechSynthesis.getVoices();
-            const unlock = new SpeechSynthesisUtterance(" ");
-            unlock.volume = 0.01;
-            unlock.rate = 2;
-            unlock.pitch = 1;
-            unlock.lang = "en-US";
-            window.speechSynthesis.speak(unlock);
-            window.speechSynthesis.resume();
+            const audio = this._ensureAudio();
+            audio.src = this._silentWav;
+            const played = audio.play();
+            if (played && typeof played.catch === "function") {
+                played.catch(() => { });
+            }
             this._speechUnlocked = true;
-            this._startResumeWatch();
             return true;
         } catch {
             this._speechUnlocked = true;
-            this._startResumeWatch();
             return false;
         }
     },
@@ -267,25 +262,163 @@ window.mmOnboarding = {
         return chunks.length ? chunks : [trimmed];
     },
 
+    _silentWav: "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+    _audio: null,
+    _audioUrl: null,
+
+    _ensureAudio() {
+        if (!this._audio) {
+            this._audio = new Audio();
+            this._audio.preload = "auto";
+        }
+        return this._audio;
+    },
+
+    _revokeAudioUrl() {
+        if (!this._audioUrl) return;
+        URL.revokeObjectURL(this._audioUrl);
+        this._audioUrl = null;
+    },
+
+    _stopAudio() {
+        const audio = this._audio;
+        if (!audio) return;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onplay = null;
+        try {
+            audio.pause();
+        } catch {
+            /* ignore */
+        }
+        this._revokeAudioUrl();
+    },
+
+    _notifySpeechBlocked() {
+        if (!this._dotNetRef) return;
+        this._dotNetRef.invokeMethodAsync("OnSpeechBlocked").catch(() => { });
+    },
+
+    /** Human neural voice. Device speechSynthesis is only a backup if the recording cannot be fetched. */
+    async _speakHuman(text, token) {
+        const response = await fetch("/onboarding-speech", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg"
+            },
+            body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+            throw new Error("Human voice unavailable");
+        }
+
+        if (token !== this._speakToken) return "cancelled";
+        const blob = await response.blob();
+        if (token !== this._speakToken) return "cancelled";
+        if (!blob || blob.size < 200) throw new Error("Human voice was empty");
+        return this._playBlob(blob, token);
+    },
+
+    _playBlob(blob, token) {
+        return new Promise((resolve) => {
+            const audio = this._ensureAudio();
+            this._revokeAudioUrl();
+            const url = URL.createObjectURL(blob);
+            this._audioUrl = url;
+
+            let settled = false;
+            const finish = (status) => {
+                if (settled) return;
+                settled = true;
+                audio.onended = null;
+                audio.onerror = null;
+                audio.onplay = null;
+                if (token === this._speakToken) {
+                    this.setPresenterSpeaking(false);
+                }
+                resolve(status);
+            };
+
+            audio.onplay = () => {
+                if (token !== this._speakToken) return;
+                this._speechUnlocked = true;
+                this.setPresenterSpeaking(true);
+            };
+            audio.onended = () => finish("ok");
+            audio.onerror = () => finish("error");
+            audio.onloadedmetadata = () => {
+                const seconds = Number.isFinite(audio.duration) ? audio.duration : 20;
+                const ms = Math.min(120000, Math.max(4000, seconds * 1000 + 2500));
+                setTimeout(() => finish("ok"), ms);
+            };
+            audio.src = url;
+
+            const played = audio.play();
+            if (played && typeof played.then === "function") {
+                played.then(() => {
+                    if (token === this._speakToken) {
+                        this._speechUnlocked = true;
+                        this.setPresenterSpeaking(true);
+                    }
+                }).catch((err) => {
+                    if (err && err.name === "NotAllowedError") {
+                        this._notifySpeechBlocked();
+                        finish("blocked");
+                        return;
+                    }
+                    finish("error");
+                });
+            }
+        });
+    },
+
     speak(text, muted) {
-        if (muted || !text || !window.speechSynthesis) {
+        if (muted || !text) {
             return;
         }
 
         void this.speakAsync(text, false);
     },
 
-    /** Resolves when speech finishes, errors, or the watchdog times out. Never hangs on missing onend. */
-    speakAsync(text, muted) {
-        if (muted || !text || !window.speechSynthesis) {
-            return Promise.resolve();
+    /** Resolves when the human voice finishes. Falls back only if that recording cannot play. */
+    async speakAsync(text, muted) {
+        if (muted || !text) {
+            return;
         }
 
         if (!this._speechUnlocked && this._requiresSpeechGesture()) {
-            return Promise.resolve();
+            return;
         }
 
         const token = ++this._speakToken;
+        this._stopAudio();
+        try {
+            window.speechSynthesis?.cancel();
+        } catch {
+            /* ignore */
+        }
+
+        try {
+            const status = await this._speakHuman(text, token);
+            if (status === "ok" || status === "cancelled" || status === "blocked" || token !== this._speakToken) {
+                return;
+            }
+        } catch {
+            if (token !== this._speakToken) return;
+        }
+
+        await this._speakWithDeviceVoice(text, token);
+    },
+
+    /** Last resort. The browser reader is the mechanical voice patients asked us to stop using. */
+    _speakWithDeviceVoice(text, token) {
+        if (!window.speechSynthesis) {
+            return Promise.resolve();
+        }
+
         try {
             window.speechSynthesis.cancel();
             window.speechSynthesis.resume();
@@ -380,6 +513,7 @@ window.mmOnboarding = {
 
     cancelSpeech() {
         this._speakToken += 1;
+        this._stopAudio();
         this._stopVisemeCycle();
         this.setPresenterSpeaking(false);
         if (window.speechSynthesis) {
@@ -503,7 +637,7 @@ window.mmOnboarding = {
                     scenePlayResolve = resolve;
                 });
 
-                if (!muted && window.speechSynthesis && window.mmOnboarding._speechUnlocked) {
+                if (!muted) {
                     await window.mmOnboarding.speakAsync(scene.narration, false);
                 } else {
                     const waitMs = reducedMotion ? 8000 : scene.durationMs;

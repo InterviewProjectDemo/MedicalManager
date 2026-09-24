@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using MedicalManager.Components;
 using MedicalManager.Components.Account;
 using MedicalManager.Data;
+using MedicalManager.Data.Notifications;
 using MedicalManager.Data.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -132,7 +133,53 @@ builder.Services.AddScoped<ResourceSearchService>();
 builder.Services.AddScoped<ProfilePhotoService>();
 builder.Services.AddScoped<DashboardLayoutService>();
 
+builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection(NotificationOptions.SectionName));
+builder.Services.PostConfigure<NotificationOptions>(notificationOptions =>
+{
+    notificationOptions.Twilio.AccountSid = FirstNonEmpty(
+        notificationOptions.Twilio.AccountSid,
+        Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID"));
+    notificationOptions.Twilio.AuthToken = FirstNonEmpty(
+        notificationOptions.Twilio.AuthToken,
+        Environment.GetEnvironmentVariable("TWILIO_AUTH_TOKEN"));
+    notificationOptions.Twilio.FromNumber = FirstNonEmpty(
+        notificationOptions.Twilio.FromNumber,
+        Environment.GetEnvironmentVariable("TWILIO_FROM_NUMBER"));
+});
+builder.Services.AddHttpClient("Twilio", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient("Travel", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(12);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("MedicalManager/1.0 (appointment-reminders)");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<OnboardingVoiceService>();
+builder.Services.AddSingleton<TravelTimeService>();
+builder.Services.AddSingleton<TwilioNotificationSender>();
+builder.Services.AddScoped<AppointmentReminderService>();
+builder.Services.AddHostedService<AppointmentReminderWorker>();
+
 var app = builder.Build();
+if (app.Environment.IsDevelopment())
+{
+    NameSpeaker.SelfCheck();
+    AppointmentReminderCopy.SelfCheck();
+    AppointmentReminderSchedule.SelfCheck();
+    _ = Task.Run(async () =>
+    {
+        var voice = app.Services.GetRequiredService<OnboardingVoiceService>();
+        var sample = await voice.SynthesizeAsync("Hello. I'm glad you're here.");
+        var voiceLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("OnboardingVoice");
+        if (sample is { Length: > 200 })
+            voiceLog.LogInformation("Human onboarding voice is ready ({Bytes} bytes).", sample.Length);
+        else
+            voiceLog.LogWarning("Human onboarding voice check did not return audio.");
+    });
+}
 app.UseForwardedHeaders();
 
 app.Services.GetRequiredService<IPhiProtector>().SelfTest();
@@ -162,6 +209,17 @@ else
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.MapPost("/onboarding-speech", async (
+    OnboardingSpeechRequest request,
+    OnboardingVoiceService voice,
+    CancellationToken cancellationToken) =>
+{
+    var audio = await voice.SynthesizeAsync(request.Text, cancellationToken);
+    return audio is null
+        ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+        : Results.File(audio, "audio/mpeg");
+}).RequireAuthorization().DisableAntiforgery();
+
 app.MapGet("/health", () => Results.Ok("ok"));
 app.MapGet("/health/encryption", (IPhiProtector protector) =>
 {
@@ -205,3 +263,8 @@ app.MapGet("/profile-photo/{userId}", async (
 }).RequireAuthorization();
 
 app.Run();
+
+static string FirstNonEmpty(string? configured, string? fromEnvironment) =>
+    !string.IsNullOrWhiteSpace(configured) ? configured.Trim()
+    : !string.IsNullOrWhiteSpace(fromEnvironment) ? fromEnvironment.Trim()
+    : "";

@@ -42,6 +42,9 @@ public class Appointment
 
     public AppointmentStatus Status { get; set; } = AppointmentStatus.Scheduled;
 
+    [MaxLength(200)]
+    public string? Purpose { get; set; }
+
     [MaxLength(400)]
     public string? Notes { get; set; }
 }

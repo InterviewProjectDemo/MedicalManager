@@ -104,6 +104,10 @@ namespace MedicalManager.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Purpose")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProviderName")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -129,6 +133,52 @@ namespace MedicalManager.Migrations
                     b.HasIndex("UserId", "StartsAt");
 
                     b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("MedicalManager.Data.AppointmentReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AppointmentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartsAtSnapshot")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppointmentId", "Kind", "Channel", "StartsAtSnapshot")
+                        .IsUnique();
+
+                    b.ToTable("AppointmentReminders");
                 });
 
             modelBuilder.Entity("MedicalManager.Data.BloodPressureReading", b =>
@@ -389,8 +439,19 @@ namespace MedicalManager.Migrations
                     b.Property<DateOnly?>("DateOfBirth")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("AppointmentRemindersEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("HasCompletedOnboarding")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("HomeAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NamePronunciation")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(400)
@@ -682,6 +743,17 @@ namespace MedicalManager.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("MedicalManager.Data.AppointmentReminder", b =>
+                {
+                    b.HasOne("MedicalManager.Data.Appointment", "Appointment")
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Appointment");
                 });
 
             modelBuilder.Entity("MedicalManager.Data.BloodPressureReading", b =>

@@ -79,7 +79,7 @@ else
                         Tap to hear the guide
                     </button>
                     <p class="onboarding-voice-unlock-hint">
-                        On this device, voice starts after a tap. You can keep reading either way.
+                        Tap once and a real voice will guide you. You can keep reading either way.
                     </p>
                 </div>
             }
@@ -640,6 +640,13 @@ else
         _showWalkthrough = false;
         _walkthroughStarted = false;
         await CompleteAsync();
+    }
+
+    [JSInvokable]
+    public async Task OnSpeechBlocked()
+    {
+        _showVoiceUnlock = true;
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]

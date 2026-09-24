@@ -29,9 +29,25 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: Gmail App Password for medmgr.us@gmail.com (optional until email is enabled)
+  TwilioAccountSid:
+    Type: String
+    Default: ""
+    Description: Optional Twilio account SID for appointment reminder calls and texts
+  TwilioAuthToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Optional Twilio auth token
+  TwilioFromNumber:
+    Type: String
+    Default: ""
+    Description: Optional Twilio phone number in E.164 format, such as +15551234567
   DbName:
     Type: String
     Default: medicalmanager
+
+Conditions:
+  HasTwilio: !Not [!Equals [!Ref TwilioAccountSid, ""]]
 
 Resources:
   AlbSecurityGroup:
@@ -200,6 +216,21 @@ Resources:
               Value: medmgr.us@gmail.com
             - Name: Email__Smtp__User
               Value: medmgr.us@gmail.com
+            - !If
+              - HasTwilio
+              - Name: Notifications__Twilio__AccountSid
+                Value: !Ref TwilioAccountSid
+              - !Ref AWS::NoValue
+            - !If
+              - HasTwilio
+              - Name: Notifications__Twilio__AuthToken
+                Value: !Ref TwilioAuthToken
+              - !Ref AWS::NoValue
+            - !If
+              - HasTwilio
+              - Name: Notifications__Twilio__FromNumber
+                Value: !Ref TwilioFromNumber
+              - !Ref AWS::NoValue
           Secrets:
             - Name: ConnectionStrings__DefaultConnection
               ValueFrom: !Sub "${AppSecret}:connection::"

@@ -14,7 +14,7 @@
         <div>
             <p class="eyebrow">Schedule</p>
             <h1>Appointments</h1>
-            <p class="muted">Add or update visits here. Past visits that were not marked Completed or Cancelled show as Missed.</p>
+            <p class="muted">Add or update visits here. One day before a scheduled visit, the patient gets a reminder call and a text. One hour before, they get another call. Past visits that were not marked Completed or Cancelled show as Missed.</p>
         </div>
         <a class="btn btn-purple" href="@Link("appointments/edit")">Add appointment</a>
     </div>
@@ -120,6 +120,10 @@
                         </td>
                         <td data-label="Visit">
                             <strong>@item.Title</strong>
+                            @if (!string.IsNullOrWhiteSpace(item.Purpose))
+                            {
+                                <div class="muted">@item.Purpose</div>
+                            }
                             <div class="muted">@item.Location</div>
                         </td>
                         <td data-label="With whom">@item.ProviderName</td>
@@ -193,6 +197,8 @@
             var term = _visitFilter.Trim();
             query = query.Where(x =>
                 x.Title.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(x.Purpose)
+                    && x.Purpose.Contains(term, StringComparison.OrdinalIgnoreCase))
                 || (!string.IsNullOrWhiteSpace(x.Location)
                     && x.Location.Contains(term, StringComparison.OrdinalIgnoreCase)));
         }

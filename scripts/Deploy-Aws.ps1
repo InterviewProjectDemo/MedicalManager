@@ -84,6 +84,15 @@ $params = @(
 if ($secrets.ContainsKey("EMAIL_SMTP_PASSWORD") -and -not [string]::IsNullOrWhiteSpace($secrets.EMAIL_SMTP_PASSWORD)) {
     $params += "EmailSmtpPassword=$($secrets.EMAIL_SMTP_PASSWORD)"
 }
+foreach ($pair in @(
+    @{ Name = "TWILIO_ACCOUNT_SID"; Param = "TwilioAccountSid" },
+    @{ Name = "TWILIO_AUTH_TOKEN"; Param = "TwilioAuthToken" },
+    @{ Name = "TWILIO_FROM_NUMBER"; Param = "TwilioFromNumber" }
+)) {
+    if ($secrets.ContainsKey($pair.Name) -and -not [string]::IsNullOrWhiteSpace($secrets[$pair.Name])) {
+        $params += "$($pair.Param)=$($secrets[$pair.Name])"
+    }
+}
 
 Write-Host "Deploying CloudFormation stack $stack (RDS can take 10+ minutes)..."
 & $aws cloudformation deploy `

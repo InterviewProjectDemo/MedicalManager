@@ -78,7 +78,7 @@ Patients can also register a new account from **Register**. Doctor accounts are 
 | Blood pressure | `/blood-pressure` | Signed-in | List, add, update readings |
 | Sugar | `/sugar` | Signed-in | List, add, update glucose (fasting / after meal / random) |
 | Medications | `/medications` | Signed-in | List, add, update name, dosage, frequency, notes |
-| Appointments | `/appointments` | Signed-in | List, add, update title, with whom, start/end, location, notes, status |
+| Appointments | `/appointments` | Signed-in | List, add, update title, purpose, with whom, start/end, location, notes, status. One day before a visit, the patient gets a reminder call and a text. One hour before, they get another call. |
 | Patients | `/patients` | **Doctor** | Pick a patient, then the same pages scoped to that patient |
 
 Doctors without a selected patient are sent to the patient picker. Patients can only open their own data. Navigation keeps the selected patient in the query string so doctors can move between pages without losing context.
@@ -86,8 +86,17 @@ Doctors without a selected patient are sent to the patient picker. Patients can 
 ### Domain model
 
 - `ApplicationUser` — Identity user (`FullName`, role)
-- `PatientProfile` — extra patient details (DOB, phone, notes)
+- `PatientProfile` — extra patient details (DOB, phone, home address, name pronunciation, notes)
 - `BloodPressureReading` — systolic / diastolic, optional pulse, date/time
 - `SugarReading` — value, type (fasting / after meal / etc.), date/time
 - `Medication` — name, dosage, frequency, notes
-- `Appointment` — title, with whom, start/end, location, notes, status
+- `Appointment` — title, purpose, with whom, start/end, location, notes, status
+
+### Appointment reminders
+
+Scheduled visits trigger two reminders when a Twilio phone number is configured (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`):
+
+- **One day before:** a phone call and a text message.
+- **One hour before:** a phone call.
+
+The call uses a warm voice, says the patient's first and last name (or the pronunciation saved on the profile), then the day, time, purpose, who they are seeing, and the location. If the profile has a home address and the visit location can be mapped, the call and text also include the drive time and distance. Patients can turn reminders off from the profile page. The phone number comes from the patient profile, then the account phone.

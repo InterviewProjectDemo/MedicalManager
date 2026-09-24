@@ -59,6 +59,9 @@ services:
       MEDICALMANAGER_DATA_DIR: /data
       MEDICALMANAGER_PHI_KEY: ${MEDICALMANAGER_PHI_KEY}
       Email__Smtp__Password: ${EMAIL_SMTP_PASSWORD:-}
+      Notifications__Twilio__AccountSid: ${TWILIO_ACCOUNT_SID:-}
+      Notifications__Twilio__AuthToken: ${TWILIO_AUTH_TOKEN:-}
+      Notifications__Twilio__FromNumber: ${TWILIO_FROM_NUMBER:-}
       Email__FromAddress: medmgr.us@gmail.com
       Email__Smtp__User: medmgr.us@gmail.com
       GROQ_API_KEY: ${GROQ_API_KEY:-}

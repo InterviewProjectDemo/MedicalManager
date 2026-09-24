@@ -103,6 +103,22 @@ public sealed class PatientAccessService(
         return QueryHelpers.AddQueryString("/onboarding", "returnUrl", destination);
     }
 
+    public async Task SaveReminderSettingsAsync(
+        string userId,
+        string? homeAddress,
+        string? namePronunciation,
+        bool remindersEnabled)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        profile.HomeAddress = string.IsNullOrWhiteSpace(homeAddress) ? null : homeAddress.Trim();
+        profile.NamePronunciation = string.IsNullOrWhiteSpace(namePronunciation) ? null : namePronunciation.Trim();
+        profile.AppointmentRemindersEnabled = remindersEnabled;
+        await db.SaveChangesAsync();
+    }
+
     public async Task CompleteOnboardingAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

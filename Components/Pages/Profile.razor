@@ -7,6 +7,7 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject PatientAccessService Access
 @inject ProfilePhotoService PhotoService
+@using MedicalManager.Data.Notifications
 
 <PageTitle>Patient Profile</PageTitle>
 
@@ -66,6 +67,10 @@ else
                 <dd>@(_profile?.Phone ?? _user.PhoneNumber ?? "—")</dd>
             </div>
             <div>
+                <dt>Home address</dt>
+                <dd>@(string.IsNullOrWhiteSpace(_profile?.HomeAddress) ? "—" : _profile.HomeAddress)</dd>
+            </div>
+            <div>
                 <dt>Date of birth</dt>
                 <dd>@(_profile?.DateOfBirth?.ToString("MMMM d, yyyy") ?? "—")</dd>
             </div>
@@ -87,6 +92,42 @@ else
         </p>
     </div>
 
+    <div class="profile-page-card">
+        <h2 class="reminder-settings-title">Appointment reminders</h2>
+        <p class="muted">
+            One day before a visit, we call and text you. One hour before, we call again.
+            The call greets you by your full name, saying your first name and last name clearly, then the time, purpose, and location.
+        </p>
+        @if (string.IsNullOrWhiteSpace(_profile?.Phone) && string.IsNullOrWhiteSpace(_user.PhoneNumber))
+        {
+            <div class="alert alert-warning">Add a phone number in account settings so the reminders can reach you.</div>
+        }
+        <EditForm Model="_reminderForm" OnValidSubmit="SaveReminders" class="mt-3">
+            <div class="mb-3">
+                <label class="form-label" for="home-address">Home address</label>
+                <InputTextArea id="home-address" class="form-control" rows="2" @bind-Value="_reminderForm.HomeAddress" placeholder="123 Main Street, Austin, TX" />
+                <div class="form-text">Used to estimate the drive to the appointment. The address stays on your profile.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="name-pronunciation">How should we say your name?</label>
+                <InputText id="name-pronunciation" class="form-control" @bind-Value="_reminderForm.NamePronunciation" placeholder="nah-VEEN SHAR-mah" />
+                <div class="form-text">
+                    Leave this blank to use the spelling @_user.DisplayName.
+                    Calls will say: @NameSpeaker.Preview(_user.FullName, _reminderForm.NamePronunciation)
+                </div>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox id="reminders-enabled" class="form-check-input" @bind-Value="_reminderForm.RemindersEnabled" />
+                <label class="form-check-label" for="reminders-enabled">Call and text me about upcoming appointments</label>
+            </div>
+            <button type="submit" class="btn btn-purple">Save reminder settings</button>
+            @if (!string.IsNullOrWhiteSpace(_reminderMessage))
+            {
+                <span class="ms-2 muted">@_reminderMessage</span>
+            }
+        </EditForm>
+    </div>
+
     <ProfilePhotoModal Visible="_photoModalOpen"
                        VisibleChanged="OnPhotoModalVisibleChanged"
                        PhotoSaved="OnPhotoSaved" />
@@ -99,6 +140,8 @@ else
     private bool _photoModalOpen;
     private ApplicationUser? _user;
     private PatientProfile? _profile;
+    private readonly ReminderForm _reminderForm = new();
+    private string? _reminderMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -120,8 +163,25 @@ else
         _userId = _user.Id;
         await Access.EnsureProfileAsync(_user);
         _profile = await Access.GetProfileAsync(_userId);
+        _reminderForm.HomeAddress = _profile?.HomeAddress;
+        _reminderForm.NamePronunciation = _profile?.NamePronunciation;
+        _reminderForm.RemindersEnabled = _profile?.AppointmentRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
         _loading = false;
+    }
+
+    private async Task SaveReminders()
+    {
+        if (_userId is null)
+            return;
+
+        await Access.SaveReminderSettingsAsync(
+            _userId,
+            _reminderForm.HomeAddress,
+            _reminderForm.NamePronunciation,
+            _reminderForm.RemindersEnabled);
+        _profile = await Access.GetProfileAsync(_userId);
+        _reminderMessage = "Saved.";
     }
 
     private void OpenPhotoModal() => _photoModalOpen = true;
@@ -156,5 +216,12 @@ else
             return char.ToUpperInvariant(parts[0][0]).ToString();
 
         return "?";
+    }
+
+    private sealed class ReminderForm
+    {
+        public string? HomeAddress { get; set; }
+        public string? NamePronunciation { get; set; }
+        public bool RemindersEnabled { get; set; } = true;
     }
 }
