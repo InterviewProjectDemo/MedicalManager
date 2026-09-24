@@ -103,6 +103,66 @@ public sealed class PatientAccessService(
         return QueryHelpers.AddQueryString("/onboarding", "returnUrl", destination);
     }
 
+    public async Task SaveProfileDetailsAsync(
+        string userId,
+        string fullName,
+        string? phone,
+        string? sex,
+        string? homeAddress,
+        DateOnly? dateOfBirth,
+        string? notes)
+    {
+        var trimmedName = fullName.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedName))
+            throw new InvalidOperationException("Full name is required.");
+        if (trimmedName.Length > 200)
+            throw new InvalidOperationException("Full name must be 200 characters or fewer.");
+
+        if (dateOfBirth is DateOnly dob)
+        {
+            if (dob > DateOnly.FromDateTime(DateTime.Today))
+                throw new InvalidOperationException("Date of birth cannot be in the future.");
+            if (dob < new DateOnly(1900, 1, 1))
+                throw new InvalidOperationException("Date of birth is not valid.");
+        }
+
+        var phoneValue = NormalizeOptional(phone, 40, "Phone");
+        var sexValue = NormalizeOptional(sex, 40, "Sex");
+        var addressValue = NormalizeOptional(homeAddress, 300, "Home address");
+        var notesValue = NormalizeOptional(notes, 400, "Notes");
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new InvalidOperationException("User not found.");
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        user.FullName = trimmedName;
+        if (!string.Equals(user.PhoneNumber, phoneValue, StringComparison.Ordinal))
+        {
+            user.PhoneNumber = phoneValue;
+            user.PhoneNumberConfirmed = false;
+        }
+
+        profile.Phone = phoneValue;
+        profile.Sex = sexValue;
+        profile.HomeAddress = addressValue;
+        profile.DateOfBirth = dateOfBirth;
+        profile.Notes = notesValue;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SyncProfilePhoneAsync(string userId, string? phone)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+        if (profile is null)
+            return;
+
+        profile.Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+        await db.SaveChangesAsync();
+    }
+
     public async Task SaveReminderSettingsAsync(
         string userId,
         string? homeAddress,
@@ -117,6 +177,18 @@ public sealed class PatientAccessService(
         profile.NamePronunciation = string.IsNullOrWhiteSpace(namePronunciation) ? null : namePronunciation.Trim();
         profile.AppointmentRemindersEnabled = remindersEnabled;
         await db.SaveChangesAsync();
+    }
+
+    private static string? NormalizeOptional(string? value, int maxLength, string label)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > maxLength)
+            throw new InvalidOperationException($"{label} must be {maxLength} characters or fewer.");
+
+        return trimmed;
     }
 
     public async Task CompleteOnboardingAsync(string userId)

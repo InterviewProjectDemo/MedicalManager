@@ -7,6 +7,7 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
 @inject IdentityRedirectManager RedirectManager
+@inject PatientAccessService Access
 
 <PageTitle>Profile</PageTitle>
 
@@ -76,6 +77,8 @@
                 RedirectManager.RedirectToCurrentPageWithStatus("Error: Failed to set phone number.", HttpContext);
                 return;
             }
+
+            await Access.SyncProfilePhoneAsync(user.Id, Input.PhoneNumber);
         }
 
         await SignInManager.RefreshSignInAsync(user);

@@ -7,6 +7,7 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject PatientAccessService Access
 @inject ProfilePhotoService PhotoService
+@using System.ComponentModel.DataAnnotations
 @using MedicalManager.Data.Notifications
 
 <PageTitle>Patient Profile</PageTitle>
@@ -25,7 +26,7 @@ else
         <div>
             <p class="eyebrow">Your account</p>
             <h1>Patient profile</h1>
-            <p class="muted">Manage your photo and view your health profile details.</p>
+            <p class="muted">Manage your photo and health profile details.</p>
         </div>
     </div>
 
@@ -53,42 +54,118 @@ else
             </div>
         </div>
 
-        <dl class="profile-page-details">
-            <div>
-                <dt>Full name</dt>
-                <dd>@(_user.FullName)</dd>
-            </div>
-            <div>
-                <dt>Email</dt>
-                <dd>@(_user.Email ?? "—")</dd>
-            </div>
-            <div>
-                <dt>Phone</dt>
-                <dd>@(_profile?.Phone ?? _user.PhoneNumber ?? "—")</dd>
-            </div>
-            <div>
-                <dt>Home address</dt>
-                <dd>@(string.IsNullOrWhiteSpace(_profile?.HomeAddress) ? "—" : _profile.HomeAddress)</dd>
-            </div>
-            <div>
-                <dt>Date of birth</dt>
-                <dd>@(_profile?.DateOfBirth?.ToString("MMMM d, yyyy") ?? "—")</dd>
-            </div>
-            <div>
-                <dt>Sex</dt>
-                <dd>@(_profile?.Sex ?? "—")</dd>
-            </div>
-            @if (!string.IsNullOrWhiteSpace(_profile?.Notes))
+        <div class="profile-page-details-head">
+            <h3 class="profile-page-section-title">Profile details</h3>
+            @if (!_editingDetails)
             {
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="StartEditDetails">
+                    Edit details
+                </button>
+            }
+        </div>
+
+        @if (_editingDetails)
+        {
+            <EditForm Model="_profileForm" OnValidSubmit="SaveProfileDetails">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="profile-full-name">Full name</label>
+                        <InputText id="profile-full-name" class="form-control" @bind-Value="_profileForm.FullName" />
+                        <ValidationMessage For="() => _profileForm.FullName" class="text-danger" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="profile-phone">Phone</label>
+                        <InputText id="profile-phone" class="form-control" @bind-Value="_profileForm.Phone" placeholder="555-0100" />
+                        <ValidationMessage For="() => _profileForm.Phone" class="text-danger" />
+                        <div class="form-text">Used for appointment reminder calls and texts.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="profile-sex">Sex</label>
+                        <InputSelect id="profile-sex" class="form-select" @bind-Value="_profileForm.Sex">
+                            <option value="">—</option>
+                            @foreach (var option in SexOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                            @if (HasCustomSex)
+                            {
+                                <option value="@_profileForm.Sex">@_profileForm.Sex</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="profile-dob">Date of birth</label>
+                        <InputDate id="profile-dob" class="form-control" @bind-Value="_profileForm.DateOfBirth" />
+                        <ValidationMessage For="() => _profileForm.DateOfBirth" class="text-danger" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="profile-address">Home address</label>
+                        <InputTextArea id="profile-address" class="form-control" rows="2" @bind-Value="_profileForm.HomeAddress" placeholder="123 Main Street, Austin, TX" />
+                        <ValidationMessage For="() => _profileForm.HomeAddress" class="text-danger" />
+                        <div class="form-text">Also used to estimate the drive to an appointment.</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="profile-notes">Notes</label>
+                        <InputTextArea id="profile-notes" class="form-control" rows="2" @bind-Value="_profileForm.Notes" />
+                        <ValidationMessage For="() => _profileForm.Notes" class="text-danger" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_profileError))
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_profileError</div>
+                }
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-purple" disabled="@_savingDetails">
+                        @(_savingDetails ? "Saving…" : "Save details")
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelEditDetails" disabled="@_savingDetails">
+                        Cancel
+                    </button>
+                </div>
+            </EditForm>
+        }
+        else
+        {
+            <dl class="profile-page-details">
+                <div>
+                    <dt>Full name</dt>
+                    <dd>@(string.IsNullOrWhiteSpace(_user.FullName) ? "—" : _user.FullName)</dd>
+                </div>
+                <div>
+                    <dt>Email</dt>
+                    <dd>@(_user.Email ?? "—")</dd>
+                </div>
+                <div>
+                    <dt>Phone</dt>
+                    <dd>@(DisplayPhone)</dd>
+                </div>
+                <div>
+                    <dt>Home address</dt>
+                    <dd>@(string.IsNullOrWhiteSpace(_profile?.HomeAddress) ? "—" : _profile.HomeAddress)</dd>
+                </div>
+                <div>
+                    <dt>Date of birth</dt>
+                    <dd>@(_profile?.DateOfBirth?.ToString("MMMM d, yyyy") ?? "—")</dd>
+                </div>
+                <div>
+                    <dt>Sex</dt>
+                    <dd>@(_profile?.Sex ?? "—")</dd>
+                </div>
                 <div>
                     <dt>Notes</dt>
-                    <dd>@_profile.Notes</dd>
+                    <dd>@(string.IsNullOrWhiteSpace(_profile?.Notes) ? "—" : _profile.Notes)</dd>
                 </div>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(_profileMessage))
+            {
+                <p class="muted mb-3">@_profileMessage</p>
             }
-        </dl>
+        }
 
         <p class="profile-page-account-hint">
-            <a href="Account/Manage">Account settings</a> — update phone number, email, and password.
+            <a href="Account/Manage">Account settings</a> — update email and password.
         </p>
     </div>
 
@@ -98,9 +175,9 @@ else
             One day before a visit, we call and text you. One hour before, we call again.
             The call greets you by your full name, saying your first name and last name clearly, then the time, purpose, and location.
         </p>
-        @if (string.IsNullOrWhiteSpace(_profile?.Phone) && string.IsNullOrWhiteSpace(_user.PhoneNumber))
+        @if (string.IsNullOrWhiteSpace(DisplayPhone) || DisplayPhone == "—")
         {
-            <div class="alert alert-warning">Add a phone number in account settings so the reminders can reach you.</div>
+            <div class="alert alert-warning">Add a phone number in your profile details so the reminders can reach you.</div>
         }
         <EditForm Model="_reminderForm" OnValidSubmit="SaveReminders" class="mt-3">
             <div class="mb-3">
@@ -134,14 +211,30 @@ else
 }
 
 @code {
+    private static readonly string[] SexOptions = ["Female", "Male", "Intersex", "Prefer not to say"];
+
     private bool _loading = true;
+    private bool _editingDetails;
+    private bool _savingDetails;
     private string? _userId;
     private string? _photoUrl;
     private bool _photoModalOpen;
     private ApplicationUser? _user;
     private PatientProfile? _profile;
+    private readonly ProfileForm _profileForm = new();
     private readonly ReminderForm _reminderForm = new();
+    private string? _profileMessage;
+    private string? _profileError;
     private string? _reminderMessage;
+
+    private string DisplayPhone =>
+        string.IsNullOrWhiteSpace(_profile?.Phone)
+            ? (string.IsNullOrWhiteSpace(_user?.PhoneNumber) ? "—" : _user.PhoneNumber)
+            : _profile.Phone;
+
+    private bool HasCustomSex =>
+        !string.IsNullOrWhiteSpace(_profileForm.Sex)
+        && !SexOptions.Contains(_profileForm.Sex, StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -163,11 +256,89 @@ else
         _userId = _user.Id;
         await Access.EnsureProfileAsync(_user);
         _profile = await Access.GetProfileAsync(_userId);
+        FillProfileForm();
         _reminderForm.HomeAddress = _profile?.HomeAddress;
         _reminderForm.NamePronunciation = _profile?.NamePronunciation;
         _reminderForm.RemindersEnabled = _profile?.AppointmentRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
         _loading = false;
+    }
+
+    private void StartEditDetails()
+    {
+        FillProfileForm();
+        _profileError = null;
+        _profileMessage = null;
+        _editingDetails = true;
+    }
+
+    private void CancelEditDetails()
+    {
+        FillProfileForm();
+        _profileError = null;
+        _editingDetails = false;
+    }
+
+    private async Task SaveProfileDetails()
+    {
+        if (_userId is null || _savingDetails)
+            return;
+
+        if (_profileForm.DateOfBirth is DateOnly dob && dob > DateOnly.FromDateTime(DateTime.Today))
+        {
+            _profileError = "Date of birth cannot be in the future.";
+            return;
+        }
+
+        _savingDetails = true;
+        _profileError = null;
+        try
+        {
+            await Access.SaveProfileDetailsAsync(
+                _userId,
+                _profileForm.FullName,
+                _profileForm.Phone,
+                _profileForm.Sex,
+                _profileForm.HomeAddress,
+                _profileForm.DateOfBirth,
+                _profileForm.Notes);
+
+            if (_user is not null)
+            {
+                var phone = string.IsNullOrWhiteSpace(_profileForm.Phone) ? null : _profileForm.Phone.Trim();
+                if (!string.Equals(_user.PhoneNumber, phone, StringComparison.Ordinal))
+                {
+                    _user.PhoneNumber = phone;
+                    _user.PhoneNumberConfirmed = false;
+                }
+
+                _user.FullName = _profileForm.FullName.Trim();
+            }
+
+            _profile = await Access.GetProfileAsync(_userId);
+            _reminderForm.HomeAddress = _profile?.HomeAddress;
+            FillProfileForm();
+            _editingDetails = false;
+            _profileMessage = "Profile details saved.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _profileError = ex.Message;
+        }
+        finally
+        {
+            _savingDetails = false;
+        }
+    }
+
+    private void FillProfileForm()
+    {
+        _profileForm.FullName = _user?.FullName ?? "";
+        _profileForm.Phone = _profile?.Phone ?? _user?.PhoneNumber;
+        _profileForm.Sex = _profile?.Sex ?? "";
+        _profileForm.HomeAddress = _profile?.HomeAddress;
+        _profileForm.DateOfBirth = _profile?.DateOfBirth;
+        _profileForm.Notes = _profile?.Notes;
     }
 
     private async Task SaveReminders()
@@ -181,6 +352,8 @@ else
             _reminderForm.NamePronunciation,
             _reminderForm.RemindersEnabled);
         _profile = await Access.GetProfileAsync(_userId);
+        if (_editingDetails)
+            _profileForm.HomeAddress = _profile?.HomeAddress;
         _reminderMessage = "Saved.";
     }
 
@@ -216,6 +389,28 @@ else
             return char.ToUpperInvariant(parts[0][0]).ToString();
 
         return "?";
+    }
+
+    private sealed class ProfileForm
+    {
+        [Required(ErrorMessage = "Full name is required.")]
+        [MaxLength(200)]
+        public string FullName { get; set; } = "";
+
+        [Phone(ErrorMessage = "Enter a valid phone number.")]
+        [MaxLength(40)]
+        public string? Phone { get; set; }
+
+        [MaxLength(40)]
+        public string? Sex { get; set; }
+
+        [MaxLength(300)]
+        public string? HomeAddress { get; set; }
+
+        public DateOnly? DateOfBirth { get; set; }
+
+        [MaxLength(400)]
+        public string? Notes { get; set; }
     }
 
     private sealed class ReminderForm
