@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MedicalManager.Data;
 
 namespace MedicalManager.Data.Notifications;
@@ -6,6 +7,7 @@ namespace MedicalManager.Data.Notifications;
 public sealed class ToDoReminderService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     TwilioNotificationSender sender,
+    IOptions<NotificationOptions> options,
     ILogger<ToDoReminderService> logger)
 {
     public async Task ProcessDueAsync(CancellationToken cancellationToken)
@@ -48,7 +50,7 @@ public sealed class ToDoReminderService(
                     db,
                     item,
                     phone,
-                    ToDoReminderCopy.BuildSms(name, item.Description, item.FinishBy, AppointmentReminderKind.DayBefore),
+                    ToDoReminderCopy.BuildVoiceSsml(name, profile?.NamePronunciation, item.Description, item.FinishBy, AppointmentReminderKind.DayBefore),
                     AppointmentReminderKind.DayBefore,
                     cancellationToken);
             }
@@ -59,7 +61,7 @@ public sealed class ToDoReminderService(
                     db,
                     item,
                     phone,
-                    ToDoReminderCopy.BuildSms(name, item.Description, item.FinishBy, AppointmentReminderKind.HourBefore),
+                    ToDoReminderCopy.BuildVoiceSsml(name, profile?.NamePronunciation, item.Description, item.FinishBy, AppointmentReminderKind.HourBefore),
                     AppointmentReminderKind.HourBefore,
                     cancellationToken);
             }
@@ -121,7 +123,7 @@ public sealed class ToDoReminderService(
         OutboundResult result;
         try
         {
-            result = await sender.TextAsync(phone, body, cancellationToken);
+            result = await sender.CallAsync(phone, body, options.Value.Voice.PollyVoice, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

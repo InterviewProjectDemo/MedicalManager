@@ -94,7 +94,7 @@ Doctors without a selected patient are sent to the patient picker. Patients can 
 
 ### Appointment reminders
 
-Reminders go out through Twilio. Appointment reminders place a call and a text. Medication and to-do reminders send a text. Patients choose each kind on the profile page. The Twilio API key stays in user secrets or `TWILIO_API_KEY_SID` and `TWILIO_API_KEY_SECRET`.
+Reminders go out through Twilio. Appointment reminders place a call and a text. Medication and to-do reminders place a call. Patients choose each kind on the profile page. The Twilio API key stays in user secrets or `TWILIO_API_KEY_SID` and `TWILIO_API_KEY_SECRET`.
 
 - **Appointments:** one day before, a phone call and a text. One hour before, a phone call.
 - **Medications:** a text when the morning, lunch, evening, or bedtime window opens, listing doses that are still due.

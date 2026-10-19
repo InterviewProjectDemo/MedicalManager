@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MedicalManager.Data;
 
 namespace MedicalManager.Data.Notifications;
@@ -6,6 +7,7 @@ namespace MedicalManager.Data.Notifications;
 public sealed class MedicationReminderService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     TwilioNotificationSender sender,
+    IOptions<NotificationOptions> options,
     ILogger<MedicationReminderService> logger)
 {
     public async Task ProcessDueAsync(CancellationToken cancellationToken)
@@ -63,7 +65,8 @@ public sealed class MedicationReminderService(
                 if (doses.Count == 0)
                     continue;
 
-                await SendAsync(db, userId, today, slot, phone, MedicationReminderCopy.BuildSms(name, slot, doses), cancellationToken);
+                var speech = MedicationReminderCopy.BuildVoiceSsml(name, profile?.NamePronunciation, slot, doses);
+                await SendAsync(db, userId, today, slot, phone, speech, cancellationToken);
             }
         }
     }
@@ -135,7 +138,7 @@ public sealed class MedicationReminderService(
         OutboundResult result;
         try
         {
-            result = await sender.TextAsync(phone, body, cancellationToken);
+            result = await sender.CallAsync(phone, body, options.Value.Voice.PollyVoice, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

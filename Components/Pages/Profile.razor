@@ -172,9 +172,9 @@ else
     <div class="profile-page-card">
         <h2 class="reminder-settings-title">Notification services</h2>
         <p class="muted">
-            Texts and calls come from Medical Manager at (320) 350-3177. Appointment reminders place a call and a text. Medication and to-do reminders send a text.
+            Calls come from Medical Manager at (320) 350-3177. Appointment reminders also send a text. Medication and to-do reminders are phone calls.
             One day before a visit or a to-do, you get a reminder. One hour before, you get another.
-            Medicine texts arrive when that dose window opens.
+            Medicine calls arrive when that dose window opens.
         </p>
         @if (string.IsNullOrWhiteSpace(DisplayPhone) || DisplayPhone == "—")
         {
@@ -200,11 +200,11 @@ else
             </div>
             <div class="form-check mb-2">
                 <InputCheckbox id="medication-reminders" class="form-check-input" @bind-Value="_reminderForm.MedicationRemindersEnabled" />
-                <label class="form-check-label" for="medication-reminders">Medication reminders. A text when a morning, lunch, evening, or bedtime dose is due.</label>
+                <label class="form-check-label" for="medication-reminders">Medication reminders. A call when a morning, lunch, evening, or bedtime dose is due.</label>
             </div>
             <div class="form-check mb-3">
                 <InputCheckbox id="todo-reminders" class="form-check-input" @bind-Value="_reminderForm.ToDoRemindersEnabled" />
-                <label class="form-check-label" for="todo-reminders">To-do reminders. A text one day before and one hour before the finish time.</label>
+                <label class="form-check-label" for="todo-reminders">To-do reminders. A call one day before and one hour before the finish time.</label>
             </div>
             <button type="submit" class="btn btn-purple">Save reminder settings</button>
             @if (!string.IsNullOrWhiteSpace(_reminderMessage))

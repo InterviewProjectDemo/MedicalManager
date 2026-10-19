@@ -11,7 +11,7 @@ PHI still uses the app AES-256-GCM key from `.env` (`MEDICALMANAGER_PHI_KEY`). T
 
 Welcome and password-reset emails are sent from `medmgr.us@gmail.com` via Gmail SMTP when `EMAIL_SMTP_PASSWORD` is set in `.env` (a [Google App Password](https://support.google.com/accounts/answer/185833) for that account). The deploy script passes it into the `medicalmanager/runtime` secret as `emailSmtpPassword`, which ECS maps to `Email__Smtp__Password`. Do not commit the app password.
 
-Appointment, medication, and to-do reminders are sent by Twilio, not by this stack. One day before a visit the patient gets a call and a text. One hour before, they get a call. Medication texts go out when a dose window opens. To-do texts go out one day before and one hour before the finish time. Patients turn each kind on or off from the profile page. Set `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, and `TWILIO_FROM_NUMBER` on the task.
+Appointment, medication, and to-do reminders are sent by Twilio, not by this stack. One day before a visit the patient gets a call and a text. One hour before, they get a call. Medication calls go out when a dose window opens. To-do calls go out one day before and one hour before the finish time. Patients turn each kind on or off from the profile page. Set `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, and `TWILIO_FROM_NUMBER` on the task.
 
 ## What you need
 

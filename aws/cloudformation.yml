@@ -232,6 +232,8 @@ Resources:
               Value: "true"
             - Name: MEDICALMANAGER_DATA_DIR
               Value: /data
+            - Name: TZ
+              Value: America/Chicago
             - Name: Email__FromAddress
               Value: medmgr.us@gmail.com
             - Name: Email__Smtp__User
