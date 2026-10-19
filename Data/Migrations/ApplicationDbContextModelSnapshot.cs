@@ -407,6 +407,9 @@ namespace MedicalManager.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Days")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Dosage")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -502,6 +505,9 @@ namespace MedicalManager.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<TimeOnly?>("AdministerAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("MedicationId")
                         .HasColumnType("INTEGER");

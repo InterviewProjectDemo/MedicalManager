@@ -52,14 +52,22 @@ public sealed class MedicationReminderService(
             var name = user?.FullName ?? user?.DisplayName ?? "there";
             foreach (var slot in MedicationScheduleRules.AllSlots)
             {
-                if (!MedicationScheduleRules.IsWindowOpen(today, slot, now))
+                var due = schedules
+                    .Where(schedule => schedule.Medication!.UserId == userId
+                        && schedule.TimeSlot == slot
+                        && MedicationDayRules.Includes(schedule.Medication.Days, today))
+                    .ToList();
+                if (due.Count == 0)
                     continue;
 
-                var doses = schedules
-                    .Where(schedule => schedule.Medication!.UserId == userId && schedule.TimeSlot == slot)
-                    .Select(schedule => schedule.Medication!)
-                    .Where(medication => !IsSettled(administrations, userId, medication.Id, slot))
-                    .Select(medication => $"{medication.Name} {medication.Dosage}".Trim())
+                var earliest = due.Min(schedule => MedicationScheduleRules.EffectiveAdministerAt(schedule.TimeSlot, schedule.AdministerAt));
+                var time = TimeOnly.FromDateTime(now);
+                if (time < earliest || time > MedicationScheduleRules.GetWindowEnd(slot))
+                    continue;
+
+                var doses = due
+                    .Where(schedule => !IsSettled(administrations, userId, schedule.MedicationId, slot))
+                    .Select(DescribeDose)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
                 if (doses.Count == 0)
@@ -69,6 +77,15 @@ public sealed class MedicationReminderService(
                 await SendAsync(db, userId, today, slot, phone, speech, cancellationToken);
             }
         }
+    }
+
+    private static string DescribeDose(MedicationSchedule schedule)
+    {
+        var medication = schedule.Medication!;
+        var dose = $"{medication.Name} {medication.Dosage}".Trim();
+        return schedule.AdministerAt is TimeOnly administerAt
+            ? $"{dose} at {MedicationScheduleRules.FormatClock(administerAt)}"
+            : dose;
     }
 
     private static bool IsSettled(

@@ -25,6 +25,18 @@ public static class MedicationScheduleRules
         _ => throw new ArgumentOutOfRangeException(nameof(slot))
     };
 
+    public static TimeOnly DefaultAdministerAt(MedicationTimeSlot slot) => slot switch
+    {
+        MedicationTimeSlot.Morning => new(8, 0),
+        MedicationTimeSlot.Midday => new(12, 0),
+        MedicationTimeSlot.Evening => new(18, 0),
+        MedicationTimeSlot.Bedtime => new(21, 0),
+        _ => GetWindowStart(slot)
+    };
+
+    public static TimeOnly EffectiveAdministerAt(MedicationTimeSlot slot, TimeOnly? administerAt) =>
+        administerAt ?? GetWindowStart(slot);
+
     public static bool IsWindowOpen(DateOnly scheduledDate, MedicationTimeSlot slot, DateTime now)
     {
         if (scheduledDate != DateOnly.FromDateTime(now))
@@ -33,6 +45,20 @@ public static class MedicationScheduleRules
         var time = TimeOnly.FromDateTime(now);
         return time >= GetWindowStart(slot) && time <= GetWindowEnd(slot);
     }
+
+    public static bool IsAdministerTimeReached(DateOnly scheduledDate, MedicationTimeSlot slot, TimeOnly? administerAt, DateTime now)
+    {
+        if (scheduledDate != DateOnly.FromDateTime(now))
+            return false;
+
+        var time = TimeOnly.FromDateTime(now);
+        return time >= EffectiveAdministerAt(slot, administerAt) && time <= GetWindowEnd(slot);
+    }
+
+    public static string FormatClock(TimeOnly time) => time.ToString("h:mm tt");
+
+    public static string FormatWindowRange(MedicationTimeSlot slot) =>
+        $"{FormatClock(GetWindowStart(slot))} – {FormatClock(GetWindowEnd(slot))}";
 
     public static string GetDisplayName(MedicationTimeSlot slot) => slot switch
     {

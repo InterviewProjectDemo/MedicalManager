@@ -33,6 +33,15 @@ public static class MedicationReminderCopy
         {
             throw new InvalidOperationException("Medication reminder window is wrong.");
         }
+
+        MedicationDayRules.SelfCheck();
+        var eight = new TimeOnly(8, 0);
+        if (MedicationScheduleRules.IsAdministerTimeReached(new DateOnly(2026, 10, 14), MedicationTimeSlot.Morning, eight, new DateTime(2026, 10, 14, 7, 59, 0))
+            || !MedicationScheduleRules.IsAdministerTimeReached(new DateOnly(2026, 10, 14), MedicationTimeSlot.Morning, eight, new DateTime(2026, 10, 14, 8, 0, 0))
+            || MedicationScheduleRules.IsAdministerTimeReached(new DateOnly(2026, 10, 14), MedicationTimeSlot.Morning, eight, new DateTime(2026, 10, 14, 11, 1, 0)))
+        {
+            throw new InvalidOperationException("Medication administer time is wrong.");
+        }
     }
 
     public static string BuildSms(string fullName, MedicationTimeSlot slot, IReadOnlyList<string> doses)

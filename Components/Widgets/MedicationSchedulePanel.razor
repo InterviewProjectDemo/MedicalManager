@@ -59,7 +59,7 @@
                                             <div class="med-dose-med" role="cell">
                                                 <div class="med-dose-med-inner">
                                                     <strong>@dose.Name</strong>
-                                                    <span class="muted">@dose.Dosage · @dose.Frequency</span>
+                                                    <span class="muted">@dose.Dosage · @dose.Frequency@(string.IsNullOrWhiteSpace(dose.TimeLabel) ? "" : $" · {dose.TimeLabel}")</span>
                                                     @if (dose.RecordedAt is not null && !string.IsNullOrWhiteSpace(dose.RecordedByName))
                                                     {
                                                         <span class="med-dose-recorded muted">@dose.RecordedByName · @dose.RecordedAt.Value.ToString("h:mm tt")</span>

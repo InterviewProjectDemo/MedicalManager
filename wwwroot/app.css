@@ -903,6 +903,31 @@ th[aria-sort="descending"] .sort-indicator {
     color: #2f80ed;
 }
 
+.med-choice-grid { display: flex; flex-wrap: wrap; gap: 0.45rem 0.65rem; }
+.med-choice {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid #d5e2ee;
+    border-radius: 999px;
+    background: #f7fbfe;
+}
+.med-time-choice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem 0.75rem;
+    margin-bottom: 0.45rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid #d5e2ee;
+    border-radius: 0.7rem;
+    background: #f7fbfe;
+}
+.med-time-choice .form-check { margin: 0; min-width: 6.5rem; }
+.med-time-choice input[type="time"] { width: 8.5rem; }
+.med-time-range { font-size: 0.82rem; }
 .med-schedule-panel { margin-bottom: 1rem; }
 .med-schedule-sub { margin: 0.15rem 0 0; font-size: 0.82rem; }
 .med-slot-grid {

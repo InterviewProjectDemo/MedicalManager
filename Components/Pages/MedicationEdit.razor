@@ -2,6 +2,7 @@
 @page "/medications/edit/{Id:int}"
 @attribute [Authorize]
 @inject HealthRecordService Records
+@inject MedicationScheduleService MedSchedule
 @inject PatientAccessService Access
 @inject AuthenticationStateProvider Auth
 @inject NavigationManager Nav
@@ -54,10 +55,56 @@
                 </label>
             </div>
             <div class="col-12">
+                <label class="form-label">Days</label>
+                <div class="med-choice-grid">
+                    @foreach (var day in MedicationDayRules.All)
+                    {
+                        var currentDay = day;
+                        <label class="form-check med-choice">
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   checked="@selectedDays.HasFlag(currentDay)"
+                                   @onchange="e => ToggleDay(currentDay, e.Value is bool on && on)" />
+                            <span class="form-check-label">@MedicationDayRules.Label(currentDay)</span>
+                        </label>
+                    }
+                </div>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Daily administer time</label>
+                <p class="muted mb-2">Choose each time of day, then set the clock time. The reminder call uses that time.</p>
+                @foreach (var slot in MedicationScheduleRules.AllSlots)
+                {
+                    var currentSlot = slot;
+                    <div class="med-time-choice">
+                        <label class="form-check">
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   checked="@slotSelected[currentSlot]"
+                                   @onchange="e => slotSelected[currentSlot] = e.Value is bool on && on" />
+                            <span class="form-check-label">@MedicationScheduleRules.GetDisplayName(currentSlot)</span>
+                        </label>
+                        @if (slotSelected[currentSlot])
+                        {
+                            <input type="time"
+                                   class="form-control"
+                                   aria-label="@($"{MedicationScheduleRules.GetDisplayName(currentSlot)} time")"
+                                   value="@slotTimes[currentSlot].ToString("HH:mm")"
+                                   @onchange="e => SetTime(currentSlot, e.Value?.ToString())" />
+                            <span class="muted med-time-range">@MedicationScheduleRules.FormatWindowRange(currentSlot)</span>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="col-12">
                 <label class="form-label">Notes</label>
                 <InputTextArea class="form-control" @bind-Value="model.Notes" />
             </div>
         </div>
+        @if (scheduleError is not null)
+        {
+            <div class="text-danger mt-3">@scheduleError</div>
+        }
         <div class="form-actions">
             <button type="submit" class="btn btn-success">Save</button>
             <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
@@ -74,6 +121,10 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private Medication? model;
+    private MedicationDays selectedDays = MedicationDays.All;
+    private readonly Dictionary<MedicationTimeSlot, bool> slotSelected = MedicationScheduleRules.AllSlots.ToDictionary(slot => slot, _ => false);
+    private readonly Dictionary<MedicationTimeSlot, TimeOnly> slotTimes = MedicationScheduleRules.AllSlots.ToDictionary(slot => slot, MedicationScheduleRules.DefaultAdministerAt);
+    private string? scheduleError;
     private string Back => CareLinks.To("medications", PatientUserId);
 
     protected override async Task OnParametersSetAsync()
@@ -85,14 +136,66 @@
         {
             model = await Records.GetMedicationByIdAsync(id, patientId);
         }
-        model ??= new Medication { UserId = patientId };
+        model ??= new Medication { UserId = patientId, Days = MedicationDays.All };
+        LoadSchedule(model);
+    }
+
+    private void LoadSchedule(Medication medication)
+    {
+        selectedDays = medication.Days == MedicationDays.None ? MedicationDays.All : medication.Days;
+        foreach (var slot in MedicationScheduleRules.AllSlots)
+        {
+            var schedule = medication.Schedules.FirstOrDefault(item => item.TimeSlot == slot);
+            slotSelected[slot] = schedule is not null;
+            slotTimes[slot] = schedule?.AdministerAt ?? MedicationScheduleRules.DefaultAdministerAt(slot);
+        }
+    }
+
+    private void ToggleDay(MedicationDays day, bool on)
+    {
+        selectedDays = on ? selectedDays | day : selectedDays & ~day;
+    }
+
+    private void SetTime(MedicationTimeSlot slot, string? value)
+    {
+        if (TimeOnly.TryParse(value, out var time))
+            slotTimes[slot] = time;
     }
 
     private async Task Save()
     {
         if (model is null || scope?.PatientId is null) return;
+        if (selectedDays == MedicationDays.None)
+        {
+            scheduleError = "Choose at least one day.";
+            return;
+        }
+
+        var selected = MedicationScheduleRules.AllSlots.Where(slot => slotSelected[slot]).ToList();
+        if (selected.Count == 0)
+        {
+            scheduleError = "Choose at least one daily administer time.";
+            return;
+        }
+
+        foreach (var slot in selected)
+        {
+            var time = slotTimes[slot];
+            if (time < MedicationScheduleRules.GetWindowStart(slot) || time > MedicationScheduleRules.GetWindowEnd(slot))
+            {
+                scheduleError = $"{MedicationScheduleRules.GetDisplayName(slot)} needs a time from {MedicationScheduleRules.FormatWindowRange(slot)}.";
+                return;
+            }
+        }
+
+        scheduleError = null;
         model.UserId = scope.PatientId;
+        model.Days = selectedDays;
+        model.Schedules = [];
         await Records.SaveMedicationAsync(model);
+        await MedSchedule.ReplaceSchedulesAsync(
+            model.Id,
+            selected.Select(slot => (slot, slotTimes[slot])).ToList());
         Nav.NavigateTo(Back);
     }
 

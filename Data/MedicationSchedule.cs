@@ -12,4 +12,6 @@ public class MedicationSchedule
     public Medication? Medication { get; set; }
 
     public MedicationTimeSlot TimeSlot { get; set; }
+
+    public TimeOnly? AdministerAt { get; set; }
 }

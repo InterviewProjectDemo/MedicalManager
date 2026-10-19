@@ -177,7 +177,8 @@
     private static string DoseLabel(MedicationOverviewRow med)
     {
         var dosage = med.Dosage?.Trim();
-        var frequency = med.Frequency?.Trim();
+        var schedule = med.ScheduleText?.Trim();
+        var frequency = string.IsNullOrEmpty(schedule) ? med.Frequency?.Trim() : schedule;
         if (string.IsNullOrEmpty(dosage)) return frequency ?? "—";
         if (string.IsNullOrEmpty(frequency)) return dosage;
         return $"{dosage} · {frequency}";

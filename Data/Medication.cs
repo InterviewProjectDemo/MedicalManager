@@ -35,5 +35,7 @@ public class Medication
 
     public DateOnly? EndDate { get; set; }
 
+    public MedicationDays Days { get; set; } = MedicationDays.All;
+
     public List<MedicationSchedule> Schedules { get; set; } = [];
 }

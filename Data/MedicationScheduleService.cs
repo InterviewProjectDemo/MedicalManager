@@ -21,13 +21,19 @@ public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbCon
             .Where(x => x.UserId == userId && x.ScheduledDate == date)
             .ToListAsync();
 
+        var timeByDose = schedules.ToDictionary(
+            schedule => (schedule.MedicationId, schedule.TimeSlot),
+            schedule => schedule.AdministerAt);
         var groups = MedicationScheduleRules.AllSlots
             .Select(slot => new MedicationSlotGroup(
                 slot,
                 MedicationScheduleRules.GetDisplayName(slot),
                 MedicationScheduleRules.GetWindowLabel(slot),
                 administrations
-                    .Where(a => a.TimeSlot == slot)
+                    .Where(a => a.TimeSlot == slot
+                        && a.Medication is not null
+                        && MedicationDayRules.Includes(a.Medication.Days, date)
+                        && timeByDose.ContainsKey((a.MedicationId, a.TimeSlot)))
                     .OrderBy(a => a.Medication!.Name)
                     .Select(a => new MedicationDoseItem(
                         a.Id,
@@ -37,7 +43,10 @@ public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbCon
                         a.Medication.Frequency,
                         a.Status,
                         a.RecordedAt,
-                        a.RecordedByName))
+                        a.RecordedByName,
+                        timeByDose.TryGetValue((a.MedicationId, a.TimeSlot), out var administerAt) && administerAt is TimeOnly time
+                            ? MedicationScheduleRules.FormatClock(time)
+                            : null))
                     .ToList()))
             .ToList();
 
@@ -47,17 +56,21 @@ public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbCon
     public async Task<MedicationOverview> GetMedicationOverviewAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var rows = await db.Medications
+        var medications = await db.Medications
             .AsNoTracking()
+            .Include(x => x.Schedules)
             .Where(x => x.UserId == userId && x.IsActive)
             .OrderBy(x => x.Name)
+            .ToListAsync();
+        var rows = medications
             .Select(med => new MedicationOverviewRow(
                 med.Id,
                 med.Name,
                 med.Purpose,
                 med.Dosage,
-                med.Frequency))
-            .ToListAsync();
+                med.Frequency,
+                MedicationDayRules.FormatSchedule(med.Days, med.Schedules)))
+            .ToList();
 
         return new MedicationOverview(rows);
     }
@@ -102,6 +115,54 @@ public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbCon
         await db.SaveChangesAsync();
     }
 
+    public async Task ReplaceSchedulesAsync(int medicationId, IReadOnlyList<(MedicationTimeSlot Slot, TimeOnly Time)> times)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var medication = await db.Medications.FirstOrDefaultAsync(item => item.Id == medicationId);
+        if (medication is null)
+            return;
+
+        var existing = await db.MedicationSchedules
+            .Where(item => item.MedicationId == medicationId)
+            .ToListAsync();
+        var wanted = times.Select(time => time.Slot).ToHashSet();
+
+        foreach (var time in times)
+        {
+            var row = existing.FirstOrDefault(item => item.TimeSlot == time.Slot);
+            if (row is null)
+            {
+                db.MedicationSchedules.Add(new MedicationSchedule
+                {
+                    MedicationId = medicationId,
+                    TimeSlot = time.Slot,
+                    AdministerAt = time.Time
+                });
+            }
+            else
+            {
+                row.AdministerAt = time.Time;
+            }
+        }
+
+        var removed = existing.Where(item => !wanted.Contains(item.TimeSlot)).ToList();
+        if (removed.Count > 0)
+            db.MedicationSchedules.RemoveRange(removed);
+
+        var pending = await db.MedicationAdministrations
+            .Where(item => item.MedicationId == medicationId && item.Status == AdministrationStatus.Pending)
+            .ToListAsync();
+        foreach (var record in pending)
+        {
+            var stillDue = wanted.Contains(record.TimeSlot)
+                && MedicationDayRules.Includes(medication.Days, record.ScheduledDate);
+            if (!stillDue)
+                db.MedicationAdministrations.Remove(record);
+        }
+
+        await db.SaveChangesAsync();
+    }
+
     private static async Task EnsureAdministrationRecordsAsync(
         ApplicationDbContext db, string userId, DateOnly date)
     {
@@ -122,6 +183,14 @@ public sealed class MedicationScheduleService(IDbContextFactory<ApplicationDbCon
 
         foreach (var schedule in schedules)
         {
+            if (schedule.Medication is null
+                || schedule.Medication.StartDate > date
+                || (schedule.Medication.EndDate is DateOnly end && end < date)
+                || !MedicationDayRules.Includes(schedule.Medication.Days, date))
+            {
+                continue;
+            }
+
             if (existingSet.Contains((schedule.MedicationId, schedule.TimeSlot))) continue;
 
             db.MedicationAdministrations.Add(new MedicationAdministration
@@ -169,7 +238,8 @@ public sealed record MedicationDoseItem(
     string Frequency,
     AdministrationStatus Status,
     DateTime? RecordedAt,
-    string? RecordedByName);
+    string? RecordedByName,
+    string? TimeLabel);
 
 public sealed record MedicationSlotGroup(
     MedicationTimeSlot Slot,
@@ -184,7 +254,8 @@ public sealed record MedicationOverviewRow(
     string Name,
     string? Purpose,
     string Dosage,
-    string Frequency);
+    string Frequency,
+    string? ScheduleText);
 
 public sealed record MedicationOverview(
     IReadOnlyList<MedicationOverviewRow> Medications);

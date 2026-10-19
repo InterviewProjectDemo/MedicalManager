@@ -14,7 +14,7 @@
         <div>
             <p class="eyebrow">Treatment</p>
             <h1>Medications</h1>
-            <p class="muted">Keep dosage, frequency, and notes current so the dashboard stays accurate.</p>
+            <p class="muted">Set the days and the time of day for each dose so reminders call when the medicine is due.</p>
         </div>
         <a class="btn btn-success" href="@Link("medications/edit")">Add medication</a>
     </div>
@@ -81,7 +81,16 @@
                             <div class="muted">@item.Notes</div>
                         </td>
                         <td data-label="Dosage">@item.Dosage</td>
-                        <td data-label="Frequency">@item.Frequency</td>
+                        <td data-label="Frequency">
+                            @item.Frequency
+                            @{
+                                var schedule = MedicationDayRules.FormatSchedule(item.Days, item.Schedules);
+                            }
+                            @if (!string.IsNullOrWhiteSpace(schedule))
+                            {
+                                <div class="muted">@schedule</div>
+                            }
+                        </td>
                         <td data-label="Status">
                             <StatusPill Label="@(item.IsActive ? "Active" : "Stopped")" CssClass="@(item.IsActive ? "status-ok" : "status-muted")" />
                         </td>

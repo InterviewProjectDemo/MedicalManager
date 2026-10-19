@@ -811,6 +811,12 @@ public static class IdentitySeeder
                     """ALTER TABLE "PatientProfiles" ADD COLUMN "MedicationRemindersEnabled" INTEGER NOT NULL DEFAULT 1""");
                 await TryAddColumnAsync(db, profileColumns, "ToDoRemindersEnabled",
                     """ALTER TABLE "PatientProfiles" ADD COLUMN "ToDoRemindersEnabled" INTEGER NOT NULL DEFAULT 1""");
+                var medicationColumns = await ReadSqliteColumnsAsync(connection, "Medications");
+                await TryAddColumnAsync(db, medicationColumns, "Days",
+                    """ALTER TABLE "Medications" ADD COLUMN "Days" INTEGER NOT NULL DEFAULT 127""");
+                var scheduleColumns = await ReadSqliteColumnsAsync(connection, "MedicationSchedules");
+                await TryAddColumnAsync(db, scheduleColumns, "AdministerAt",
+                    """ALTER TABLE "MedicationSchedules" ADD COLUMN "AdministerAt" TEXT NULL""");
                 await db.Database.ExecuteSqlRawAsync(
                     """
                     CREATE TABLE IF NOT EXISTS "MedicationReminders" (
@@ -866,6 +872,10 @@ public static class IdentitySeeder
             """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "MedicationRemindersEnabled" boolean NOT NULL DEFAULT TRUE;""");
         await db.Database.ExecuteSqlRawAsync(
             """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "ToDoRemindersEnabled" boolean NOT NULL DEFAULT TRUE;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "Medications" ADD COLUMN IF NOT EXISTS "Days" integer NOT NULL DEFAULT 127;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "MedicationSchedules" ADD COLUMN IF NOT EXISTS "AdministerAt" time without time zone NULL;""");
         await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS "MedicationReminders" (

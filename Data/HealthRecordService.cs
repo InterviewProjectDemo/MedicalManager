@@ -286,13 +286,13 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
     private static Task<List<Medication>> GetMedicationsAsync(
         ApplicationDbContext db, string userId, bool activeOnly)
     {
-        var query = db.Medications.Where(x => x.UserId == userId);
+        var query = db.Medications.Include(x => x.Schedules).Where(x => x.UserId == userId);
         if (activeOnly) query = query.Where(x => x.IsActive);
         return query.OrderBy(x => x.Name).ToListAsync();
     }
 
     private static Task<Medication?> GetMedicationByIdAsync(ApplicationDbContext db, int id, string userId) =>
-        db.Medications.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+        db.Medications.Include(x => x.Schedules).FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
 
     private static Task<Appointment?> GetAppointmentByIdAsync(ApplicationDbContext db, int id, string userId) =>
         db.Appointments.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
