@@ -31,6 +31,10 @@ public class PatientProfile
 
     public bool AppointmentRemindersEnabled { get; set; } = true;
 
+    public bool MedicationRemindersEnabled { get; set; } = true;
+
+    public bool ToDoRemindersEnabled { get; set; } = true;
+
     [MaxLength(400)]
     public string? Notes { get; set; }
 

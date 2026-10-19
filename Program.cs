@@ -46,6 +46,21 @@ builder.Services.AddAuthentication(options =>
     })
     .AddIdentityCookies();
 
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+});
+
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+});
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddSingleton<IPhiProtector, PhiProtector>();
@@ -136,19 +151,37 @@ builder.Services.AddScoped<DashboardLayoutService>();
 builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection(NotificationOptions.SectionName));
 builder.Services.PostConfigure<NotificationOptions>(notificationOptions =>
 {
+    notificationOptions.Pinpoint.Region = FirstNonEmpty(
+        notificationOptions.Pinpoint.Region,
+        Environment.GetEnvironmentVariable("AWS_REGION"),
+        Environment.GetEnvironmentVariable("AWS_DEFAULT_REGION"),
+        "us-east-1");
+    notificationOptions.Pinpoint.AccessKeyId = FirstNonEmpty(
+        notificationOptions.Pinpoint.AccessKeyId,
+        Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID"));
+    notificationOptions.Pinpoint.SecretAccessKey = FirstNonEmpty(
+        notificationOptions.Pinpoint.SecretAccessKey,
+        Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY"));
+    notificationOptions.Pinpoint.OriginationIdentity = FirstNonEmpty(
+        notificationOptions.Pinpoint.OriginationIdentity,
+        Environment.GetEnvironmentVariable("PINPOINT_ORIGINATION_IDENTITY"));
     notificationOptions.Twilio.AccountSid = FirstNonEmpty(
         notificationOptions.Twilio.AccountSid,
         Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID"));
-    notificationOptions.Twilio.AuthToken = FirstNonEmpty(
-        notificationOptions.Twilio.AuthToken,
-        Environment.GetEnvironmentVariable("TWILIO_AUTH_TOKEN"));
+    notificationOptions.Twilio.ApiKeySid = FirstNonEmpty(
+        notificationOptions.Twilio.ApiKeySid,
+        Environment.GetEnvironmentVariable("TWILIO_API_KEY_SID"));
+    notificationOptions.Twilio.ApiKeySecret = FirstNonEmpty(
+        notificationOptions.Twilio.ApiKeySecret,
+        Environment.GetEnvironmentVariable("TWILIO_API_KEY_SECRET"));
     notificationOptions.Twilio.FromNumber = FirstNonEmpty(
         notificationOptions.Twilio.FromNumber,
         Environment.GetEnvironmentVariable("TWILIO_FROM_NUMBER"));
-});
-builder.Services.AddHttpClient("Twilio", client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(30);
+    if (builder.Environment.IsProduction()
+        && !string.Equals(Environment.GetEnvironmentVariable("MEDICALMANAGER_TRAVEL_LOOKUP"), "true", StringComparison.OrdinalIgnoreCase))
+    {
+        notificationOptions.Travel.Enabled = false;
+    }
 });
 builder.Services.AddHttpClient("Travel", client =>
 {
@@ -156,11 +189,14 @@ builder.Services.AddHttpClient("Travel", client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("MedicalManager/1.0 (appointment-reminders)");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
+builder.Services.AddHttpClient("Twilio", client => client.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<OnboardingVoiceService>();
 builder.Services.AddSingleton<TravelTimeService>();
 builder.Services.AddSingleton<TwilioNotificationSender>();
 builder.Services.AddScoped<AppointmentReminderService>();
+builder.Services.AddScoped<MedicationReminderService>();
+builder.Services.AddScoped<ToDoReminderService>();
 builder.Services.AddHostedService<AppointmentReminderWorker>();
 
 var app = builder.Build();
@@ -169,6 +205,8 @@ if (app.Environment.IsDevelopment())
     NameSpeaker.SelfCheck();
     AppointmentReminderCopy.SelfCheck();
     AppointmentReminderSchedule.SelfCheck();
+    MedicationReminderCopy.SelfCheck();
+    ToDoReminderCopy.SelfCheck();
     _ = Task.Run(async () =>
     {
         var voice = app.Services.GetRequiredService<OnboardingVoiceService>();
@@ -181,6 +219,23 @@ if (app.Environment.IsDevelopment())
     });
 }
 app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    if (!app.Environment.IsDevelopment()
+        && !context.Request.Path.StartsWithSegments("/health")
+        && !context.Request.IsHttps)
+    {
+        var httpsUrl = $"https://{context.Request.Host}{context.Request.PathBase}{context.Request.Path}{context.Request.QueryString}";
+        context.Response.Redirect(httpsUrl, permanent: true);
+        return;
+    }
+
+    await next();
+});
 
 app.Services.GetRequiredService<IPhiProtector>().SelfTest();
 
@@ -198,6 +253,43 @@ using (var scope = app.Services.CreateScope())
 }
 
 await IdentitySeeder.SeedAsync(app.Services);
+
+if (app.Environment.IsDevelopment() && !usePostgreSql)
+{
+    using var verifyScope = app.Services.CreateScope();
+    var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var patient = await verifyDb.Users.FirstOrDefaultAsync(user => user.Email == IdentitySeeder.DemoPatientEmail);
+    if (patient is null)
+        throw new InvalidOperationException("Account email lookup failed after field encryption.");
+
+    var connection = verifyDb.Database.GetDbConnection();
+    await connection.OpenAsync();
+    try
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """SELECT "Email", "FullName" FROM "AspNetUsers" WHERE "Id" = @id""";
+        var id = command.CreateParameter();
+        id.ParameterName = "@id";
+        id.Value = patient.Id;
+        command.Parameters.Add(id);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+            throw new InvalidOperationException("Encrypted account row was not readable.");
+        var storedEmail = reader.GetString(0);
+        var storedName = reader.GetString(1);
+        if (!storedEmail.StartsWith(PhiProtector.DeterministicPrefix, StringComparison.Ordinal)
+            || !storedName.StartsWith(PhiProtector.StringPrefix, StringComparison.Ordinal))
+            throw new InvalidOperationException("Account identifiers are still plaintext in the database.");
+    }
+    finally
+    {
+        await connection.CloseAsync();
+    }
+
+    var reading = await verifyDb.BloodPressureReadings.OrderBy(x => x.Id).FirstOrDefaultAsync();
+    if (reading is null || reading.Systolic < 60)
+        throw new InvalidOperationException("Encrypted blood pressure reading did not round-trip.");
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -264,7 +356,13 @@ app.MapGet("/profile-photo/{userId}", async (
 
 app.Run();
 
-static string FirstNonEmpty(string? configured, string? fromEnvironment) =>
-    !string.IsNullOrWhiteSpace(configured) ? configured.Trim()
-    : !string.IsNullOrWhiteSpace(fromEnvironment) ? fromEnvironment.Trim()
-    : "";
+static string FirstNonEmpty(params string?[] values)
+{
+    foreach (var value in values)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            return value.Trim();
+    }
+
+    return "";
+}

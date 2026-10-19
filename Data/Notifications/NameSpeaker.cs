@@ -73,7 +73,7 @@ public static class NameSpeaker
         foreach (var token in parts.Tokens)
         {
             if (builder.Length > 0)
-                builder.Append("""<break time="280ms"/>""");
+                builder.Append("""<break time="90ms"/>""");
             builder.Append(SpeakToken(token));
         }
 
@@ -138,7 +138,7 @@ public static class NameSpeaker
             for (var i = 0; i < tokens.Count; i++)
             {
                 if (i > 0)
-                    builder.Append("""<break time="280ms"/>""");
+                    builder.Append("""<break time="90ms"/>""");
                 builder.Append(Alias(tokens[i], SpokenAlias(hints[i])));
             }
 

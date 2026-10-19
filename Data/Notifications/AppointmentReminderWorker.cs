@@ -23,8 +23,12 @@ public sealed class AppointmentReminderWorker(
             try
             {
                 using var scope = scopes.CreateScope();
-                var reminders = scope.ServiceProvider.GetRequiredService<AppointmentReminderService>();
-                await reminders.ProcessDueAsync(stoppingToken);
+                var appointments = scope.ServiceProvider.GetRequiredService<AppointmentReminderService>();
+                await appointments.ProcessDueAsync(stoppingToken);
+                var medications = scope.ServiceProvider.GetRequiredService<MedicationReminderService>();
+                await medications.ProcessDueAsync(stoppingToken);
+                var todos = scope.ServiceProvider.GetRequiredService<ToDoReminderService>();
+                await todos.ProcessDueAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -32,7 +36,7 @@ public sealed class AppointmentReminderWorker(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Appointment reminder check failed.");
+                logger.LogError(ex, "Reminder check failed.");
             }
 
             var seconds = Math.Clamp(options.Value.PollIntervalSeconds, 15, 300);

@@ -85,12 +85,13 @@ if ($secrets.ContainsKey("EMAIL_SMTP_PASSWORD") -and -not [string]::IsNullOrWhit
     $params += "EmailSmtpPassword=$($secrets.EMAIL_SMTP_PASSWORD)"
 }
 foreach ($pair in @(
-    @{ Name = "TWILIO_ACCOUNT_SID"; Param = "TwilioAccountSid" },
-    @{ Name = "TWILIO_AUTH_TOKEN"; Param = "TwilioAuthToken" },
-    @{ Name = "TWILIO_FROM_NUMBER"; Param = "TwilioFromNumber" }
+    @{ Key = "TWILIO_ACCOUNT_SID"; Name = "TwilioAccountSid" },
+    @{ Key = "TWILIO_API_KEY_SID"; Name = "TwilioApiKeySid" },
+    @{ Key = "TWILIO_API_KEY_SECRET"; Name = "TwilioApiKeySecret" },
+    @{ Key = "TWILIO_FROM_NUMBER"; Name = "TwilioFromNumber" }
 )) {
-    if ($secrets.ContainsKey($pair.Name) -and -not [string]::IsNullOrWhiteSpace($secrets[$pair.Name])) {
-        $params += "$($pair.Param)=$($secrets[$pair.Name])"
+    if ($secrets.ContainsKey($pair.Key) -and -not [string]::IsNullOrWhiteSpace($secrets[$pair.Key])) {
+        $params += "$($pair.Name)=$($secrets[$pair.Key])"
     }
 }
 

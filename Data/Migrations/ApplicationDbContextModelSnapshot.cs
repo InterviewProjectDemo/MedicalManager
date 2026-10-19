@@ -181,6 +181,93 @@ namespace MedicalManager.Migrations
                     b.ToTable("AppointmentReminders");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.MedicationReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("ScheduledDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TimeSlot")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ScheduledDate", "TimeSlot")
+                        .IsUnique();
+
+                    b.ToTable("MedicationReminders");
+                });
+
+            modelBuilder.Entity("MedicalManager.Data.ToDoReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FinishBySnapshot")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ToDoItemId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ToDoItemId", "Kind", "FinishBySnapshot")
+                        .IsUnique();
+
+                    b.ToTable("ToDoReminders");
+                });
+
             modelBuilder.Entity("MedicalManager.Data.BloodPressureReading", b =>
                 {
                     b.Property<int>("Id")
@@ -440,6 +527,12 @@ namespace MedicalManager.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("AppointmentRemindersEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MedicationRemindersEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ToDoRemindersEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("HasCompletedOnboarding")
@@ -754,6 +847,17 @@ namespace MedicalManager.Migrations
                         .IsRequired();
 
                     b.Navigation("Appointment");
+                });
+
+            modelBuilder.Entity("MedicalManager.Data.ToDoReminder", b =>
+                {
+                    b.HasOne("MedicalManager.Data.ToDoItem", "ToDoItem")
+                        .WithMany()
+                        .HasForeignKey("ToDoItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ToDoItem");
                 });
 
             modelBuilder.Entity("MedicalManager.Data.BloodPressureReading", b =>

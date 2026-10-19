@@ -21,6 +21,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MedicationAdministration> MedicationAdministrations => Set<MedicationAdministration>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<AppointmentReminder> AppointmentReminders => Set<AppointmentReminder>();
+    public DbSet<MedicationReminder> MedicationReminders => Set<MedicationReminder>();
+    public DbSet<ToDoReminder> ToDoReminders => Set<ToDoReminder>();
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
@@ -103,6 +105,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasIndex(x => new { x.AppointmentId, x.Kind, x.Channel, x.StartsAtSnapshot })
             .IsUnique();
 
+        builder.Entity<MedicationReminder>()
+            .HasIndex(x => new { x.UserId, x.ScheduledDate, x.TimeSlot })
+            .IsUnique();
+
+        builder.Entity<ToDoReminder>()
+            .HasOne(x => x.ToDoItem)
+            .WithMany()
+            .HasForeignKey(x => x.ToDoItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ToDoReminder>()
+            .HasIndex(x => new { x.ToDoItemId, x.Kind, x.FinishBySnapshot })
+            .IsUnique();
+
         builder.Entity<Doctor>()
             .HasOne(x => x.User)
             .WithMany(u => u.Doctors)
@@ -149,11 +165,33 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         var required = PhiValueConverters.RequiredString(_phi);
         var optional = PhiValueConverters.OptionalString(_phi);
+        var lookup = PhiValueConverters.RequiredLookup(_phi);
+        var optionalLookup = PhiValueConverters.OptionalLookup(_phi);
         var bytes = PhiValueConverters.OptionalBytes(_phi);
         var date = PhiValueConverters.OptionalDate(_phi);
+        var whole = PhiValueConverters.RequiredInt(_phi);
+        var optionalWhole = PhiValueConverters.OptionalInt(_phi);
+        var number = PhiValueConverters.RequiredDecimal(_phi);
+        var sugarKind = PhiValueConverters.SugarKindValue(_phi);
 
         builder.Entity<ApplicationUser>().Property(x => x.FullName)
             .HasConversion(required)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.Email)
+            .HasMaxLength(2048)
+            .HasConversion(optionalLookup)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.NormalizedEmail)
+            .HasMaxLength(2048)
+            .HasConversion(optionalLookup)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.UserName)
+            .HasMaxLength(2048)
+            .HasConversion(optionalLookup)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.NormalizedUserName)
+            .HasMaxLength(2048)
+            .HasConversion(optionalLookup)
             .HasColumnType("text");
         builder.Entity<ApplicationUser>().Property(x => x.PhoneNumber)
             .HasConversion(optional)
@@ -167,7 +205,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
 
+        builder.Entity<BloodPressureReading>().Property(x => x.Systolic).HasConversion(whole).HasColumnType("text");
+        builder.Entity<BloodPressureReading>().Property(x => x.Diastolic).HasConversion(whole).HasColumnType("text");
+        builder.Entity<BloodPressureReading>().Property(x => x.Pulse).HasConversion(optionalWhole).HasColumnType("text");
         builder.Entity<BloodPressureReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Value).HasConversion(number).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Unit).HasConversion(required).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Kind).HasConversion(sugarKind).HasColumnType("text");
         builder.Entity<SugarReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
 
         builder.Entity<Medication>().Property(x => x.Name).HasConversion(required).HasColumnType("text");
@@ -188,9 +232,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Doctor>().Property(x => x.PhoneNumber).HasConversion(required).HasColumnType("text");
 
         builder.Entity<LabReport>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<LabResult>().Property(x => x.TestCode).HasConversion(lookup).HasColumnType("text");
+        builder.Entity<LabResult>().Property(x => x.Value).HasConversion(number).HasColumnType("text");
+        builder.Entity<LabResult>().Property(x => x.Unit).HasConversion(optional).HasColumnType("text");
         builder.Entity<ToDoItem>().Property(x => x.Description).HasConversion(required).HasColumnType("text");
         builder.Entity<ToDoItem>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<MedicationAdministration>().Property(x => x.RecordedByName)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<AppointmentReminder>().Property(x => x.Detail)
             .HasConversion(optional)
             .HasColumnType("text");
     }

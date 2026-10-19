@@ -7,6 +7,15 @@ namespace MedicalManager.Data;
 /// </summary>
 public static class MedicationScheduleRules
 {
+    public static TimeOnly GetWindowStart(MedicationTimeSlot slot) => slot switch
+    {
+        MedicationTimeSlot.Morning => new(6, 0),
+        MedicationTimeSlot.Midday => new(11, 0),
+        MedicationTimeSlot.Evening => new(15, 0),
+        MedicationTimeSlot.Bedtime => new(21, 0),
+        _ => throw new ArgumentOutOfRangeException(nameof(slot))
+    };
+
     public static TimeOnly GetWindowEnd(MedicationTimeSlot slot) => slot switch
     {
         MedicationTimeSlot.Morning => new(11, 0),
@@ -15,6 +24,15 @@ public static class MedicationScheduleRules
         MedicationTimeSlot.Bedtime => new(23, 59),
         _ => throw new ArgumentOutOfRangeException(nameof(slot))
     };
+
+    public static bool IsWindowOpen(DateOnly scheduledDate, MedicationTimeSlot slot, DateTime now)
+    {
+        if (scheduledDate != DateOnly.FromDateTime(now))
+            return false;
+
+        var time = TimeOnly.FromDateTime(now);
+        return time >= GetWindowStart(slot) && time <= GetWindowEnd(slot);
+    }
 
     public static string GetDisplayName(MedicationTimeSlot slot) => slot switch
     {

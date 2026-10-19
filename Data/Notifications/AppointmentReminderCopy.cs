@@ -31,22 +31,22 @@ public static class AppointmentReminderCopy
             "Dr. Morgan Chen",
             "Main Clinic, Room 214",
             "From your home, it is about 15 minutes by car, roughly about 6 miles away.");
-        var twiml = BuildTwiml(facts, "Polly.Ruth-Neural", "en-US");
-        if (twiml.Length > 3900)
-            throw new InvalidOperationException("Reminder call script is too long for Twilio.");
-        if (!twiml.Contains("phoneme", StringComparison.Ordinal) || !twiml.Contains("Rivera", StringComparison.Ordinal))
+        var speech = BuildVoiceSsml(facts);
+        if (speech.Length > 5800)
+            throw new InvalidOperationException("Reminder call script is too long.");
+        if (!speech.Contains("phoneme", StringComparison.Ordinal) || !speech.Contains("Rivera", StringComparison.Ordinal))
             throw new InvalidOperationException("Reminder call does not pronounce the full name.");
-        if (!twiml.Contains("tomorrow", StringComparison.OrdinalIgnoreCase)
-            || !twiml.Contains("Cardiology follow-up", StringComparison.Ordinal)
-            || !twiml.Contains("Main Clinic", StringComparison.Ordinal)
-            || !twiml.Contains("15 minutes", StringComparison.Ordinal))
+        if (!speech.Contains("tomorrow", StringComparison.OrdinalIgnoreCase)
+            || !speech.Contains("Cardiology follow-up", StringComparison.Ordinal)
+            || !speech.Contains("Main Clinic", StringComparison.Ordinal)
+            || !speech.Contains("15 minutes", StringComparison.Ordinal))
             throw new InvalidOperationException("Day-before call is missing the visit details.");
 
         var hour = facts with { Kind = AppointmentReminderKind.HourBefore, Now = when.AddHours(-1) };
-        var hourTwiml = BuildTwiml(hour, "Polly.Ruth-Neural", "en-US");
-        if (!hourTwiml.Contains("one hour", StringComparison.OrdinalIgnoreCase))
+        var hourSpeech = BuildVoiceSsml(hour);
+        if (!hourSpeech.Contains("one hour", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Hour-before call does not mention the hour.");
-        if (hourTwiml.Contains("tomorrow", StringComparison.OrdinalIgnoreCase))
+        if (hourSpeech.Contains("tomorrow", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Hour-before call should not say the visit is tomorrow.");
 
         var sms = BuildSms(facts);
@@ -76,10 +76,8 @@ public static class AppointmentReminderCopy
         return builder.ToString();
     }
 
-    public static string BuildTwiml(ReminderFacts facts, string pollyVoice, string language)
+    public static string BuildVoiceSsml(ReminderFacts facts)
     {
-        var voice = string.IsNullOrWhiteSpace(pollyVoice) ? "Polly.Ruth-Neural" : pollyVoice.Trim();
-        var lang = string.IsNullOrWhiteSpace(language) ? "en-US" : language.Trim();
         var name = NameSpeaker.Ssml(facts.FullName, facts.NamePronunciation);
         var first = NameSpeaker.SsmlFirst(facts.FullName, facts.NamePronunciation);
         var body = facts.Kind == AppointmentReminderKind.HourBefore
@@ -87,11 +85,9 @@ public static class AppointmentReminderCopy
             : DayBeforeBody(facts, name, first);
 
         return $"""
-            <Response>
-              <Say voice="{Xml(voice)}" language="{Xml(lang)}">
-                <prosody rate="94%" pitch="+2%">{body}</prosody>
-              </Say>
-            </Response>
+            <speak xml:lang="en-US">
+              <prosody rate="92%">{body}</prosody>
+            </speak>
             """;
     }
 
@@ -101,46 +97,41 @@ public static class AppointmentReminderCopy
         var time = TimeSsml(facts.StartsAt);
         var lead = RelativeDay(facts);
         var when = lead is "tomorrow" or "today"
-            ? $"{Xml(Capitalize(lead))}, {date}, at {time}, you have an appointment."
-            : $"{Xml(Capitalize(lead))}, at {time}, you have an appointment.";
+            ? $"I just wanted to kindly remind you about your visit {Xml(lead)}. <break time=\"160ms\"/>It's {date}, at {time}."
+            : $"I just wanted to kindly remind you about your visit {Xml(lead)}, at {time}.";
         var details = DetailSentences(facts);
         var travel = TravelSsml(facts.TravelSentence);
-        var closingName = string.IsNullOrWhiteSpace(first) ? "" : $""" <break time="200ms"/>{first}""";
+        var closingName = string.IsNullOrWhiteSpace(first) ? "" : $""" {first}""";
         return $"""
-            <break time="400ms"/>
-            Hello, <break time="250ms"/>{name}.
-            <break time="450ms"/>
-            This is Medical Manager, calling with a kind reminder about your visit.
-            <break time="350ms"/>
-            {when}
+            Hi, {name}.
+            <break time="180ms"/>
+            It's Medical Manager. {when}
             {details}
             {travel}
-            <break time="400ms"/>
-            Please give yourself a little extra time, so you can arrive calmly.
-            We are wishing you a smooth and easy visit.
+            <break time="200ms"/>
+            Please leave yourself a little extra time, so you can arrive feeling calm.
+            I'm wishing you a smooth and easy visit.
             Take care{closingName}.
             """;
     }
 
     private static string HourBeforeBody(ReminderFacts facts, string name, string first)
     {
-        var date = Xml(SpokenDate(facts.StartsAt));
         var time = TimeSsml(facts.StartsAt);
         var details = DetailSentences(facts);
         var travel = TravelSsml(facts.TravelSentence);
-        var closingName = string.IsNullOrWhiteSpace(first) ? "" : $""" <break time="200ms"/>{first}""";
+        var closingName = string.IsNullOrWhiteSpace(first) ? "" : $""" {first}""";
         return $"""
-            <break time="400ms"/>
-            Hello, <break time="250ms"/>{name}.
-            <break time="450ms"/>
-            This is Medical Manager, with a gentle reminder.
-            <break time="300ms"/>
-            Your appointment is in about one hour, at {time} today, {date}.
+            Hi, {name}.
+            <break time="180ms"/>
+            It's Medical Manager. I'm calling with a gentle reminder.
+            <break time="160ms"/>
+            Your appointment is in about one hour, at {time} today.
             {details}
             {travel}
-            <break time="400ms"/>
-            This is a kind nudge to start getting ready.
-            We hope the trip there is easy.
+            <break time="200ms"/>
+            This is just a kind nudge to start getting ready.
+            I hope the trip there feels easy.
             Take care{closingName}.
             """;
     }
@@ -151,15 +142,15 @@ public static class AppointmentReminderCopy
         var provider = Clean(facts.ProviderName);
         var location = Clean(facts.Location);
         var builder = new StringBuilder();
-        builder.Append("<break time=\"300ms\"/>It is for ").Append(purpose).Append('.');
+        builder.Append("<break time=\"140ms\"/>It's for ").Append(purpose).Append('.');
         if (!string.IsNullOrWhiteSpace(provider))
         {
-            builder.Append(" <break time=\"200ms\"/>You will be seeing ")
+            builder.Append(" You'll be seeing ")
                 .Append(Xml(provider))
                 .Append('.');
         }
 
-        builder.Append(" <break time=\"300ms\"/>");
+        builder.Append(' ');
         if (string.IsNullOrWhiteSpace(location))
         {
             builder.Append("The place for the visit is listed with your appointment.");
@@ -185,7 +176,7 @@ public static class AppointmentReminderCopy
         if (string.IsNullOrWhiteSpace(travel))
             return "";
 
-        return $"""<break time="300ms"/>{Xml(travel.Trim())}""";
+        return $""" <break time="140ms"/>{Xml(travel.Trim())}""";
     }
 
     private static string WhenClause(ReminderFacts facts)

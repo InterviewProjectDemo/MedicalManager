@@ -94,9 +94,10 @@ Doctors without a selected patient are sent to the patient picker. Patients can 
 
 ### Appointment reminders
 
-Scheduled visits trigger two reminders when a Twilio phone number is configured (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`):
+Reminders go out through Twilio. Appointment reminders place a call and a text. Medication and to-do reminders send a text. Patients choose each kind on the profile page. The Twilio API key stays in user secrets or `TWILIO_API_KEY_SID` and `TWILIO_API_KEY_SECRET`.
 
-- **One day before:** a phone call and a text message.
-- **One hour before:** a phone call.
+- **Appointments:** one day before, a phone call and a text. One hour before, a phone call.
+- **Medications:** a text when the morning, lunch, evening, or bedtime window opens, listing doses that are still due.
+- **To-dos:** a text one day before the finish time, and another text one hour before.
 
 The call uses a warm voice, says the patient's first and last name (or the pronunciation saved on the profile), then the day, time, purpose, who they are seeing, and the location. If the profile has a home address and the visit location can be mapped, the call and text also include the drive time and distance. Patients can turn reminders off from the profile page. The phone number comes from the patient profile, then the account phone.

@@ -11,23 +11,13 @@ public sealed class AppointmentReminderService(
     IOptions<NotificationOptions> options,
     ILogger<AppointmentReminderService> logger)
 {
-    private static int _missingTwilioLogged;
-
     public async Task ProcessDueAsync(CancellationToken cancellationToken)
     {
         if (!options.Value.Enabled)
             return;
 
-        if (!options.Value.Twilio.IsConfigured)
-        {
-            if (Interlocked.Exchange(ref _missingTwilioLogged, 1) == 0)
-            {
-                logger.LogInformation(
-                    "Appointment reminders are ready. Add a Twilio account SID, auth token, and from number to place the calls and texts.");
-            }
-
+        if (!await sender.EnsureReadyAsync(cancellationToken))
             return;
-        }
 
         var now = DateTime.Now;
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -177,7 +167,7 @@ public sealed class AppointmentReminderService(
         {
             result = channel == AppointmentReminderChannel.Sms
                 ? await sender.TextAsync(phone, AppointmentReminderCopy.BuildSms(facts), cancellationToken)
-                : await sender.CallAsync(phone, AppointmentReminderCopy.BuildTwiml(facts, voice.PollyVoice, voice.Language), cancellationToken);
+                : await sender.CallAsync(phone, AppointmentReminderCopy.BuildVoiceSsml(facts), voice.PollyVoice, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

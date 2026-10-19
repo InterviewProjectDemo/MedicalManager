@@ -6,6 +6,7 @@ namespace MedicalManager.Data.Security;
 public interface IPhiProtector
 {
     string Protect(string? plaintext);
+    string ProtectDeterministic(string? plaintext);
     string? Unprotect(string? stored);
     byte[]? ProtectBytes(byte[]? plaintext);
     byte[]? UnprotectBytes(byte[]? stored);
@@ -19,6 +20,7 @@ public interface IPhiProtector
 public sealed class PhiProtector : IPhiProtector
 {
     public const string StringPrefix = "enc:v1:";
+    public const string DeterministicPrefix = "enc:v1d:";
     private static readonly byte[] BytesPrefix = "E1"u8.ToArray();
 
     private readonly byte[] _key;
@@ -47,11 +49,24 @@ public sealed class PhiProtector : IPhiProtector
         if (string.IsNullOrEmpty(plaintext))
             return plaintext ?? string.Empty;
 
-        if (plaintext.StartsWith(StringPrefix, StringComparison.Ordinal))
+        if (IsProtected(plaintext))
             return plaintext;
 
         var plainBytes = Encoding.UTF8.GetBytes(plaintext);
-        return StringPrefix + Convert.ToBase64String(Seal(plainBytes));
+        return StringPrefix + Convert.ToBase64String(Seal(plainBytes, RandomNumberGenerator.GetBytes(12)));
+    }
+
+    public string ProtectDeterministic(string? plaintext)
+    {
+        if (string.IsNullOrEmpty(plaintext))
+            return plaintext ?? string.Empty;
+
+        if (IsProtected(plaintext))
+            return plaintext;
+
+        var plainBytes = Encoding.UTF8.GetBytes(plaintext);
+        var nonce = HMACSHA256.HashData(_key, plainBytes).AsSpan(0, 12).ToArray();
+        return DeterministicPrefix + Convert.ToBase64String(Seal(plainBytes, nonce));
     }
 
     public string? Unprotect(string? stored)
@@ -59,10 +74,11 @@ public sealed class PhiProtector : IPhiProtector
         if (string.IsNullOrEmpty(stored))
             return stored;
 
-        if (!stored.StartsWith(StringPrefix, StringComparison.Ordinal))
+        var payloadText = Ciphertext(stored);
+        if (payloadText is null)
             return stored;
 
-        var payload = Convert.FromBase64String(stored[StringPrefix.Length..]);
+        var payload = Convert.FromBase64String(payloadText);
         return Encoding.UTF8.GetString(Open(payload));
     }
 
@@ -74,7 +90,7 @@ public sealed class PhiProtector : IPhiProtector
         if (IsSealedBytes(plaintext))
             return plaintext;
 
-        var sealedPayload = Seal(plaintext);
+        var sealedPayload = Seal(plaintext, RandomNumberGenerator.GetBytes(12));
         var output = new byte[BytesPrefix.Length + sealedPayload.Length];
         BytesPrefix.CopyTo(output, 0);
         sealedPayload.CopyTo(output, BytesPrefix.Length);
@@ -108,6 +124,12 @@ public sealed class PhiProtector : IPhiProtector
         if (!string.Equals(decrypted, sample, StringComparison.Ordinal))
             throw new CryptographicException("PHI decryption failed the round-trip check.");
 
+        var lookup = ProtectDeterministic("patient@medicalmanager.local");
+        if (!string.Equals(lookup, ProtectDeterministic("patient@medicalmanager.local"), StringComparison.Ordinal))
+            throw new CryptographicException("Deterministic PHI encryption is not stable.");
+        if (!string.Equals(Unprotect(lookup), "patient@medicalmanager.local", StringComparison.Ordinal))
+            throw new CryptographicException("Deterministic PHI decryption failed.");
+
         var photo = Encoding.UTF8.GetBytes("photo-bytes");
         var sealedPhoto = ProtectBytes(photo);
         var openedPhoto = UnprotectBytes(sealedPhoto);
@@ -115,9 +137,21 @@ public sealed class PhiProtector : IPhiProtector
             throw new CryptographicException("PHI byte encryption failed the round-trip check.");
     }
 
-    private byte[] Seal(byte[] plaintext)
+    private static bool IsProtected(string value) =>
+        value.StartsWith(StringPrefix, StringComparison.Ordinal)
+        || value.StartsWith(DeterministicPrefix, StringComparison.Ordinal);
+
+    private static string? Ciphertext(string stored)
     {
-        var nonce = RandomNumberGenerator.GetBytes(12);
+        if (stored.StartsWith(DeterministicPrefix, StringComparison.Ordinal))
+            return stored[DeterministicPrefix.Length..];
+        if (stored.StartsWith(StringPrefix, StringComparison.Ordinal))
+            return stored[StringPrefix.Length..];
+        return null;
+    }
+
+    private byte[] Seal(byte[] plaintext, byte[] nonce)
+    {
         var ciphertext = new byte[plaintext.Length];
         var tag = new byte[16];
         using var aes = new AesGcm(_key, 16);
@@ -171,6 +205,7 @@ public sealed class DisabledPhiProtector : IPhiProtector
     public static DisabledPhiProtector Instance { get; } = new();
 
     public string Protect(string? plaintext) => plaintext ?? string.Empty;
+    public string ProtectDeterministic(string? plaintext) => plaintext ?? string.Empty;
     public string? Unprotect(string? stored) => stored;
     public byte[]? ProtectBytes(byte[]? plaintext) => plaintext;
     public byte[]? UnprotectBytes(byte[]? stored) => stored;

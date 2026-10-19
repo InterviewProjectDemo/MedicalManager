@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using MedicalManager.Data.Security;
 
 namespace MedicalManager.Data;
 
@@ -38,6 +40,15 @@ public static class IdentitySeeder
 
         await EnsureOnboardingColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
+        await EnsureCareReminderSchemaAsync(db);
+
+        var protector = scope.ServiceProvider.GetRequiredService<IPhiProtector>();
+        var encryptedFields = await PhiAtRestMigrator.ApplyAsync(db, protector);
+        if (encryptedFields > 0)
+        {
+            var phiLog = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("PhiAtRest");
+            phiLog.LogInformation("Encrypted {Count} stored values that were still plaintext.", encryptedFields);
+        }
 
         try
         {
@@ -781,6 +792,120 @@ public static class IdentitySeeder
             """
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_AppointmentReminders_AppointmentId_Kind_Channel_StartsAtSnapshot"
             ON "AppointmentReminders" ("AppointmentId", "Kind", "Channel", "StartsAtSnapshot");
+            """);
+    }
+
+    private static async Task EnsureCareReminderSchemaAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var profileColumns = await ReadSqliteColumnsAsync(connection, "PatientProfiles");
+                await TryAddColumnAsync(db, profileColumns, "MedicationRemindersEnabled",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "MedicationRemindersEnabled" INTEGER NOT NULL DEFAULT 1""");
+                await TryAddColumnAsync(db, profileColumns, "ToDoRemindersEnabled",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "ToDoRemindersEnabled" INTEGER NOT NULL DEFAULT 1""");
+                await db.Database.ExecuteSqlRawAsync(
+                    """
+                    CREATE TABLE IF NOT EXISTS "MedicationReminders" (
+                        "Id" INTEGER NOT NULL CONSTRAINT "PK_MedicationReminders" PRIMARY KEY AUTOINCREMENT,
+                        "UserId" TEXT NOT NULL,
+                        "ScheduledDate" TEXT NOT NULL,
+                        "TimeSlot" INTEGER NOT NULL,
+                        "Status" INTEGER NOT NULL,
+                        "AttemptCount" INTEGER NOT NULL,
+                        "LastAttemptAt" TEXT NULL,
+                        "SentAt" TEXT NULL,
+                        "ProviderMessageId" TEXT NULL,
+                        "Detail" TEXT NULL
+                    );
+                    """);
+                await db.Database.ExecuteSqlRawAsync(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS "IX_MedicationReminders_UserId_ScheduledDate_TimeSlot"
+                    ON "MedicationReminders" ("UserId", "ScheduledDate", "TimeSlot");
+                    """);
+                await db.Database.ExecuteSqlRawAsync(
+                    """
+                    CREATE TABLE IF NOT EXISTS "ToDoReminders" (
+                        "Id" INTEGER NOT NULL CONSTRAINT "PK_ToDoReminders" PRIMARY KEY AUTOINCREMENT,
+                        "ToDoItemId" INTEGER NOT NULL,
+                        "Kind" INTEGER NOT NULL,
+                        "FinishBySnapshot" TEXT NOT NULL,
+                        "Status" INTEGER NOT NULL,
+                        "AttemptCount" INTEGER NOT NULL,
+                        "LastAttemptAt" TEXT NULL,
+                        "SentAt" TEXT NULL,
+                        "ProviderMessageId" TEXT NULL,
+                        "Detail" TEXT NULL,
+                        CONSTRAINT "FK_ToDoReminders_ToDoItems_ToDoItemId" FOREIGN KEY ("ToDoItemId") REFERENCES "ToDoItems" ("Id") ON DELETE CASCADE
+                    );
+                    """);
+                await db.Database.ExecuteSqlRawAsync(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS "IX_ToDoReminders_ToDoItemId_Kind_FinishBySnapshot"
+                    ON "ToDoReminders" ("ToDoItemId", "Kind", "FinishBySnapshot");
+                    """);
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "MedicationRemindersEnabled" boolean NOT NULL DEFAULT TRUE;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "ToDoRemindersEnabled" boolean NOT NULL DEFAULT TRUE;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "MedicationReminders" (
+                "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                "UserId" text NOT NULL,
+                "ScheduledDate" date NOT NULL,
+                "TimeSlot" integer NOT NULL,
+                "Status" integer NOT NULL,
+                "AttemptCount" integer NOT NULL,
+                "LastAttemptAt" timestamp without time zone NULL,
+                "SentAt" timestamp without time zone NULL,
+                "ProviderMessageId" text NULL,
+                "Detail" text NULL
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_MedicationReminders_UserId_ScheduledDate_TimeSlot"
+            ON "MedicationReminders" ("UserId", "ScheduledDate", "TimeSlot");
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "ToDoReminders" (
+                "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                "ToDoItemId" integer NOT NULL,
+                "Kind" integer NOT NULL,
+                "FinishBySnapshot" timestamp without time zone NOT NULL,
+                "Status" integer NOT NULL,
+                "AttemptCount" integer NOT NULL,
+                "LastAttemptAt" timestamp without time zone NULL,
+                "SentAt" timestamp without time zone NULL,
+                "ProviderMessageId" text NULL,
+                "Detail" text NULL,
+                CONSTRAINT "FK_ToDoReminders_ToDoItems_ToDoItemId" FOREIGN KEY ("ToDoItemId") REFERENCES "ToDoItems" ("Id") ON DELETE CASCADE
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ToDoReminders_ToDoItemId_Kind_FinishBySnapshot"
+            ON "ToDoReminders" ("ToDoItemId", "Kind", "FinishBySnapshot");
             """);
     }
 

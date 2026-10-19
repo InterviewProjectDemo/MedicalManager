@@ -68,18 +68,14 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         if (string.IsNullOrWhiteSpace(smtpPassword))
         {
             _logger.LogWarning(
-                "Email SMTP password is not configured. Email to {Recipient} with subject '{Subject}' was not sent.",
-                to,
+                "Email SMTP password is not configured. An email with subject '{Subject}' was not sent.",
                 subject);
 
             if (_environment.IsDevelopment())
             {
                 _logger.LogInformation(
-                    "DEV EMAIL FALLBACK — To: {Recipient}, Subject: {Subject}, Plain text:{NewLine}{Body}",
-                    to,
-                    subject,
-                    Environment.NewLine,
-                    plainTextBody);
+                    "DEV EMAIL FALLBACK — Subject: {Subject}. The message body was not written to the log.",
+                    subject);
             }
 
             return;
@@ -90,7 +86,7 @@ internal sealed class SmtpEmailSender : IAppEmailSender
             : _options.FromAddress;
         if (string.IsNullOrWhiteSpace(fromAddress))
         {
-            _logger.LogError("Email FromAddress and Smtp.User are not configured. Cannot send to {Recipient}.", to);
+            _logger.LogError("Email FromAddress and Smtp.User are not configured. The message was not sent.");
             return;
         }
 
@@ -116,11 +112,11 @@ internal sealed class SmtpEmailSender : IAppEmailSender
             await client.SendAsync(message, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
 
-            _logger.LogInformation("Sent email to {Recipient} with subject '{Subject}'.", to, subject);
+            _logger.LogInformation("Sent an email with subject '{Subject}'.", subject);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email to {Recipient} with subject '{Subject}'.", to, subject);
+            _logger.LogError(ex, "Failed to send an email with subject '{Subject}'.", subject);
             throw;
         }
     }

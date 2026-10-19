@@ -167,7 +167,9 @@ public sealed class PatientAccessService(
         string userId,
         string? homeAddress,
         string? namePronunciation,
-        bool remindersEnabled)
+        bool appointmentRemindersEnabled,
+        bool medicationRemindersEnabled,
+        bool toDoRemindersEnabled)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
@@ -175,7 +177,9 @@ public sealed class PatientAccessService(
 
         profile.HomeAddress = string.IsNullOrWhiteSpace(homeAddress) ? null : homeAddress.Trim();
         profile.NamePronunciation = string.IsNullOrWhiteSpace(namePronunciation) ? null : namePronunciation.Trim();
-        profile.AppointmentRemindersEnabled = remindersEnabled;
+        profile.AppointmentRemindersEnabled = appointmentRemindersEnabled;
+        profile.MedicationRemindersEnabled = medicationRemindersEnabled;
+        profile.ToDoRemindersEnabled = toDoRemindersEnabled;
         await db.SaveChangesAsync();
     }
 

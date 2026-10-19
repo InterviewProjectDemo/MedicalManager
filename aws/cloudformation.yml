@@ -29,25 +29,33 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: Gmail App Password for medmgr.us@gmail.com (optional until email is enabled)
+  PinpointOriginationIdentity:
+    Type: String
+    Default: ""
+    Description: Unused. Reminders are sent by Twilio.
   TwilioAccountSid:
     Type: String
     Default: ""
-    Description: Optional Twilio account SID for appointment reminder calls and texts
-  TwilioAuthToken:
+    Description: Twilio account SID (AC). The API key can also resolve this at runtime.
+  TwilioApiKeySid:
+    Type: String
+    Default: ""
+    Description: Twilio API key SID (SK) used for reminder texts and calls.
+  TwilioApiKeySecret:
     Type: String
     NoEcho: true
     Default: ""
-    Description: Optional Twilio auth token
+    Description: Twilio API key secret. Do not commit this value.
   TwilioFromNumber:
     Type: String
     Default: ""
-    Description: Optional Twilio phone number in E.164 format, such as +15551234567
+    Description: E.164 number that places reminder texts and calls. Empty uses the first Twilio number on the account.
   DbName:
     Type: String
     Default: medicalmanager
 
 Conditions:
-  HasTwilio: !Not [!Equals [!Ref TwilioAccountSid, ""]]
+  HasPinpointNumber: !Not [!Equals [!Ref PinpointOriginationIdentity, ""]]
 
 Resources:
   AlbSecurityGroup:
@@ -122,6 +130,7 @@ Resources:
       VPCSecurityGroups:
         - !Ref DbSecurityGroup
       DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
       PubliclyAccessible: false
       MultiAZ: false
       BackupRetentionPeriod: 1
@@ -136,7 +145,7 @@ Resources:
     Properties:
       Name: medicalmanager/runtime
       Description: Database URL and PHI encryption key for MedicalManager
-      SecretString: !Sub '{"connection":"Host=${DbInstance.Endpoint.Address};Port=5432;Database=${DbName};Username=${DbUsername};Password=${DbPassword};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30","phiKey":"${PhiKey}","emailSmtpPassword":"${EmailSmtpPassword}"}'
+      SecretString: !Sub '{"connection":"Host=${DbInstance.Endpoint.Address};Port=5432;Database=${DbName};Username=${DbUsername};Password=${DbPassword};SSL Mode=Require;Trust Server Certificate=true;Maximum Pool Size=50;Timeout=15;Command Timeout=30","phiKey":"${PhiKey}","emailSmtpPassword":"${EmailSmtpPassword}","twilioAccountSid":"${TwilioAccountSid}","twilioApiKeySid":"${TwilioApiKeySid}","twilioApiKeySecret":"${TwilioApiKeySecret}","twilioFromNumber":"${TwilioFromNumber}"}'
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -176,6 +185,17 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SendAppointmentReminders
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sms-voice:SendTextMessage
+                  - sms-voice:SendVoiceMessage
+                  - sms-voice:DescribePhoneNumbers
+                Resource: "*"
 
   Cluster:
     Type: AWS::ECS::Cluster
@@ -217,19 +237,9 @@ Resources:
             - Name: Email__Smtp__User
               Value: medmgr.us@gmail.com
             - !If
-              - HasTwilio
-              - Name: Notifications__Twilio__AccountSid
-                Value: !Ref TwilioAccountSid
-              - !Ref AWS::NoValue
-            - !If
-              - HasTwilio
-              - Name: Notifications__Twilio__AuthToken
-                Value: !Ref TwilioAuthToken
-              - !Ref AWS::NoValue
-            - !If
-              - HasTwilio
-              - Name: Notifications__Twilio__FromNumber
-                Value: !Ref TwilioFromNumber
+              - HasPinpointNumber
+              - Name: PINPOINT_ORIGINATION_IDENTITY
+                Value: !Ref PinpointOriginationIdentity
               - !Ref AWS::NoValue
           Secrets:
             - Name: ConnectionStrings__DefaultConnection
@@ -238,6 +248,14 @@ Resources:
               ValueFrom: !Sub "${AppSecret}:phiKey::"
             - Name: Email__Smtp__Password
               ValueFrom: !Sub "${AppSecret}:emailSmtpPassword::"
+            - Name: TWILIO_ACCOUNT_SID
+              ValueFrom: !Sub "${AppSecret}:twilioAccountSid::"
+            - Name: TWILIO_API_KEY_SID
+              ValueFrom: !Sub "${AppSecret}:twilioApiKeySid::"
+            - Name: TWILIO_API_KEY_SECRET
+              ValueFrom: !Sub "${AppSecret}:twilioApiKeySecret::"
+            - Name: TWILIO_FROM_NUMBER
+              ValueFrom: !Sub "${AppSecret}:twilioFromNumber::"
           HealthCheck:
             Command:
               - CMD-SHELL
@@ -288,8 +306,19 @@ Resources:
       Port: 80
       Protocol: HTTP
       DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref TargetGroup
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Require TLS for every MedicalManager database connection
+      Family: postgres16
+      Parameters:
+        rds.force_ssl: "1"
 
   Certificate:
     Type: AWS::CertificateManager::Certificate

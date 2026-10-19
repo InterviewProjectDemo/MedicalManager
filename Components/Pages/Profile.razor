@@ -79,7 +79,7 @@ else
                         <label class="form-label" for="profile-phone">Phone</label>
                         <InputText id="profile-phone" class="form-control" @bind-Value="_profileForm.Phone" placeholder="555-0100" />
                         <ValidationMessage For="() => _profileForm.Phone" class="text-danger" />
-                        <div class="form-text">Used for appointment reminder calls and texts.</div>
+                        <div class="form-text">Used for appointment, medication, and to-do texts, and for appointment calls.</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="profile-sex">Sex</label>
@@ -170,10 +170,11 @@ else
     </div>
 
     <div class="profile-page-card">
-        <h2 class="reminder-settings-title">Appointment reminders</h2>
+        <h2 class="reminder-settings-title">Notification services</h2>
         <p class="muted">
-            One day before a visit, we call and text you. One hour before, we call again.
-            The call greets you by your full name, saying your first name and last name clearly, then the time, purpose, and location.
+            Texts and calls come from Medical Manager at (320) 350-3177. Appointment reminders place a call and a text. Medication and to-do reminders send a text.
+            One day before a visit or a to-do, you get a reminder. One hour before, you get another.
+            Medicine texts arrive when that dose window opens.
         </p>
         @if (string.IsNullOrWhiteSpace(DisplayPhone) || DisplayPhone == "—")
         {
@@ -193,9 +194,17 @@ else
                     Calls will say: @NameSpeaker.Preview(_user.FullName, _reminderForm.NamePronunciation)
                 </div>
             </div>
+            <div class="form-check mb-2">
+                <InputCheckbox id="appointment-reminders" class="form-check-input" @bind-Value="_reminderForm.AppointmentRemindersEnabled" />
+                <label class="form-check-label" for="appointment-reminders">Appointment reminders. A call and a text one day before, and a call one hour before.</label>
+            </div>
+            <div class="form-check mb-2">
+                <InputCheckbox id="medication-reminders" class="form-check-input" @bind-Value="_reminderForm.MedicationRemindersEnabled" />
+                <label class="form-check-label" for="medication-reminders">Medication reminders. A text when a morning, lunch, evening, or bedtime dose is due.</label>
+            </div>
             <div class="form-check mb-3">
-                <InputCheckbox id="reminders-enabled" class="form-check-input" @bind-Value="_reminderForm.RemindersEnabled" />
-                <label class="form-check-label" for="reminders-enabled">Call and text me about upcoming appointments</label>
+                <InputCheckbox id="todo-reminders" class="form-check-input" @bind-Value="_reminderForm.ToDoRemindersEnabled" />
+                <label class="form-check-label" for="todo-reminders">To-do reminders. A text one day before and one hour before the finish time.</label>
             </div>
             <button type="submit" class="btn btn-purple">Save reminder settings</button>
             @if (!string.IsNullOrWhiteSpace(_reminderMessage))
@@ -259,7 +268,9 @@ else
         FillProfileForm();
         _reminderForm.HomeAddress = _profile?.HomeAddress;
         _reminderForm.NamePronunciation = _profile?.NamePronunciation;
-        _reminderForm.RemindersEnabled = _profile?.AppointmentRemindersEnabled ?? true;
+        _reminderForm.AppointmentRemindersEnabled = _profile?.AppointmentRemindersEnabled ?? true;
+        _reminderForm.MedicationRemindersEnabled = _profile?.MedicationRemindersEnabled ?? true;
+        _reminderForm.ToDoRemindersEnabled = _profile?.ToDoRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
         _loading = false;
     }
@@ -350,7 +361,9 @@ else
             _userId,
             _reminderForm.HomeAddress,
             _reminderForm.NamePronunciation,
-            _reminderForm.RemindersEnabled);
+            _reminderForm.AppointmentRemindersEnabled,
+            _reminderForm.MedicationRemindersEnabled,
+            _reminderForm.ToDoRemindersEnabled);
         _profile = await Access.GetProfileAsync(_userId);
         if (_editingDetails)
             _profileForm.HomeAddress = _profile?.HomeAddress;
@@ -417,6 +430,8 @@ else
     {
         public string? HomeAddress { get; set; }
         public string? NamePronunciation { get; set; }
-        public bool RemindersEnabled { get; set; } = true;
+        public bool AppointmentRemindersEnabled { get; set; } = true;
+        public bool MedicationRemindersEnabled { get; set; } = true;
+        public bool ToDoRemindersEnabled { get; set; } = true;
     }
 }
