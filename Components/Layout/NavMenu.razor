@@ -171,7 +171,7 @@
                         <span>Voice Call</span>
                     </button>
                     <p class="nav-call-hint">Say Call</p>
-                    <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" aria-pressed="@_monitorLive" @onclick="OpenMonitor">
+                    <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4.5 7.2A2.2 2.2 0 0 1 6.7 5h7.1a2.2 2.2 0 0 1 2.2 2.2v1.1l2.8-1.6c.7-.4 1.7.1 1.7 1v8.6c0 .9-1 1.4-1.7 1l-2.8-1.6v1.1a2.2 2.2 0 0 1-2.2 2.2H6.7a2.2 2.2 0 0 1-2.2-2.2v-9.6z" />
                         </svg>
@@ -269,6 +269,8 @@
     private bool _monitorLive;
     private string? _guideSeed;
     private bool _wakeReady;
+    private bool _cameraGestureReady;
+    private IJSObjectReference? _monitorJs;
     private string _wakeStatus = "";
     private IJSObjectReference? _wake;
     private DotNetObjectReference<NavMenu>? _wakeSelf;
@@ -304,6 +306,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!_cameraGestureReady)
+        {
+            _cameraGestureReady = true;
+            try
+            {
+                _monitorJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
+                await _monitorJs.InvokeVoidAsync("installCameraGesture");
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+            {
+            }
+        }
+
         if (_wakeReady || string.IsNullOrWhiteSpace(_userId))
             return;
 

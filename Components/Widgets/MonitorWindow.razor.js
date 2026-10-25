@@ -40,21 +40,80 @@ async function flushRemote() {
     }
 }
 
-export async function startPreview(video) {
-    if (!stream) {
+let arming;
+let gestureInstalled = false;
+
+function liveStream() {
+    return stream && stream.getTracks().some((track) => track.readyState === "live") ? stream : null;
+}
+
+async function openCamera() {
+    const existing = liveStream();
+    if (existing)
+        return existing;
+
+    if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+    }
+
+    const attempts = [
+        { audio: false, video: true },
+        { audio: false, video: { facingMode: "user" } }
+    ];
+    let lastError;
+    for (const constraints of attempts) {
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
-            });
-        } catch {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            return stream;
+        } catch (error) {
+            lastError = error;
+            if (error?.name === "NotAllowedError" || error?.name === "SecurityError")
+                break;
         }
     }
 
-    video.srcObject = stream;
-    video.muted = true;
-    await video.play();
+    const error = lastError || new Error("NotAllowedError");
+    const name = error.name || "Error";
+    throw new Error(name + ": " + (error.message || "The camera did not start."));
+}
+
+export function installCameraGesture() {
+    if (gestureInstalled)
+        return;
+    gestureInstalled = true;
+    document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element
+            ? event.target.closest("[data-monitor-camera]")
+            : null;
+        if (!target || arming)
+            return;
+        const pending = openCamera();
+        arming = pending;
+        pending.catch(() => {
+            if (arming === pending)
+                arming = null;
+        });
+    }, true);
+}
+
+export async function startPreview(video) {
+    const preview = video instanceof HTMLVideoElement
+        ? video
+        : document.querySelector(".monitor-preview");
+    if (!(preview instanceof HTMLVideoElement))
+        throw new Error("NotReady: The picture window is not ready.");
+
+    try {
+        stream = await (arming || openCamera());
+    } finally {
+        arming = null;
+    }
+
+    preview.srcObject = stream;
+    preview.muted = true;
+    preview.playsInline = true;
+    try { await preview.play(); } catch { /* The picture is attached even if autoplay waits. */ }
     return true;
 }
 
