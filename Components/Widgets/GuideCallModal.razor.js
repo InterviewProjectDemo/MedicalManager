@@ -1,5 +1,6 @@
 let recognition;
 let spokenOnce = false;
+let speakToken = 0;
 
 function notify(dotNetRef, method, arg) {
     const pending = arg === undefined
@@ -10,35 +11,98 @@ function notify(dotNetRef, method, arg) {
 
 function pickVoice() {
     const voices = window.speechSynthesis?.getVoices?.() ?? [];
-    return voices.find((voice) => /en(-|_)US/i.test(voice.lang) && /female|samantha|aria|jenny/i.test(voice.name))
-        || voices.find((voice) => /en(-|_)US/i.test(voice.lang))
-        || null;
+    const english = voices.filter((voice) => /^en([-_]|$)/i.test(voice.lang));
+    const score = (voice) => {
+        const name = voice.name.toLowerCase();
+        let points = /^en[-_]us/i.test(voice.lang) ? 2 : 0;
+        if (/natural|neural|online/.test(name))
+            points += 6;
+        if (/aria|jenny|samantha|sara|zira/.test(name))
+            points += 4;
+        if (/female|woman/.test(name))
+            points += 1;
+        if (/david|mark|guy/.test(name))
+            points -= 3;
+        return points;
+    };
+
+    return english.sort((left, right) => score(right) - score(left))[0] || null;
+}
+
+function sentencesOf(text) {
+    const parts = String(text || "").match(/[^.!?]+[.!?]?/g) || [];
+    const sentences = parts.map((part) => part.trim()).filter(Boolean);
+    return sentences.length > 0 ? sentences : [String(text || "").trim()].filter(Boolean);
 }
 
 export function speakGuide(text, slow, dotNetRef) {
     stopListening();
+    const token = ++speakToken;
     if (!window.speechSynthesis) {
         notify(dotNetRef, "OnGuideSpoken");
         return;
     }
 
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = slow ? 0.82 : 0.94;
-    const voice = pickVoice();
-    if (voice)
-        utterance.voice = voice;
     spokenOnce = false;
-    const done = () => {
-        if (spokenOnce)
+    const finish = () => {
+        if (token !== speakToken || spokenOnce)
             return;
         spokenOnce = true;
         notify(dotNetRef, "OnGuideSpoken");
     };
-    utterance.onend = done;
-    utterance.onerror = done;
-    window.speechSynthesis.speak(utterance);
+
+    const sentences = sentencesOf(text);
+    let index = 0;
+    let started = false;
+    const speakNext = () => {
+        if (token !== speakToken)
+            return;
+        if (index >= sentences.length) {
+            finish();
+            return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(sentences[index]);
+        index += 1;
+        utterance.lang = "en-US";
+        utterance.rate = slow ? 0.84 : 0.9;
+        utterance.pitch = 1.02;
+        utterance.volume = 1;
+        const voice = pickVoice();
+        if (voice)
+            utterance.voice = voice;
+        utterance.onend = () => {
+            if (token !== speakToken)
+                return;
+            window.setTimeout(speakNext, slow ? 320 : 220);
+        };
+        utterance.onerror = finish;
+        window.speechSynthesis.speak(utterance);
+    };
+
+    const begin = () => {
+        if (token !== speakToken || started)
+            return;
+        started = true;
+        if (sentences.length === 0) {
+            finish();
+            return;
+        }
+        speakNext();
+    };
+
+    if ((window.speechSynthesis.getVoices?.() ?? []).length === 0) {
+        const startOnce = () => {
+            window.speechSynthesis.removeEventListener("voiceschanged", startOnce);
+            begin();
+        };
+        window.speechSynthesis.addEventListener("voiceschanged", startOnce);
+        window.setTimeout(begin, 400);
+        return;
+    }
+
+    begin();
 }
 
 export function listenGuide(dotNetRef) {
@@ -77,6 +141,7 @@ export function listenGuide(dotNetRef) {
 }
 
 export function stopGuide() {
+    speakToken += 1;
     stopListening();
     window.speechSynthesis?.cancel();
 }

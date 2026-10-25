@@ -31,7 +31,7 @@
                 }
                 else
                 {
-                    <p class="guide-listening">@(_listening ? "Listening" : "Speaking")</p>
+                    <p class="guide-listening">@(_listening ? "I'm listening" : "One moment")</p>
                     <div class="guide-choices">
                         @if (_offerKind)
                         {
@@ -48,11 +48,11 @@
             </div>
             @if (_connected)
             {
-                <p class="guide-note">Talk through this device. The microphone and speaker are on.</p>
+                <p class="guide-note">You're connected. Please go ahead whenever you're ready.</p>
             }
             else if (!_placing)
             {
-                <p class="guide-note">You can answer out loud. I will wait for you.</p>
+                <p class="guide-note">Please take your time. You can answer out loud, and I'll wait.</p>
             }
         </div>
     </div>
@@ -238,7 +238,7 @@
         if (!setup.Ok || setup.Token is null || setup.Ticket is null)
         {
             _placing = false;
-            _callError = setup.Error ?? "The call could not be placed.";
+                _callError = setup.Error ?? "I'm sorry, the call could not be placed.";
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -257,7 +257,7 @@
             {
                 _familyAudio = false;
                 _placing = false;
-                _callError = "Allow the microphone so you can talk.";
+                _callError = "Please allow the microphone so you can talk.";
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -272,7 +272,7 @@
         _placing = false;
         _connected = true;
         _callError = null;
-        _prompt = "You are connected. You can talk now.";
+        _prompt = "You're connected. Please go ahead whenever you're ready.";
         return InvokeAsync(StateHasChanged);
     }
 
@@ -299,7 +299,7 @@
         _familyAudio = false;
         _placing = false;
         _connected = false;
-        _callError = string.IsNullOrWhiteSpace(message) ? "The call could not be placed." : message.Trim();
+        _callError = string.IsNullOrWhiteSpace(message) ? "I'm sorry, the call could not be placed." : message.Trim();
         return InvokeAsync(StateHasChanged);
     }
 

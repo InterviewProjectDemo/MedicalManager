@@ -62,7 +62,7 @@ public sealed class CallGuide
     {
         _phase = "open";
         _pending = null;
-        return $"Hello, {_firstName}. I am here to help. Who would you like to talk to?";
+        return $"Hello, {_firstName}. I am here to help. Please tell me who you would like to talk with.";
     }
 
     public GuideTurn Hear(string? transcript)
@@ -94,11 +94,11 @@ public sealed class CallGuide
         if (people.Count == 0)
         {
             var missing = kind == "family"
-                ? "I don't have a family contact on your profile yet."
-                : "I don't have a doctor with a phone number yet.";
+                ? "I'm sorry, I don't have a family contact saved for you yet."
+                : "I'm sorry, I don't have a doctor's phone number saved yet.";
             _phase = "narrow";
             _pending = null;
-            return new GuideTurn($"{missing} Do you want to call your family, or a doctor?", true, false, true, false, null);
+            return new GuideTurn($"{missing} Would you like to call your family, or a doctor?", true, false, true, false, null);
         }
 
         _listKind = kind;
@@ -107,11 +107,11 @@ public sealed class CallGuide
         _pending = people[0];
         if (people.Count == 1)
         {
-            var label = kind == "family" ? "family contact" : "doctor";
-            return new GuideTurn($"Your {label} is {_pending.Name}. Would you like me to call {_pending.Name}?", true, true, false, true, null);
+            var label = kind == "family" ? "your family contact" : "your doctor";
+            return new GuideTurn($"I have {_pending.Name} saved as {label}. Would you like me to call {_pending.Name}?", true, true, false, true, null);
         }
 
-        return new GuideTurn($"I will say each name. Tell me yes when you hear the person you want. Would you like to talk to {_pending.Name}?", true, true, false, true, null);
+        return new GuideTurn($"I'll go through the names slowly. Please say yes when you hear the person you want. Would you like to talk with {_pending.Name}?", true, true, false, true, null);
     }
 
     private GuideTurn NextInList()
@@ -119,11 +119,11 @@ public sealed class CallGuide
         var people = _listKind == "doctor" ? _doctors : _family;
         _index++;
         if (_index < 0 || _index >= people.Count)
-            return AskKind("Those are the names I have.");
+            return AskKind("That's everyone I have saved.");
 
         _phase = "list";
         _pending = people[_index];
-        return new GuideTurn($"Would you like to talk to {_pending.Name}?", true, true, false, true, null);
+        return new GuideTurn($"Of course. How about {_pending.Name}? Would you like me to call them?", true, true, false, true, null);
     }
 
     private GuideTurn Offer(GuidePerson person)
@@ -131,20 +131,20 @@ public sealed class CallGuide
         _pending = person;
         _phase = "confirm";
         _listKind = person.Kind;
-        return new GuideTurn($"I can call {person.Name}. Should I call {person.Name} now?", true, true, false, true, null);
+        return new GuideTurn($"I'd be happy to call {person.Name}. Shall I call {person.Name} now?", true, true, false, true, null);
     }
 
     private GuideTurn AskKind(string? lead = null)
     {
         _phase = "narrow";
         _pending = null;
-        var question = "Do you want to call your family, or a doctor?";
-        var prompt = string.IsNullOrWhiteSpace(lead) ? question : $"{lead} {question}";
+        var question = "Would you like to call your family, or a doctor?";
+        var prompt = string.IsNullOrWhiteSpace(lead) ? $"That's all right. {question}" : $"{lead} {question}";
         return new GuideTurn(prompt, true, false, true, false, null);
     }
 
     private static GuideTurn Call(GuidePerson person) =>
-        new($"Calling {person.Name}.", false, false, false, false, person);
+        new($"Alright. I'm calling {person.Name} for you now.", false, false, false, false, person);
 
     private GuidePerson? SingleNameMatch(string heard)
     {
