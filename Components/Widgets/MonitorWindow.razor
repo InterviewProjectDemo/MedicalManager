@@ -64,6 +64,7 @@
     private ElementReference _video;
     private IJSObjectReference? _js;
     private CancellationTokenSource? _poll;
+    private CancellationTokenSource? _frames;
     private string? _userId;
     private string? _token;
     private string? _code;
@@ -150,6 +151,7 @@
             _status = "Waiting for family. Leave this open.";
             await LiveChanged.InvokeAsync(true);
             StartPolling();
+            StartFrames();
             StateHasChanged();
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
@@ -159,6 +161,42 @@
             _status = "The camera is not on.";
             await LiveChanged.InvokeAsync(false);
             StateHasChanged();
+        }
+    }
+
+    private void StartFrames()
+    {
+        _frames?.Cancel();
+        _frames = new CancellationTokenSource();
+        _ = FrameLoop(_frames.Token);
+    }
+
+    private async Task FrameLoop(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(SendFrameAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task SendFrameAsync()
+    {
+        if (_disposed || !_live || _js is null || string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        try
+        {
+            var frame = await _js.InvokeAsync<string>("captureFrame");
+            if (!string.IsNullOrWhiteSpace(frame))
+                Sessions.SetFrame(_userId, frame);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
         }
     }
 
@@ -252,6 +290,9 @@
                     };
                 }
             }
+
+            if (signal.ViewerWaiting)
+                _status = "Family can see you.";
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
@@ -291,6 +332,7 @@
     private async Task StopAsync()
     {
         _poll?.Cancel();
+        _frames?.Cancel();
         var wasLive = _live;
         _live = false;
         _pendingStart = false;
@@ -336,6 +378,7 @@
     {
         _disposed = true;
         _poll?.Cancel();
+        _frames?.Cancel();
         if (!string.IsNullOrWhiteSpace(_userId))
             Sessions.GoOffline(_userId);
         _ = ReleaseAsync();

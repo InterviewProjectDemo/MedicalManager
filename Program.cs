@@ -34,6 +34,10 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
+{
+    options.MaximumReceiveMessageSize = 128 * 1024;
+});
 
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();

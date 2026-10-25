@@ -85,3 +85,11 @@
     object-fit: contain;
     background: #134e4a;
 }
+
+.watch-hidden {
+    display: none;
+}
+
+.watch-still {
+    background: #134e4a;
+}

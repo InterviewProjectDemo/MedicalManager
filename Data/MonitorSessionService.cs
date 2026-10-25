@@ -102,6 +102,7 @@ public sealed class MonitorSessionService(
                 room.Generation += 1;
                 room.OfferSdp = null;
                 room.AnswerSdp = null;
+                room.Frame = null;
                 room.PatientIce.Clear();
                 room.ViewerIce.Clear();
             }
@@ -175,7 +176,7 @@ public sealed class MonitorSessionService(
             }
 
             var ice = room.PatientIce.Select(item => item.Json).ToArray();
-            return new WatchSignal(true, room.Live, false, room.Generation, room.OfferSdp, ice);
+            return new WatchSignal(true, room.Live, false, room.Generation, room.OfferSdp, ice, room.FrameId, room.Frame);
         }
     }
 
@@ -185,6 +186,22 @@ public sealed class MonitorSessionService(
         {
             if (_rooms.TryGetValue(token, out var room) && string.Equals(room.ViewerId, viewerId, StringComparison.Ordinal))
                 DropViewer(room);
+        }
+    }
+
+    public void SetFrame(string userId, string? jpegBase64)
+    {
+        if (string.IsNullOrWhiteSpace(jpegBase64) || jpegBase64.Length > 48_000)
+            return;
+
+        lock (_gate)
+        {
+            var room = _rooms.Values.FirstOrDefault(item => string.Equals(item.UserId, userId, StringComparison.Ordinal) && item.Live);
+            if (room is null)
+                return;
+
+            room.Frame = jpegBase64;
+            room.FrameId++;
         }
     }
 
@@ -349,6 +366,8 @@ public sealed class MonitorSessionService(
         public string? ViewerId { get; set; }
         public string? OfferSdp { get; set; }
         public string? AnswerSdp { get; set; }
+        public string? Frame { get; set; }
+        public long FrameId { get; set; }
         public long NextIce { get; set; } = 1;
         public List<Ice> PatientIce { get; } = [];
         public List<Ice> ViewerIce { get; } = [];
@@ -381,4 +400,6 @@ public sealed record WatchSignal(
     bool NeedsCode,
     long Generation,
     string? OfferSdp,
-    IReadOnlyList<string> PatientIce);
+    IReadOnlyList<string> PatientIce,
+    long FrameId = 0,
+    string? Frame = null);

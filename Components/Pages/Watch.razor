@@ -47,7 +47,11 @@
                 : $"{_name} has not turned the camera on yet. Leave this page open. The picture appears when they press Monitor.")
         </p>
         <div class="watch-stage @(_seeing ? "seeing" : null)">
-            <video @ref="_video" class="watch-video" autoplay muted playsinline></video>
+            <video @ref="_video" class="watch-video @(_frameUrl is null ? null : "watch-hidden")" autoplay muted playsinline></video>
+            @if (!string.IsNullOrEmpty(_frameUrl))
+            {
+                <img class="watch-video watch-still" alt="" src="@_frameUrl" />
+            }
         </div>
         <p class="watch-status" role="status">@_status</p>
     }
@@ -73,6 +77,8 @@
     private long _stamp;
     private long _answered = -1;
     private int _appliedIce;
+    private long _frameId;
+    private string? _frameUrl;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -119,7 +125,7 @@
 
     private async Task PollLoop(CancellationToken token)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(900));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
         try
         {
             while (await timer.WaitForNextTickAsync(token))
@@ -148,14 +154,30 @@
                 return;
             }
 
-            if (!signal.Live || string.IsNullOrWhiteSpace(signal.OfferSdp))
+            ShowFrame(signal);
+
+            if (!signal.Live)
             {
-                if (_seeing || _answered >= 0)
+                if (_answered >= 0)
                     await StopVideoAsync();
-                _seeing = false;
                 _answered = -1;
                 _appliedIce = 0;
-                _status = $"Waiting for {_name} to press Monitor.";
+                if (string.IsNullOrEmpty(signal.Frame))
+                {
+                    _seeing = false;
+                    _frameUrl = null;
+                    _status = $"Waiting for {_name} to press Monitor.";
+                }
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(signal.OfferSdp))
+            {
+                if (!string.IsNullOrEmpty(signal.Frame))
+                {
+                    _seeing = true;
+                    _status = $"You can see {_name}.";
+                }
                 return;
             }
 
@@ -184,13 +206,21 @@
                 Sessions.AddViewerIce(Token, _viewerId, signal.Generation, outgoing);
 
             var state = await _js.InvokeAsync<string>("connectionState");
-            _status = state switch
+            if (!string.IsNullOrEmpty(signal.Frame))
             {
-                "connected" => $"You can see {_name}.",
-                "failed" or "disconnected" => "The picture paused. Refresh this page.",
-                _ => "Connecting the picture."
-            };
-            _seeing = state is not "failed";
+                _seeing = true;
+                _status = $"You can see {_name}.";
+            }
+            else
+            {
+                _status = state switch
+                {
+                    "connected" => $"You can see {_name}.",
+                    "failed" or "disconnected" => "The picture paused. Refresh this page.",
+                    _ => "Connecting the picture."
+                };
+                _seeing = state is not "failed";
+            }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
@@ -202,6 +232,17 @@
             if (!_disposed)
                 StateHasChanged();
         }
+    }
+
+    private void ShowFrame(WatchSignal signal)
+    {
+        if (string.IsNullOrEmpty(signal.Frame) || signal.FrameId == _frameId)
+            return;
+
+        _frameId = signal.FrameId;
+        _frameUrl = "data:image/jpeg;base64," + signal.Frame;
+        _seeing = true;
+        _status = $"You can see {_name}.";
     }
 
     private async Task StopVideoAsync()
