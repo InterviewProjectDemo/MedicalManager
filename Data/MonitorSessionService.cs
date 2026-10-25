@@ -200,6 +200,21 @@ public sealed class MonitorSessionService(
                 return;
 
             room.AnswerSdp = sdp;
+        }
+    }
+
+    public void Nudge(string userId)
+    {
+        lock (_gate)
+        {
+            var room = _rooms.Values.FirstOrDefault(item => string.Equals(item.UserId, userId, StringComparison.Ordinal) && item.Live);
+            if (room is null)
+                return;
+
+            room.Generation += 1;
+            room.OfferSdp = null;
+            room.AnswerSdp = null;
+            room.PatientIce.Clear();
             room.ViewerIce.Clear();
         }
     }

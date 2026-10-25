@@ -81,6 +81,8 @@
     private long _generation = -1;
     private int _appliedIce;
     private bool _answerApplied;
+    private int _retries;
+    private DateTime _lastRetry = DateTime.MinValue;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -210,17 +212,18 @@
                 }
             }
 
+            if (!_answerApplied && !string.IsNullOrWhiteSpace(signal.AnswerSdp))
+            {
+                _answerApplied = await _js.InvokeAsync<bool>("acceptAnswer", signal.AnswerSdp);
+                _appliedIce = 0;
+            }
+
             if (signal.ViewerIce.Count < _appliedIce)
                 _appliedIce = 0;
             if (signal.ViewerIce.Count > _appliedIce)
             {
                 await _js.InvokeVoidAsync("addIce", signal.ViewerIce.Skip(_appliedIce).ToArray());
                 _appliedIce = signal.ViewerIce.Count;
-            }
-
-            if (!_answerApplied && !string.IsNullOrWhiteSpace(signal.AnswerSdp))
-            {
-                _answerApplied = await _js.InvokeAsync<bool>("acceptAnswer", signal.AnswerSdp);
             }
 
             var outgoing = await _js.InvokeAsync<string[]>("takeIce");
@@ -230,12 +233,24 @@
             if (_answerApplied)
             {
                 var state = await _js.InvokeAsync<string>("connectionState");
-                _status = state switch
+                if (state is "failed" or "disconnected"
+                    && _retries < 3
+                    && DateTime.UtcNow - _lastRetry > TimeSpan.FromSeconds(8))
                 {
-                    "connected" => "Family can see you.",
-                    "failed" or "disconnected" => "The picture paused. Ask them to refresh their page.",
-                    _ => "Family opened the link. Connecting the picture."
-                };
+                    _retries++;
+                    _lastRetry = DateTime.UtcNow;
+                    Sessions.Nudge(_userId);
+                    _status = "Connecting the picture again.";
+                }
+                else
+                {
+                    _status = state switch
+                    {
+                        "connected" => "Family can see you.",
+                        "failed" or "disconnected" => "The picture paused. Connecting again.",
+                        _ => "Family opened the link. Connecting the picture."
+                    };
+                }
             }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)

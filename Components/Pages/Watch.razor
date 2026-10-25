@@ -47,7 +47,7 @@
                 : $"{_name} has not turned the camera on yet. Leave this page open. The picture appears when they press Monitor.")
         </p>
         <div class="watch-stage @(_seeing ? "seeing" : null)">
-            <video @ref="_video" class="watch-video" autoplay playsinline></video>
+            <video @ref="_video" class="watch-video" autoplay muted playsinline></video>
         </div>
         <p class="watch-status" role="status">@_status</p>
     }

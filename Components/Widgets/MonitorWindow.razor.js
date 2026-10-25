@@ -5,13 +5,21 @@ let remoteIce = [];
 
 function rtcServers(servers) {
     const list = (servers || [])
-        .map((server) => ({
-            urls: server.urls || server.Urls,
-            username: server.username || server.Username || undefined,
-            credential: server.credential || server.Credential || undefined
-        }))
+        .map((server) => {
+            const urls = server.urls || server.Urls;
+            const username = server.username || server.Username || "";
+            const credential = server.credential || server.Credential || "";
+            const ice = { urls };
+            if (username)
+                ice.username = username;
+            if (credential)
+                ice.credential = credential;
+            return ice;
+        })
         .filter((server) => server.urls);
-    return list.length > 0 ? list : [{ urls: "stun:stun.l.google.com:19302" }];
+    if (!list.some((server) => String(server.urls).startsWith("stun:")))
+        list.push({ urls: "stun:stun.l.google.com:19302" });
+    return list;
 }
 
 function resetPeer(servers) {
@@ -23,11 +31,61 @@ function resetPeer(servers) {
     }
     localIce = [];
     remoteIce = [];
-    pc = new RTCPeerConnection({ iceServers: rtcServers(servers) });
+    pc = new RTCPeerConnection({
+        iceServers: rtcServers(servers),
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require"
+    });
     pc.onicecandidate = (event) => {
         if (event.candidate)
-            localIce.push(JSON.stringify(event.candidate));
+            localIce.push(JSON.stringify(event.candidate.toJSON ? event.candidate.toJSON() : event.candidate));
+        else
+            localIce.push("end");
     };
+}
+
+function gather(peer) {
+    if (!peer || peer.iceGatheringState === "complete")
+        return Promise.resolve();
+
+    return new Promise((resolve) => {
+        const finish = () => {
+            peer.removeEventListener("icegatheringstatechange", onState);
+            clearTimeout(timer);
+            resolve();
+        };
+        const onState = () => {
+            if (peer.iceGatheringState === "complete")
+                finish();
+        };
+        peer.addEventListener("icegatheringstatechange", onState);
+        const timer = setTimeout(finish, 4000);
+    });
+}
+
+function watchVideo(video) {
+    if (video instanceof HTMLVideoElement)
+        return video;
+    const found = document.querySelector(".watch-video");
+    return found instanceof HTMLVideoElement ? found : null;
+}
+
+function showRemote(video, event) {
+    const element = watchVideo(video);
+    if (!element)
+        return;
+    const remoteStream = event.streams && event.streams[0]
+        ? event.streams[0]
+        : new MediaStream([event.track]);
+    element.srcObject = remoteStream;
+    element.muted = true;
+    element.playsInline = true;
+    element.autoplay = true;
+    const start = () => element.play().catch(() => { });
+    if (element.readyState >= 2)
+        start();
+    else
+        element.onloadedmetadata = start;
 }
 
 async function flushRemote() {
@@ -122,10 +180,14 @@ export async function createOffer(servers) {
         throw new Error("Camera is off.");
 
     resetPeer(servers);
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    return pc.localDescription.sdp;
+    const peer = pc;
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await gather(peer);
+    if (pc !== peer || !peer.localDescription)
+        throw new Error("Camera is off.");
+    return peer.localDescription.sdp;
 }
 
 export async function acceptAnswer(sdp) {
@@ -139,20 +201,24 @@ export async function acceptAnswer(sdp) {
 
 export async function createAnswer(video, sdp, servers) {
     resetPeer(servers);
-    pc.ontrack = (event) => {
-        const remoteStream = event.streams[0] || new MediaStream([event.track]);
-        video.srcObject = remoteStream;
-        video.play().catch(() => { });
-    };
-    await pc.setRemoteDescription({ type: "offer", sdp });
+    const peer = pc;
+    peer.ontrack = (event) => showRemote(video, event);
+    await peer.setRemoteDescription({ type: "offer", sdp });
     await flushRemote();
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    return pc.localDescription.sdp;
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    await gather(peer);
+    if (pc !== peer || !peer.localDescription)
+        throw new Error("Camera is off.");
+    return peer.localDescription.sdp;
 }
 
 export async function addIce(candidates) {
     for (const json of candidates || []) {
+        if (json === "end") {
+            try { if (pc?.remoteDescription) await pc.addIceCandidate(); } catch { /* already complete */ }
+            continue;
+        }
         let candidate;
         try { candidate = JSON.parse(json); } catch { continue; }
         if (!candidate?.candidate)
@@ -172,7 +238,16 @@ export function takeIce() {
 }
 
 export function connectionState() {
-    return pc ? pc.connectionState : "new";
+    if (!pc)
+        return "new";
+    const ice = pc.iceConnectionState;
+    if (ice === "connected" || ice === "completed")
+        return "connected";
+    if (ice === "failed" || ice === "closed")
+        return "failed";
+    if (ice === "disconnected")
+        return "disconnected";
+    return pc.connectionState || ice || "new";
 }
 
 export function stopPeer() {
