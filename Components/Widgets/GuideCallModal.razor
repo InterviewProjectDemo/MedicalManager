@@ -30,15 +30,11 @@
                 {
                     <p class="guide-error">@_callError</p>
                 }
-                else if (_connected)
-                {
-                    <button type="button" class="guide-end" @onclick="CloseAsync">End</button>
-                }
                 else if (_placing)
                 {
                     <p class="guide-calling">Calling</p>
                 }
-                else
+                else if (!_connected)
                 {
                     <p class="guide-listening">@(_listening ? "I'm listening" : "One moment")</p>
                     <div class="guide-choices">
@@ -54,6 +50,7 @@
                         }
                     </div>
                 }
+                <button type="button" class="guide-end" @onclick="CloseAsync">End</button>
             </div>
             @if (_connected)
             {
@@ -61,7 +58,7 @@
             }
             else if (!_placing)
             {
-                <p class="guide-note">You can say yes or no. I'm right here with you.</p>
+                <p class="guide-note">You can say yes, no, or end. I'm right here with you.</p>
             }
         </div>
     </div>
@@ -185,6 +182,12 @@
         _listening = false;
         await InvokeAsync(StateHasChanged);
 
+        if (turn.End)
+        {
+            await CloseAsync();
+            return;
+        }
+
         if (turn.Call is not null)
         {
             _title = turn.Call.Name;
@@ -236,7 +239,13 @@
     [JSInvokable]
     public Task OnGuideHeard(string transcript)
     {
-        if (_disposed || _ending || _guideSession != _session || _guide is null || _placing || _connected)
+        if (_disposed || _ending || _guideSession != _session || _guide is null)
+            return Task.CompletedTask;
+
+        if (CallGuide.WantsToEnd(transcript))
+            return CloseAsync();
+
+        if (_placing || _connected)
             return Task.CompletedTask;
 
         _listening = false;

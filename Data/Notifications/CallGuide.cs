@@ -10,7 +10,8 @@ public sealed record GuideTurn(
     bool OfferYesNo,
     GuidePerson? Call,
     string? YesLabel = null,
-    string? NoLabel = null);
+    string? NoLabel = null,
+    bool End = false);
 
 public sealed class CallGuide
 {
@@ -79,6 +80,12 @@ public sealed class CallGuide
             throw new InvalidOperationException("No should move to the next doctor.");
         if (many.Hear("yes").Call?.Name != "Dr. Sam Patel")
             throw new InvalidOperationException("Yes should call the doctor who was just named.");
+
+        var ending = new CallGuide("Alex Rivera", family, doctors);
+        ending.Opening();
+        var endTurn = ending.Hear("end");
+        if (!endTurn.End || endTurn.Call is not null || !CallGuide.WantsToEnd("please end the call") || CallGuide.WantsToEnd("Jordan"))
+            throw new InvalidOperationException("End should close the conversation without placing a call.");
     }
 
     public string Opening() => Begin().Prompt;
@@ -130,11 +137,24 @@ public sealed class CallGuide
         if (options.Length == 0)
             return HearOne("");
 
+        if (WantsToEnd(transcript))
+            return new GuideTurn("", false, false, false, false, null, End: true);
+
         var best = options.OrderByDescending(Score).First();
         if (IsEcho(best) || (WordCount(best) > 6 && !IsYes(best) && !IsNo(best)) || (WantsFamily(best) && WantsDoctor(best)))
             return KeepPlace();
 
         return HearOne(best);
+    }
+
+    public static bool WantsToEnd(string? heard)
+    {
+        var options = (heard ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return options.Any(option =>
+        {
+            var words = Normalize(option).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return words.Length is > 0 and <= 6 && words.Any(word => word is "end" or "ended" or "ending");
+        });
     }
 
     private static bool IsEcho(string heard)

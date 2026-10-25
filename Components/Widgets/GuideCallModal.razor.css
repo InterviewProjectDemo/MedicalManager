@@ -131,6 +131,9 @@
 .guide-end {
     min-width: 11rem;
     min-height: 3.4rem;
+    margin-top: 0.9rem;
+    padding: 0.45rem 1.4rem;
+    background: #dc2626;
     font-size: 1.15rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
