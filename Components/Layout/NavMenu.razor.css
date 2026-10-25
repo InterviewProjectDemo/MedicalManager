@@ -372,8 +372,16 @@
     bottom: 0;
     z-index: 2;
     margin-top: auto;
-    padding: 0.45rem 0.85rem 0.9rem;
+    padding: 0.45rem 0.85rem 0.7rem;
     background: linear-gradient(180deg, rgba(15, 61, 92, 0) 0%, #0f3d5c 28%);
+}
+
+.nav-call-hint {
+    margin: 0.35rem 0 0;
+    color: #d7eef8;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-align: center;
 }
 
 @media (max-width: 640.98px) {

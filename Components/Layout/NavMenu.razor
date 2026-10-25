@@ -5,6 +5,7 @@
 @inject AuthenticationStateProvider Auth
 @inject ProfilePhotoService PhotoService
 @inject PatientAccessService Access
+@inject IJSRuntime JS
 
 <div class="top-row nav-header navbar navbar-dark">
     <div class="nav-brand-block">
@@ -169,6 +170,7 @@
                         </svg>
                         <span>Voice Call</span>
                     </button>
+                    <p class="nav-call-hint">Say Call</p>
                 </div>
             </Authorized>
             <NotAuthorized>
@@ -229,7 +231,7 @@
                         PhotoUrl="@_familyPhotoUrl"
                         CallerName="@_callerName"
                         CallerPhone="@_callerPhone" />
-        <GuideCallModal Visible="_guideOpen" VisibleChanged="OnGuideVisibleChanged" />
+        <GuideCallModal Visible="_guideOpen" Seed="_guideSeed" VisibleChanged="OnGuideVisibleChanged" />
     </Authorized>
 </AuthorizeView>
 
@@ -242,6 +244,10 @@
     private bool _navOpen;
     private bool _callOpen;
     private bool _guideOpen;
+    private string? _guideSeed;
+    private bool _wakeReady;
+    private IJSObjectReference? _wake;
+    private DotNetObjectReference<NavMenu>? _wakeSelf;
     private string _callKind = "emergency";
     private string? _familyName;
     private string? _familyPhone;
@@ -270,6 +276,15 @@
         NavigationManager.LocationChanged += OnLocationChanged;
         await LoadPhotoAsync();
         await LoadFamilyContactAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrWhiteSpace(_userId) || _wakeReady)
+            return;
+
+        _wakeReady = true;
+        await EnsureWakeAsync();
     }
 
     private async Task LoadPhotoAsync()
@@ -321,18 +336,77 @@
         _callKind = "emergency";
         _callOpen = true;
         _navOpen = false;
+        _ = StopWakeAsync();
     }
 
     private void OpenGuide()
     {
+        _guideSeed = null;
         _guideOpen = true;
         _navOpen = false;
+        _ = StopWakeAsync();
     }
 
-    private Task OnGuideVisibleChanged(bool visible)
+    [JSInvokable]
+    public async Task OnWakeCall(string transcript)
+    {
+        if (_guideOpen || _callOpen)
+            return;
+
+        await StopWakeAsync();
+        _guideSeed = WordsAfterCall(transcript);
+        _guideOpen = true;
+        _navOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnGuideVisibleChanged(bool visible)
     {
         _guideOpen = visible;
-        return Task.CompletedTask;
+        if (!visible)
+        {
+            _guideSeed = null;
+            await EnsureWakeAsync();
+        }
+    }
+
+    private async Task EnsureWakeAsync()
+    {
+        if (_guideOpen || _callOpen || string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        try
+        {
+            _wake ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
+            _wakeSelf ??= DotNetObjectReference.Create(this);
+            await _wake.InvokeVoidAsync("startWake", _wakeSelf);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task StopWakeAsync()
+    {
+        if (_wake is null)
+            return;
+
+        try
+        {
+            await _wake.InvokeVoidAsync("stopWake");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private static string WordsAfterCall(string transcript)
+    {
+        var words = System.Text.RegularExpressions.Regex
+            .Replace(transcript.ToLowerInvariant(), "[^a-z ]", " ")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => word is not "call" and not "voice" and not "please" and not "hey");
+        return string.Join(' ', words);
     }
 
     private async Task OpenFamilyCall()
@@ -342,12 +416,14 @@
         _callKind = "family";
         _callOpen = true;
         _navOpen = false;
+        _ = StopWakeAsync();
     }
 
-    private Task OnCallVisibleChanged(bool visible)
+    private async Task OnCallVisibleChanged(bool visible)
     {
         _callOpen = visible;
-        return Task.CompletedTask;
+        if (!visible)
+            await EnsureWakeAsync();
     }
 
     private void ToggleNav() => _navOpen = !_navOpen;
@@ -424,5 +500,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        _ = StopWakeAsync();
+        _wakeSelf?.Dispose();
     }
 }

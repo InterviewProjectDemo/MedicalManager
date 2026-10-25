@@ -61,7 +61,7 @@
             }
             else if (!_placing)
             {
-                <p class="guide-note">Tell me in your own words. I'll stay with you until we reach the right person.</p>
+                <p class="guide-note">One word is enough. Family. Doctor. Yes.</p>
             }
         </div>
     </div>
@@ -69,6 +69,7 @@
 
 @code {
     [Parameter] public bool Visible { get; set; }
+    [Parameter] public string? Seed { get; set; }
     [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
 
     private bool _armed;
@@ -146,10 +147,18 @@
         _lines.Clear();
         _nudgedSilence = false;
         _guide = new CallGuide(string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name, family, doctorPeople);
-        _prompt = _guide.Opening();
         _title = "I am here to help";
+        if (!string.IsNullOrWhiteSpace(Seed))
+        {
+            _prompt = "";
+            _offerKind = false;
+            await ApplyTurnAsync(session, _guide.Hear(Seed));
+            return;
+        }
+
+        _prompt = _guide.Opening();
         _offerKind = true;
-        await SpeakAsync(session, _prompt, slow: false, listenAfter: true);
+        await SpeakAsync(session, _prompt, slow: true, listenAfter: true);
     }
 
     private async Task AnswerAsync(string transcript)

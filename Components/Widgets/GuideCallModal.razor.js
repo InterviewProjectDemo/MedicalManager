@@ -66,7 +66,7 @@ export function speakGuide(text, slow, dotNetRef) {
         const utterance = new SpeechSynthesisUtterance(sentences[index]);
         index += 1;
         utterance.lang = "en-US";
-        utterance.rate = slow ? 0.84 : 0.9;
+        utterance.rate = slow ? 0.74 : 0.82;
         utterance.pitch = 1.02;
         utterance.volume = 1;
         const voice = pickVoice();
@@ -75,7 +75,7 @@ export function speakGuide(text, slow, dotNetRef) {
         utterance.onend = () => {
             if (token !== speakToken)
                 return;
-            window.setTimeout(speakNext, slow ? 320 : 220);
+            window.setTimeout(speakNext, slow ? 480 : 340);
         };
         utterance.onerror = finish;
         window.speechSynthesis.speak(utterance);
@@ -114,6 +114,7 @@ export function listenGuide(dotNetRef) {
     }
 
     let reported = false;
+    let quiet = 0;
     const report = (text) => {
         if (reported)
             return;
@@ -126,23 +127,136 @@ export function listenGuide(dotNetRef) {
     recognition.interimResults = false;
     recognition.maxAlternatives = 3;
     recognition.onresult = (event) => {
-        const text = Array.from(event.results)
-            .map((result) => result[0]?.transcript || "")
-            .join(" ")
-            .trim();
-        report(text);
+        const result = event.results[event.results.length - 1];
+        const heard = [];
+        for (let index = 0; index < result.length; index += 1)
+            heard.push(result[index]?.transcript || "");
+        report(heard.map((item) => item.trim()).filter(Boolean).join("|"));
     };
     recognition.onerror = (event) => {
-        if (event.error === "no-speech")
-            report("");
-        else
-            report("\u0000");
+        if (event.error === "no-speech") {
+            quiet += 1;
+            return;
+        }
+        report("\u0000");
     };
     recognition.onend = () => {
-        if (!reported)
-            report("");
+        if (reported || recognition === null)
+            return;
+        if (quiet > 0 && quiet < 3) {
+            try {
+                recognition.start();
+                return;
+            } catch {
+                // Start a fresh listen below.
+            }
+        }
+        report("");
     };
     recognition.start();
+}
+
+let wakeRec;
+let wakeOn = false;
+let wakeRef;
+let wakeTimer;
+let wakeGesture;
+
+function phraseHasCall(text) {
+    const words = String(text || "")
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+    return words.includes("call") && words.length <= 6;
+}
+
+function beginWake() {
+    if (!wakeOn || wakeRec)
+        return;
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition)
+        return;
+
+    const rec = new Recognition();
+    wakeRec = rec;
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (event) => {
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            if (!event.results[index].isFinal)
+                continue;
+            const text = event.results[index][0]?.transcript || "";
+            if (!phraseHasCall(text))
+                continue;
+            const phrase = text;
+            stopWake();
+            notify(wakeRef, "OnWakeCall", phrase);
+            return;
+        }
+    };
+    rec.onerror = (event) => {
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            wakeRec = null;
+            waitForGesture();
+        }
+    };
+    rec.onend = () => {
+        if (wakeRec !== rec)
+            return;
+        wakeRec = null;
+        if (wakeOn)
+            wakeTimer = window.setTimeout(beginWake, 400);
+    };
+    try {
+        rec.start();
+    } catch {
+        wakeRec = null;
+        if (wakeOn)
+            wakeTimer = window.setTimeout(beginWake, 800);
+    }
+}
+
+function waitForGesture() {
+    if (wakeGesture)
+        return;
+    wakeGesture = () => {
+        document.removeEventListener("pointerdown", wakeGesture, true);
+        wakeGesture = null;
+        if (wakeOn)
+            beginWake();
+    };
+    document.addEventListener("pointerdown", wakeGesture, true);
+}
+
+export function startWake(dotNetRef) {
+    wakeOn = true;
+    wakeRef = dotNetRef;
+    window.clearTimeout(wakeTimer);
+    beginWake();
+}
+
+export function stopWake() {
+    wakeOn = false;
+    window.clearTimeout(wakeTimer);
+    if (wakeGesture) {
+        document.removeEventListener("pointerdown", wakeGesture, true);
+        wakeGesture = null;
+    }
+    const current = wakeRec;
+    wakeRec = null;
+    if (!current)
+        return;
+    current.onresult = null;
+    current.onerror = null;
+    current.onend = null;
+    try {
+        current.stop();
+    } catch {
+        // The wake listener is already stopped.
+    }
 }
 
 export function stopGuide() {
