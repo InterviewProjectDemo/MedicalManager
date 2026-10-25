@@ -37,7 +37,10 @@ function sentencesOf(text) {
 
 export function speakGuide(text, slow, dotNetRef) {
     stopWake();
-    stopListening();
+    sessionRef = dotNetRef;
+    acceptCommands = false;
+    guideSpeaking = true;
+    ensureSession();
     const token = ++speakToken;
     if (!window.speechSynthesis) {
         notify(dotNetRef, "OnGuideSpoken");
@@ -50,6 +53,7 @@ export function speakGuide(text, slow, dotNetRef) {
         if (token !== speakToken || spokenOnce)
             return;
         spokenOnce = true;
+        guideSpeaking = false;
         notify(dotNetRef, "OnGuideSpoken");
     };
 
@@ -113,73 +117,146 @@ function isEcho(text) {
         || heard.includes("should i call");
 }
 
+function phraseHasEnd(text) {
+    const words = String(text || "")
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+    return words.length > 0
+        && words.length <= 6
+        && words.some((word) => word === "end" || word === "ended" || word === "ending");
+}
+
+let sessionRec;
+let sessionRef;
+let sessionOn = false;
+let sessionTimer;
+let acceptCommands = false;
+let guideSpeaking = false;
+let sessionQuiet = 0;
+
+function ensureSession() {
+    sessionOn = true;
+    if (sessionRec || !sessionRef)
+        return;
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition)
+        return;
+
+    const rec = new Recognition();
+    sessionRec = rec;
+    recognition = rec;
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
+    rec.onresult = (event) => {
+        sessionQuiet = 0;
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            const result = event.results[index];
+            const heard = [];
+            for (let alt = 0; alt < result.length; alt += 1)
+                heard.push(result[alt]?.transcript || "");
+            const text = heard.map((item) => item.trim()).filter(Boolean).join("|");
+            if (heard.some((item) => phraseHasEnd(item))) {
+                stopSession();
+                notify(sessionRef, "OnGuideEnd", text);
+                return;
+            }
+            if (!result.isFinal || guideSpeaking || !acceptCommands || isEcho(text))
+                continue;
+            acceptCommands = false;
+            notify(sessionRef, "OnGuideHeard", text);
+        }
+    };
+    rec.onerror = (event) => {
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            sessionOn = false;
+            sessionRec = null;
+            recognition = null;
+            notify(sessionRef, "OnGuideHeard", "\u0000");
+            return;
+        }
+        sessionQuiet += 1;
+    };
+    rec.onend = () => {
+        if (sessionRec !== rec)
+            return;
+        sessionRec = null;
+        recognition = null;
+        if (!sessionOn)
+            return;
+        sessionTimer = window.setTimeout(ensureSession, sessionQuiet > 4 ? 700 : 150);
+    };
+    try {
+        rec.start();
+    } catch {
+        sessionRec = null;
+        recognition = null;
+        if (sessionOn)
+            sessionTimer = window.setTimeout(ensureSession, 400);
+    }
+}
+
+function stopSession() {
+    sessionOn = false;
+    acceptCommands = false;
+    guideSpeaking = false;
+    window.clearTimeout(sessionTimer);
+    const current = sessionRec;
+    sessionRec = null;
+    recognition = null;
+    if (!current)
+        return;
+    current.onresult = null;
+    current.onerror = null;
+    current.onend = null;
+    try {
+        current.stop();
+    } catch {
+        // The dialog listener is already stopped.
+    }
+}
+
 export function listenGuide(dotNetRef) {
     stopWake();
-    stopListening();
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition) {
-        notify(dotNetRef, "OnGuideHeard", "");
+    sessionRef = dotNetRef;
+    acceptCommands = true;
+    sessionQuiet = 0;
+    ensureSession();
+}
+
+export function speakGoodbye(dotNetRef) {
+    const token = ++speakToken;
+    guideSpeaking = false;
+    acceptCommands = false;
+    stopSession();
+    stopWake();
+    window.speechSynthesis?.cancel();
+    if (!window.speechSynthesis) {
+        notify(dotNetRef, "OnGoodbyeSpoken");
         return;
     }
 
-    let reported = false;
-    let quiet = 0;
-    const report = (text) => {
-        if (reported)
+    const utterance = new SpeechSynthesisUtterance("Goodbye.");
+    utterance.lang = "en-US";
+    utterance.rate = 0.9;
+    utterance.pitch = 1.02;
+    const voice = pickVoice();
+    if (voice)
+        utterance.voice = voice;
+    let done = false;
+    const finish = () => {
+        if (done || token !== speakToken)
             return;
-        reported = true;
-        notify(dotNetRef, "OnGuideHeard", text || "");
+        done = true;
+        notify(dotNetRef, "OnGoodbyeSpoken");
     };
-
-    recognition = new Recognition();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
-    recognition.onresult = (event) => {
-        const result = event.results[event.results.length - 1];
-        const heard = [];
-        for (let index = 0; index < result.length; index += 1)
-            heard.push(result[index]?.transcript || "");
-        const text = heard.map((item) => item.trim()).filter(Boolean).join("|");
-        if (isEcho(text)) {
-            quiet += 1;
-            return;
-        }
-        report(text);
-    };
-    recognition.onerror = (event) => {
-        if (event.error === "no-speech" || event.error === "aborted") {
-            quiet += 1;
-            return;
-        }
-        report("\u0000");
-    };
-    recognition.onend = () => {
-        if (reported || recognition === null)
-            return;
-        if (quiet < 4) {
-            window.setTimeout(() => {
-                if (reported || recognition === null)
-                    return;
-                try {
-                    recognition.start();
-                } catch {
-                    report("");
-                }
-            }, 700);
-            return;
-        }
-        report("");
-    };
-    window.setTimeout(() => {
-        if (reported || recognition === null)
-            return;
-        try {
-            recognition.start();
-        } catch {
-            report("");
-        }
-    }, 900);
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    window.setTimeout(finish, 2200);
+    window.speechSynthesis.speak(utterance);
 }
 
 let wakeRec;
@@ -384,23 +461,13 @@ export function stopWake() {
     }
 }
 
-export function stopGuide() {
+export function stopGuideSpeech() {
     speakToken += 1;
-    stopListening();
+    guideSpeaking = false;
     window.speechSynthesis?.cancel();
 }
 
-function stopListening() {
-    if (!recognition)
-        return;
-    const current = recognition;
-    recognition = null;
-    current.onresult = null;
-    current.onerror = null;
-    current.onend = null;
-    try {
-        current.stop();
-    } catch {
-        // The recognizer is already stopped.
-    }
+export function stopGuide() {
+    stopGuideSpeech();
+    stopSession();
 }

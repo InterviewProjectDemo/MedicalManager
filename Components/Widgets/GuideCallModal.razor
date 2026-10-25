@@ -10,9 +10,9 @@
 
 @if (Visible)
 {
-    <div class="guide-backdrop" @onclick="CloseAsync">
+    <div class="guide-backdrop" @onclick="EndSessionAsync">
         <div class="guide-window @(_listening ? "listening" : null)" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
-            <button type="button" class="guide-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
+            <button type="button" class="guide-close" aria-label="Close" @onclick="EndSessionAsync">&times;</button>
             <p class="guide-kicker">With you</p>
             <h2 id="guide-call-title">@_title</h2>
             @if (_lines.Count > 0)
@@ -34,7 +34,7 @@
                 {
                     <p class="guide-calling">Calling</p>
                 }
-                else if (!_connected)
+                else if (!_connected && !_ending)
                 {
                     <p class="guide-listening">@(_listening ? "I'm listening" : "One moment")</p>
                     <div class="guide-choices">
@@ -50,13 +50,13 @@
                         }
                     </div>
                 }
-                <button type="button" class="guide-end" @onclick="CloseAsync">End</button>
+                <button type="button" class="guide-end" @onclick="EndSessionAsync">End</button>
             </div>
             @if (_connected)
             {
                 <p class="guide-note">You're connected. Please go ahead whenever you're ready.</p>
             }
-            else if (!_placing)
+            else if (!_placing && !_ending)
             {
                 <p class="guide-note">You can say yes, no, or end. I'm right here with you.</p>
             }
@@ -70,6 +70,7 @@
     [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
 
     private bool _armed;
+    private bool _goodbyeClosed;
     private bool _disposed;
     private bool _ending;
     private bool _listening;
@@ -98,6 +99,7 @@
         {
             _armed = true;
             _ending = false;
+            _goodbyeClosed = false;
             _listening = false;
             _placing = false;
             _connected = false;
@@ -158,7 +160,7 @@
 
     private async Task AnswerAsync(string transcript)
     {
-        if (_guide is null || _placing || _connected)
+        if (_guide is null || _placing || _connected || _ending)
             return;
 
         var session = _session;
@@ -184,7 +186,7 @@
 
         if (turn.End)
         {
-            await CloseAsync();
+            await EndSessionAsync();
             return;
         }
 
@@ -243,7 +245,7 @@
             return Task.CompletedTask;
 
         if (CallGuide.WantsToEnd(transcript))
-            return CloseAsync();
+            return EndSessionAsync();
 
         if (_placing || _connected)
             return Task.CompletedTask;
@@ -303,6 +305,16 @@
         _offerYesNo = false;
         await InvokeAsync(StateHasChanged);
         await StopSpeechAsync();
+        if (_speech is not null)
+        {
+            try
+            {
+                await _speech.InvokeVoidAsync("stopGuide");
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+            {
+            }
+        }
 
         var state = await Auth.GetAuthenticationStateAsync();
         var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -361,7 +373,48 @@
         if (!_connected && !string.IsNullOrWhiteSpace(_callError))
             return Task.CompletedTask;
 
-        return CloseAsync();
+        return EndSessionAsync();
+    }
+
+    [JSInvokable]
+    public Task OnGuideEnd(string transcript) => EndSessionAsync();
+
+    [JSInvokable]
+    public Task OnGoodbyeSpoken() => FinishCloseAsync();
+
+    private async Task EndSessionAsync()
+    {
+        if (_disposed || _ending)
+            return;
+
+        _ending = true;
+        _listening = false;
+        _prompt = "Goodbye.";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _speech ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            await _speech.InvokeVoidAsync("speakGoodbye", _self);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            await FinishCloseAsync();
+        }
+    }
+
+    private async Task FinishCloseAsync()
+    {
+        if (_disposed || _goodbyeClosed)
+            return;
+
+        _goodbyeClosed = true;
+        StopGuide();
+        _connected = false;
+        _placing = false;
+        _armed = false;
+        await VisibleChanged.InvokeAsync(false);
     }
 
     [JSInvokable]
@@ -371,7 +424,7 @@
             return Task.CompletedTask;
         if (_connected && !string.IsNullOrWhiteSpace(message)
             && (message.Contains("hangup", StringComparison.OrdinalIgnoreCase) || message.Contains("31005", StringComparison.Ordinal)))
-            return CloseAsync();
+            return EndSessionAsync();
 
         _familyAudio = false;
         _placing = false;
@@ -380,25 +433,28 @@
         return InvokeAsync(StateHasChanged);
     }
 
-    private async Task CloseAsync()
-    {
-        _ending = true;
-        StopGuide();
-        _connected = false;
-        _placing = false;
-        _armed = false;
-        await VisibleChanged.InvokeAsync(false);
-    }
-
     private void StopGuide()
     {
         _session++;
         _listening = false;
-        _ = StopSpeechAsync();
+        _ = StopSessionAsync();
         if (_familyAudio)
         {
             _familyAudio = false;
             _ = EndCallAsync();
+        }
+    }
+
+    private async Task StopSessionAsync()
+    {
+        if (_speech is null)
+            return;
+        try
+        {
+            await _speech.InvokeVoidAsync("stopGuide");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
         }
     }
 
@@ -408,7 +464,7 @@
             return;
         try
         {
-            await _speech.InvokeVoidAsync("stopGuide");
+            await _speech.InvokeVoidAsync("stopGuideSpeech");
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
