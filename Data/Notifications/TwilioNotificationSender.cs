@@ -89,6 +89,14 @@ public sealed class TwilioNotificationSender(
         CancellationToken cancellationToken) =>
         SendAsync(to, voice: true, ssml, pollyVoice, cancellationToken);
 
+    public async Task<(string? AccountSid, string? FromNumber)> GetVoiceRouteAsync(CancellationToken cancellationToken)
+    {
+        if (!await EnsureReadyAsync(cancellationToken))
+            return (null, null);
+
+        return (_accountSid, _fromNumber);
+    }
+
     public async Task EndCallAsync(string? callSid, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(callSid))

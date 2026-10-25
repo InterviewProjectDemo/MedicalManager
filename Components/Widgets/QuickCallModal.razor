@@ -1,9 +1,13 @@
 @using System.Globalization
+@using System.Security.Claims
 @using MedicalManager.Data.Notifications
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Options
 @implements IDisposable
 @inject IJSRuntime JS
 @inject TwilioNotificationSender Calls
+@inject FamilyVoiceCallService FamilyCalls
+@inject AuthenticationStateProvider Auth
 @inject IOptions<NotificationOptions> NotificationOptions
 
 @if (Visible)
@@ -73,11 +77,11 @@
                 </dl>
             }
             <div class="quick-call-status" aria-live="polite">
-                @if (!HasUserPhone)
+                @if (IsEmergency && !HasUserPhone)
                 {
                     <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Add your phone number</a>
                 }
-                else if (!CanPlaceCall)
+                else if (!IsEmergency && !HasFamilyPhone)
                 {
                     <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Set up family contact</a>
                 }
@@ -94,7 +98,7 @@
                     <p class="quick-call-calling">Calling</p>
                 }
             </div>
-            @if (!HasUserPhone)
+            @if (IsEmergency && !HasUserPhone)
             {
                 <p class="quick-call-note">This call rings the phone number on your profile, the same number used for alerts.</p>
             }
@@ -102,13 +106,17 @@
             {
                 <p class="quick-call-note">This call rings your phone and includes your name and live GPS location. It does not dial 911.</p>
             }
-            else if (!CanPlaceCall)
+            else if (!HasFamilyPhone)
             {
-                <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional. The call still rings your phone.</p>
+                <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional.</p>
+            }
+            else if (_connected)
+            {
+                <p class="quick-call-note">Talk through this device. The microphone and speaker are on.</p>
             }
             else
             {
-                <p class="quick-call-note">This call rings your phone, the same number used for alerts.</p>
+                <p class="quick-call-note">This call uses this device's microphone and speaker so you can talk with @Shown(ContactName).</p>
             }
         </div>
     </div>
@@ -131,6 +139,9 @@
     private bool _disposed;
     private string? _callSid;
     private string? _callError;
+    private bool _familyAudio;
+    private bool _ending;
+    private int _familySession;
     private bool _hasFix;
     private int _session;
     private int _watchId;
@@ -152,10 +163,9 @@
 
     private bool HasUserPhone => PhoneNumbers.ToE164(CallerPhone) is not null;
 
-    private bool HasFamilyContact =>
-        !string.IsNullOrWhiteSpace(ContactName) && !string.IsNullOrWhiteSpace(ContactPhone);
+    private bool HasFamilyPhone => PhoneNumbers.ToE164(ContactPhone) is not null;
 
-    private bool CanPlaceCall => HasUserPhone && (IsEmergency || HasFamilyContact);
+    private bool CanPlaceCall => IsEmergency ? HasUserPhone : HasFamilyPhone;
 
     private string KindClass => IsEmergency ? "is-emergency" : "is-family";
     private string Kicker => IsEmergency ? "Emergency" : "Family";
@@ -166,7 +176,7 @@
 
     private string? Detail => IsEmergency
         ? "Ambulance and EMT"
-        : (HasUserPhone ? $"Your phone · {CallerPhone!.Trim()}" : null);
+        : (HasFamilyPhone ? ContactPhone!.Trim() : null);
 
     private string Initials => InitialsFrom(ContactName);
 
@@ -181,6 +191,7 @@
             _connected = false;
             _callError = null;
             _callSid = null;
+            _ending = false;
             ResetGps();
             await StartCallingAsync();
         }
@@ -201,6 +212,12 @@
         var session = ++_session;
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
+        if (!IsEmergency)
+        {
+            await StartFamilyTalkAsync(session);
+            return;
+        }
+
         if (IsEmergency)
             _ = WatchGpsAsync(session);
 
@@ -218,9 +235,7 @@
         if (_disposed || session != _session || !Visible)
             return;
 
-        var ssml = IsEmergency
-            ? QuickCallCopy.EmergencySsml(CallerName, CallerPhone, _hasFix ? _latitude : null, _hasFix ? _longitude : null, _accuracy)
-            : QuickCallCopy.FamilySsml(CallerName, ContactName);
+        var ssml = QuickCallCopy.EmergencySsml(CallerName, CallerPhone, _hasFix ? _latitude : null, _hasFix ? _longitude : null, _accuracy);
         var result = await Calls.CallAsync(CallerPhone!, ssml, NotificationOptions.Value.Voice.PollyVoice, CancellationToken.None);
         if (_disposed || session != _session || !Visible)
         {
@@ -239,6 +254,83 @@
         _callSid = result.Sid;
         _connected = true;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartFamilyTalkAsync(int session)
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId) || _disposed || session != _session)
+            return;
+
+        var setup = await FamilyCalls.PrepareAsync(userId, CancellationToken.None);
+        if (_disposed || session != _session || !Visible)
+            return;
+        if (!setup.Ok || setup.Token is null || setup.Ticket is null)
+        {
+            _callError = setup.Error ?? "The call could not be placed.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/QuickCallModal.razor.js");
+            _gpsRef ??= DotNetObjectReference.Create(this);
+            _familyAudio = true;
+            _familySession = session;
+            await _module.InvokeVoidAsync("startFamilyCall", setup.Token, setup.Ticket, _gpsRef);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            if (session == _session)
+            {
+                _familyAudio = false;
+                var message = ex is JSException js ? js.Message : "";
+                _callError = message.Contains("microphone", StringComparison.OrdinalIgnoreCase)
+                    ? "Allow the microphone so you can talk."
+                    : "The call could not be placed.";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallConnected()
+    {
+        if (_disposed || _ending || _familySession != _session)
+            return Task.CompletedTask;
+
+        _connected = true;
+        _callError = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallEnded()
+    {
+        if (_disposed || _ending || _familySession != _session)
+            return Task.CompletedTask;
+
+        _familyAudio = false;
+        if (!string.IsNullOrWhiteSpace(_callError))
+            return InvokeAsync(StateHasChanged);
+
+        _connected = false;
+        _callError = "The call ended.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallError(string message)
+    {
+        if (_disposed || _ending || _familySession != _session)
+            return Task.CompletedTask;
+
+        _familyAudio = false;
+        _connected = false;
+        _callError = string.IsNullOrWhiteSpace(message) ? "The call could not be placed." : message.Trim();
+        return InvokeAsync(StateHasChanged);
     }
 
     private static string FriendlyCallError(string? detail) => detail switch
@@ -335,6 +427,7 @@
 
     private async Task CloseAsync()
     {
+        _ending = true;
         CancelCalling();
         _connected = false;
         _armed = false;
@@ -356,7 +449,27 @@
         if (!string.IsNullOrWhiteSpace(sid))
             _ = Calls.EndCallAsync(sid, CancellationToken.None);
 
+        if (_familyAudio)
+        {
+            _familyAudio = false;
+            _ = EndFamilyAudioAsync();
+        }
+
         _ = StopGpsAsync();
+    }
+
+    private async Task EndFamilyAudioAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("endFamilyCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
     }
 
     public void Dispose()

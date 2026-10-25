@@ -45,6 +45,11 @@ public sealed class TwilioOptions
     /// the first Twilio number on the account that can text.
     /// </summary>
     public string FromNumber { get; set; } = "";
+
+    /// <summary>
+    /// Public site Twilio calls when a family conversation starts on this device.
+    /// </summary>
+    public string VoiceBaseUrl { get; set; } = "https://www.medicalmgr.com";
 }
 
 public sealed class VoiceOptions

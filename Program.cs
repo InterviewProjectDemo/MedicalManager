@@ -194,6 +194,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<OnboardingVoiceService>();
 builder.Services.AddSingleton<TravelTimeService>();
 builder.Services.AddSingleton<TwilioNotificationSender>();
+builder.Services.AddSingleton<FamilyVoiceCallService>();
 builder.Services.AddScoped<AppointmentReminderService>();
 builder.Services.AddScoped<MedicationReminderService>();
 builder.Services.AddScoped<ToDoReminderService>();
@@ -225,7 +226,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["X-Frame-Options"] = "DENY";
-    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(self)";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(self)";
     if (!app.Environment.IsDevelopment()
         && !context.Request.Path.StartsWithSegments("/health")
         && !context.Request.IsHttps)
@@ -312,6 +313,14 @@ app.MapPost("/onboarding-speech", async (
         ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
         : Results.File(audio, "audio/mpeg");
 }).RequireAuthorization().DisableAntiforgery();
+
+app.MapPost("/voice/family", async (HttpRequest request, FamilyVoiceCallService voice) =>
+{
+    var ticket = request.HasFormContentType
+        ? (await request.ReadFormAsync())["ticket"].ToString()
+        : "";
+    return Results.Text(voice.ClaimTwiml(ticket), "text/xml");
+}).DisableAntiforgery();
 
 app.MapGet("/health", () => Results.Ok("ok"));
 app.MapGet("/health/encryption", (IPhiProtector protector) =>
