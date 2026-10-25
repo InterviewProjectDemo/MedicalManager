@@ -36,6 +36,7 @@ function sentencesOf(text) {
 }
 
 export function speakGuide(text, slow, dotNetRef) {
+    stopWake();
     stopListening();
     const token = ++speakToken;
     if (!window.speechSynthesis) {
@@ -105,7 +106,15 @@ export function speakGuide(text, slow, dotNetRef) {
     begin();
 }
 
+function isEcho(text) {
+    const heard = String(text || "").toLowerCase();
+    return heard.includes("how can i help")
+        || heard.includes("who do you want")
+        || heard.includes("should i call");
+}
+
 export function listenGuide(dotNetRef) {
+    stopWake();
     stopListening();
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
@@ -131,10 +140,15 @@ export function listenGuide(dotNetRef) {
         const heard = [];
         for (let index = 0; index < result.length; index += 1)
             heard.push(result[index]?.transcript || "");
-        report(heard.map((item) => item.trim()).filter(Boolean).join("|"));
+        const text = heard.map((item) => item.trim()).filter(Boolean).join("|");
+        if (isEcho(text)) {
+            quiet += 1;
+            return;
+        }
+        report(text);
     };
     recognition.onerror = (event) => {
-        if (event.error === "no-speech") {
+        if (event.error === "no-speech" || event.error === "aborted") {
             quiet += 1;
             return;
         }
@@ -143,17 +157,29 @@ export function listenGuide(dotNetRef) {
     recognition.onend = () => {
         if (reported || recognition === null)
             return;
-        if (quiet > 0 && quiet < 3) {
-            try {
-                recognition.start();
-                return;
-            } catch {
-                // Start a fresh listen below.
-            }
+        if (quiet < 4) {
+            window.setTimeout(() => {
+                if (reported || recognition === null)
+                    return;
+                try {
+                    recognition.start();
+                } catch {
+                    report("");
+                }
+            }, 700);
+            return;
         }
         report("");
     };
-    recognition.start();
+    window.setTimeout(() => {
+        if (reported || recognition === null)
+            return;
+        try {
+            recognition.start();
+        } catch {
+            report("");
+        }
+    }, 900);
 }
 
 let wakeRec;
@@ -189,7 +215,7 @@ function beginWake() {
             if (!event.results[index].isFinal)
                 continue;
             const text = event.results[index][0]?.transcript || "";
-            if (!phraseHasCall(text))
+            if (!phraseHasCall(text) || isEcho(text))
                 continue;
             const phrase = text;
             stopWake();

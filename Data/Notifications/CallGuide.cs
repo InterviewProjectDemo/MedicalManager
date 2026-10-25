@@ -2,7 +2,15 @@ namespace MedicalManager.Data.Notifications;
 
 public sealed record GuidePerson(string Kind, string Name, string Phone, string? Detail = null);
 
-public sealed record GuideTurn(string Prompt, bool Listen, bool Slow, bool OfferKind, bool OfferYesNo, GuidePerson? Call);
+public sealed record GuideTurn(
+    string Prompt,
+    bool Listen,
+    bool Slow,
+    bool OfferKind,
+    bool OfferYesNo,
+    GuidePerson? Call,
+    string? YesLabel = null,
+    string? NoLabel = null);
 
 public sealed class CallGuide
 {
@@ -18,7 +26,7 @@ public sealed class CallGuide
     {
         _firstName = FirstName(userName);
         _family = family.Where(person => !string.IsNullOrWhiteSpace(person.Name) && !string.IsNullOrWhiteSpace(person.Phone)).ToList();
-        _doctors = doctors.Where(person => !string.IsNullOrWhiteSpace(person.Name) && !string.IsNullOrWhiteSpace(person.Phone)).ToList();
+        _doctors = doctors.Where(person => !string.IsNullOrWhiteSpace(person.Name)).ToList();
     }
 
     public static void SelfCheck()
@@ -31,8 +39,11 @@ public sealed class CallGuide
         };
         var guide = new CallGuide("Alex Rivera", family, doctors);
         var hello = guide.Opening();
-        if (!hello.Contains("Hello, Alex", StringComparison.Ordinal) || !hello.Contains("I am here to help", StringComparison.Ordinal))
-            throw new InvalidOperationException("The call guide does not greet the user.");
+        if (!hello.Contains("Hi, Alex", StringComparison.Ordinal)
+            || !hello.Contains("How can I help", StringComparison.Ordinal)
+            || !hello.Contains("Jordan Rivera", StringComparison.Ordinal)
+            || !hello.Contains("doctor", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The call guide should greet the user and offer the family person.");
 
         var unsure = guide.Hear("I don't know");
         if (!unsure.Prompt.Contains("family", StringComparison.OrdinalIgnoreCase) || !unsure.Prompt.Contains("doctor", StringComparison.OrdinalIgnoreCase))
@@ -52,18 +63,11 @@ public sealed class CallGuide
         if (calling.Call?.Name != "Jordan Rivera")
             throw new InvalidOperationException("Yes should call the family name that was just offered.");
 
-        var shortAnswer = new CallGuide("Alex Rivera", family, doctors);
-        shortAnswer.Opening();
-        var yesFamily = shortAnswer.Hear("yes family");
-        if (!yesFamily.Prompt.Contains("Jordan Rivera", StringComparison.Ordinal) || yesFamily.Call is not null)
-            throw new InvalidOperationException("Yes family should offer the family name without a full sentence.");
-        if (shortAnswer.Hear("yes").Call?.Name != "Jordan Rivera")
-            throw new InvalidOperationException("Yes alone should call the family name that was just offered.");
-
-        var yesOnly = new CallGuide("Alex Rivera", family, doctors);
-        yesOnly.Opening();
-        if (yesOnly.Hear("yes").Call is not null)
-            throw new InvalidOperationException("Yes alone should not place a call before a person is chosen.");
+        var declined = new CallGuide("Alex Rivera", family, doctors);
+        declined.Opening();
+        var doctorTurn = declined.Hear("no");
+        if (!doctorTurn.Prompt.Contains("Morgan Chen", StringComparison.Ordinal) || !doctorTurn.OfferYesNo)
+            throw new InvalidOperationException("No to family should offer a doctor.");
 
         var many = new CallGuide("Alex Rivera", family, doctors);
         many.Opening();
@@ -77,19 +81,46 @@ public sealed class CallGuide
             throw new InvalidOperationException("Yes should call the doctor who was just named.");
     }
 
-    public string Opening()
+    public string Opening() => Begin().Prompt;
+
+    public GuideTurn Begin()
     {
+        if (_family.Count > 0)
+        {
+            _listKind = "family";
+            _index = 0;
+            _phase = "list";
+            _pending = _family[0];
+            return AskPerson(
+                $"Hi, {_firstName}. How can I help? Who do you want to talk to, your family or a doctor? Should I call your family, {_pending.Name}?",
+                doctorNext: true);
+        }
+
+        if (_doctors.Count > 0)
+            return StartList("doctor", $"Hi, {_firstName}. How can I help? I don't have a family number yet.");
+
         _phase = "open";
         _pending = null;
-        return $"Hello, {_firstName}. I am here to help. Family, or doctor?";
+        _listKind = null;
+        return new GuideTurn($"Hi, {_firstName}. How can I help? I don't have a family or doctor number saved yet. Add one in your profile, and I will be ready.", false, true, false, false, null);
     }
 
     public GuideTurn StillHere()
     {
         if (_pending is not null)
-            return new GuideTurn($"{_pending.Name}. Say yes.", true, true, false, true, null);
+            return AskPerson($"I'm right here, {_firstName}. Should I call {_pending.Name}?", doctorNext: _listKind == "family" && _index == 0);
 
-        return new GuideTurn($"I am here, {_firstName}. Family, or doctor?", true, true, true, false, null);
+        return new GuideTurn($"I'm right here, {_firstName}. Who do you want to talk to, your family or a doctor?", true, true, true, false, null);
+    }
+
+    public bool IsClearChoice(string? transcript)
+    {
+        var heard = Normalize(transcript);
+        if (heard.Length == 0 || WordCount(heard) > 4)
+            return false;
+        if (WantsFamily(heard) && WantsDoctor(heard))
+            return false;
+        return IsYes(heard) || IsNo(heard) || WantsFamily(heard) || WantsDoctor(heard) || SingleNameMatch(heard) is not null;
     }
 
     public GuideTurn Hear(string? transcript)
@@ -99,8 +130,36 @@ public sealed class CallGuide
         if (options.Length == 0)
             return HearOne("");
 
-        return HearOne(options.OrderByDescending(Score).First());
+        var best = options.OrderByDescending(Score).First();
+        if (IsEcho(best) || (WordCount(best) > 6 && !IsYes(best) && !IsNo(best)) || (WantsFamily(best) && WantsDoctor(best)))
+            return KeepPlace();
+
+        return HearOne(best);
     }
+
+    private static bool IsEcho(string heard)
+    {
+        var text = Normalize(heard);
+        return text.Contains("how can i help", StringComparison.Ordinal)
+            || text.Contains("who do you want", StringComparison.Ordinal)
+            || text.Contains("should i call", StringComparison.Ordinal);
+    }
+
+    private GuideTurn KeepPlace()
+    {
+        if (_phase is "list" or "confirm" && _pending is not null)
+            return AskPerson(CurrentAsk(), doctorNext: _listKind == "family" && _index == 0);
+
+        return AskKind();
+    }
+
+    private string CurrentAsk() =>
+        _listKind == "family" && _index == 0 && _pending is not null
+            ? $"That's all right, {_firstName}. Who do you want to talk to, your family or a doctor? Should I call your family, {_pending.Name}?"
+            : $"That's all right, {_firstName}. Should I call {_pending?.Name}?";
+
+    private static int WordCount(string heard) =>
+        heard.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
 
     private int Score(string heard)
     {
@@ -127,8 +186,10 @@ public sealed class CallGuide
         var named = SingleNameMatch(heard);
         if (named is not null)
         {
-            if (IsYes(heard) || (_pending is not null && NameMatches(named.Name, _pending.Name) && IsMostlyName(heard, named)))
+            if (IsYes(heard))
                 return Call(named);
+            if (IsNo(heard) && _pending is not null && NameMatches(named.Name, _pending.Name))
+                return NextInList();
             return Offer(named);
         }
 
@@ -139,45 +200,51 @@ public sealed class CallGuide
             return Call(_pending);
 
         if (_phase is "list" or "confirm" && _pending is not null)
-            return new GuideTurn($"{_pending.Name}. Say yes, or no.", true, true, false, true, null);
+            return KeepPlace();
 
         return AskKind();
     }
 
-    private GuideTurn StartList(string kind)
+    private GuideTurn StartList(string kind, string? lead = null)
     {
         var people = kind == "family" ? _family : _doctors;
         if (people.Count == 0)
         {
             var missing = kind == "family"
-                ? "No family number saved."
-                : "No doctor number saved.";
+                ? "I don't have a family number saved yet."
+                : "I don't have a doctor number saved yet.";
             _phase = "narrow";
             _pending = null;
-            return new GuideTurn($"{missing} Family, or doctor?", true, true, true, false, null);
+            _listKind = null;
+            return new GuideTurn($"That's all right, {_firstName}. {missing} Who do you want to talk to, your family or a doctor?", true, true, true, false, null);
         }
 
         _listKind = kind;
         _index = 0;
         _phase = "list";
         _pending = people[0];
-        var who = Introduce(_pending);
-        if (people.Count == 1)
-            return new GuideTurn($"{who}. Say yes.", true, true, false, true, null);
-
-        return new GuideTurn($"{who}. Say yes, or no.", true, true, false, true, null);
+        var intro = string.IsNullOrWhiteSpace(lead) ? "" : $"{lead.Trim()} ";
+        var who = kind == "family" ? $"your family, {_pending.Name}" : FriendName(_pending);
+        return AskPerson($"{intro}Should I call {who}?", doctorNext: kind == "family");
     }
 
     private GuideTurn NextInList()
     {
+        if (_listKind == "family" && _index >= _family.Count - 1)
+        {
+            if (_doctors.Count > 0)
+                return StartList("doctor", $"That's okay, {_firstName}. Let's try a doctor.");
+            return AskPerson($"That's okay, {_firstName}. I don't have a doctor saved yet. Should I still call {_pending?.Name}?", doctorNext: false);
+        }
+
         var people = _listKind == "doctor" ? _doctors : _family;
         _index++;
         if (_index < 0 || _index >= people.Count)
-            return AskKind("That's everyone.");
+            return AskKind("Those are the people I can reach.");
 
         _phase = "list";
         _pending = people[_index];
-        return new GuideTurn($"{Introduce(_pending)}. Say yes, or no.", true, true, false, true, null);
+        return AskPerson($"Okay. How about {FriendName(_pending)}? Should I call {_pending.Name}?", doctorNext: false);
     }
 
     private GuideTurn Offer(GuidePerson person)
@@ -185,7 +252,14 @@ public sealed class CallGuide
         _pending = person;
         _phase = "confirm";
         _listKind = person.Kind;
-        return new GuideTurn($"{Introduce(person)}. Say yes.", true, true, false, true, null);
+        return AskPerson($"I can do that. Should I call {FriendName(person)}?", doctorNext: person.Kind == "family");
+    }
+
+    private GuideTurn AskPerson(string prompt, bool doctorNext)
+    {
+        var yes = _pending is null ? "Yes" : $"Yes, call {_pending.Name}";
+        var no = doctorNext && _doctors.Count > 0 ? "No, a doctor" : "No";
+        return new GuideTurn(prompt, true, true, false, true, null, yes, no);
     }
 
     private GuideTurn AskKind(string? lead = null)
@@ -193,23 +267,40 @@ public sealed class CallGuide
         _phase = "narrow";
         _pending = null;
         _listKind = null;
-        var question = "Family, or doctor?";
+        var question = "Who do you want to talk to, your family or a doctor?";
         var prompt = string.IsNullOrWhiteSpace(lead)
             ? $"That's all right, {_firstName}. {question}"
             : $"{lead} {question}";
         return new GuideTurn(prompt, true, true, true, false, null);
     }
 
-    private static GuideTurn Call(GuidePerson person) =>
-        new($"Calling {person.Name}.", false, false, false, false, person);
-
-    private static string Introduce(GuidePerson person)
+    private GuideTurn Call(GuidePerson person)
     {
+        if (PhoneNumbers.ToE164(person.Phone) is null)
+        {
+            var family = _family.FirstOrDefault();
+            if (family is not null)
+            {
+                _pending = family;
+                _listKind = "family";
+                _phase = "list";
+                _index = 0;
+                return AskPerson($"I know {person.Name}. I don't have a phone number for them yet. Should I call your family, {family.Name}?", doctorNext: _doctors.Count > 0);
+            }
+
+            return new GuideTurn($"I know {person.Name}. I don't have a phone number saved yet, so I can't place that call.", false, true, false, false, null);
+        }
+
+        return new($"Wonderful. I'm calling {person.Name} for you now.", false, false, false, false, person);
+    }
+
+    private static string FriendName(GuidePerson person)
+    {
+        if (person.Kind == "family")
+            return person.Name;
         if (string.IsNullOrWhiteSpace(person.Detail))
             return person.Name;
-
-        var detail = person.Detail.Trim().TrimEnd('.');
-        return $"{person.Name}, your {detail.ToLowerInvariant()}";
+        return $"{person.Name}, your {person.Detail.Trim().TrimEnd('.').ToLowerInvariant()}";
     }
 
     private GuidePerson? SingleNameMatch(string heard)
@@ -225,9 +316,9 @@ public sealed class CallGuide
     {
         var spoken = Normalize(heard);
         var target = Normalize(name);
-        if (spoken.Length < 2 || target.Length == 0)
+        if (spoken.Length < 3 || target.Length == 0)
             return false;
-        if (spoken.Contains(target, StringComparison.Ordinal) || target.Contains(spoken, StringComparison.Ordinal))
+        if (spoken.Contains(target, StringComparison.Ordinal))
             return true;
 
         return Tokens(name).Any(token => spoken.Contains(token, StringComparison.Ordinal));
@@ -242,24 +333,20 @@ public sealed class CallGuide
     private static bool IsYes(string heard)
     {
         var words = Normalize(heard).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Any(word => word is "yes" or "yeah" or "yep" or "sure" or "please" or "ok" or "okay" or "correct" or "call");
-    }
-
-    private static bool IsMostlyName(string heard, GuidePerson person)
-    {
-        var spoken = Tokens(heard).ToList();
-        if (spoken.Count == 0)
+        if (words.Length == 0)
             return false;
-
-        var name = Tokens(person.Name).ToHashSet(StringComparer.Ordinal);
-        return spoken.All(name.Contains);
+        if (words.Any(word => word is "yes" or "yeah" or "yep" or "sure" or "ok" or "okay"))
+            return true;
+        if (words.Any(word => word is "should" or "who" or "how"))
+            return false;
+        return words.Length <= 3 && words.Any(word => word is "please" or "call");
     }
 
     private static bool IsNo(string heard)
     {
         var text = Normalize(heard);
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Any(word => word is "no" or "nope" or "next" or "nah")
+        return words.Any(word => word is "no" or "nope" or "not" or "next" or "nah")
             || text.Contains("someone else", StringComparison.Ordinal);
     }
 

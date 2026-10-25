@@ -49,8 +49,8 @@
                         }
                         @if (_offerYesNo)
                         {
-                            <button type="button" @onclick='() => AnswerAsync("yes")'>Yes, call them</button>
-                            <button type="button" @onclick='() => AnswerAsync("no")'>Someone else</button>
+                            <button type="button" @onclick='() => AnswerAsync("yes")'>@_yesLabel</button>
+                            <button type="button" @onclick='() => AnswerAsync("no")'>@_noLabel</button>
                         }
                     </div>
                 }
@@ -61,7 +61,7 @@
             }
             else if (!_placing)
             {
-                <p class="guide-note">One word is enough. Family. Doctor. Yes.</p>
+                <p class="guide-note">You can say yes or no. I'm right here with you.</p>
             }
         </div>
     </div>
@@ -83,7 +83,9 @@
     private bool _familyAudio;
     private int _session;
     private int _guideSession;
-    private string _title = "I am here to help";
+    private string _title = "How can I help";
+    private string _yesLabel = "Yes";
+    private string _noLabel = "No";
     private string _prompt = "";
     private string? _callError;
     private bool _nudgedSilence;
@@ -136,29 +138,25 @@
             family.Add(new GuidePerson("family", familyContact.Name.Trim(), familyContact.Phone!.Trim()));
 
         var doctorPeople = doctors
-            .Where(doctor => PhoneNumbers.ToE164(doctor.PhoneNumber) is not null)
+            .Where(doctor => !string.IsNullOrWhiteSpace(doctor.Name))
             .Select(doctor => new GuidePerson(
                 "doctor",
                 doctor.Name.Trim(),
-                doctor.PhoneNumber.Trim(),
+                doctor.PhoneNumber?.Trim() ?? "",
                 string.IsNullOrWhiteSpace(doctor.Specialty) ? null : doctor.Specialty.Trim()))
             .ToList();
 
         _lines.Clear();
         _nudgedSilence = false;
-        _guide = new CallGuide(string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name, family, doctorPeople);
-        _title = "I am here to help";
-        if (!string.IsNullOrWhiteSpace(Seed))
-        {
-            _prompt = "";
-            _offerKind = false;
-            await ApplyTurnAsync(session, _guide.Hear(Seed));
-            return;
-        }
-
-        _prompt = _guide.Opening();
-        _offerKind = true;
-        await SpeakAsync(session, _prompt, slow: true, listenAfter: true);
+        var displayName = string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name;
+        _guide = new CallGuide(displayName, family, doctorPeople);
+        var firstName = displayName?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        _title = string.IsNullOrWhiteSpace(firstName) ? "Hi there" : $"Hi, {firstName}";
+        var turn = _guide.Begin();
+        if (_guide.IsClearChoice(Seed))
+            turn = _guide.Hear(Seed);
+        _prompt = "";
+        await ApplyTurnAsync(session, turn);
     }
 
     private async Task AnswerAsync(string transcript)
@@ -182,6 +180,8 @@
         _prompt = turn.Prompt;
         _offerKind = turn.OfferKind;
         _offerYesNo = turn.OfferYesNo;
+        _yesLabel = string.IsNullOrWhiteSpace(turn.YesLabel) ? "Yes" : turn.YesLabel;
+        _noLabel = string.IsNullOrWhiteSpace(turn.NoLabel) ? "No" : turn.NoLabel;
         _listening = false;
         await InvokeAsync(StateHasChanged);
 
@@ -279,8 +279,8 @@
     {
         "family" => "My family",
         "doctor" => "A doctor",
-        "yes" => "Yes, please call them",
-        "no" => "Someone else",
+        "yes" => "Yes",
+        "no" => "No",
         _ => transcript.Trim()
     };
 

@@ -354,6 +354,9 @@
             return;
 
         await StopWakeAsync();
+        if (_guideOpen || _callOpen)
+            return;
+
         _guideSeed = WordsAfterCall(transcript);
         _guideOpen = true;
         _navOpen = false;
