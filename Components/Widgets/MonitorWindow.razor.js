@@ -242,28 +242,26 @@ export function captureFrame() {
     if (!(video instanceof HTMLVideoElement) || !video.videoWidth || !video.videoHeight)
         return "";
 
-    const width = Math.min(360, video.videoWidth);
-    const height = Math.max(1, Math.round(video.videoHeight * (width / video.videoWidth)));
+    let width = Math.min(280, video.videoWidth);
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx)
         return "";
-    ctx.drawImage(video, 0, 0, width, height);
 
-    let quality = 0.46;
-    let data = "";
-    for (let attempt = 0; attempt < 4; attempt++) {
-        data = canvas.toDataURL("image/jpeg", quality);
-        if (data.length <= 32000)
-            break;
-        quality -= 0.1;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const height = Math.max(1, Math.round(video.videoHeight * (width / video.videoWidth)));
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = height;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const data = canvas.toDataURL("image/jpeg", Math.max(0.2, 0.4 - attempt * 0.05));
+        const comma = data.indexOf(",");
+        const jpeg = comma >= 0 ? data.slice(comma + 1) : "";
+        if (jpeg.length > 0 && jpeg.length <= 14000)
+            return jpeg;
+        width = Math.max(96, width * 0.72);
     }
 
-    const comma = data.indexOf(",");
-    const jpeg = comma >= 0 ? data.slice(comma + 1) : "";
-    return jpeg.length > 0 && jpeg.length <= 48000 ? jpeg : "";
+    return "";
 }
 
 export function connectionState() {

@@ -191,7 +191,7 @@ public sealed class MonitorSessionService(
 
     public void SetFrame(string userId, string? jpegBase64)
     {
-        if (string.IsNullOrWhiteSpace(jpegBase64) || jpegBase64.Length > 48_000)
+        if (string.IsNullOrWhiteSpace(jpegBase64) || jpegBase64.Length > 16_000)
             return;
 
         lock (_gate)

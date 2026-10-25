@@ -4,7 +4,6 @@
 @implements IDisposable
 @inject PatientAccessService Access
 @inject MonitorSessionService Sessions
-@inject IJSRuntime JS
 
 <PageTitle>Family watch</PageTitle>
 
@@ -47,10 +46,9 @@
                 : $"{_name} has not turned the camera on yet. Leave this page open. The picture appears when they press Monitor.")
         </p>
         <div class="watch-stage @(_seeing ? "seeing" : null)">
-            <video @ref="_video" class="watch-video @(_frameUrl is null ? null : "watch-hidden")" autoplay muted playsinline></video>
             @if (!string.IsNullOrEmpty(_frameUrl))
             {
-                <img class="watch-video watch-still" alt="" src="@_frameUrl" />
+                <img class="watch-video" alt="" src="@_frameUrl" />
             }
         </div>
         <p class="watch-status" role="status">@_status</p>
@@ -61,8 +59,6 @@
     [Parameter] public string Token { get; set; } = "";
 
     private readonly string _viewerId = Guid.NewGuid().ToString("N");
-    private ElementReference _video;
-    private IJSObjectReference? _js;
     private CancellationTokenSource? _poll;
     private string _entered = "";
     private string _name = "your family member";
@@ -75,8 +71,6 @@
     private bool _disposed;
     private int _pollBusy;
     private long _stamp;
-    private long _answered = -1;
-    private int _appliedIce;
     private long _frameId;
     private string? _frameUrl;
 
@@ -148,79 +142,29 @@
             {
                 _admitted = false;
                 _seeing = false;
-                _answered = -1;
+                _frameUrl = null;
                 _message = "The code was changed. Enter the new 4-digit code.";
-                await StopVideoAsync();
                 return;
             }
 
             ShowFrame(signal);
 
-            if (!signal.Live)
-            {
-                if (_answered >= 0)
-                    await StopVideoAsync();
-                _answered = -1;
-                _appliedIce = 0;
-                if (string.IsNullOrEmpty(signal.Frame))
-                {
-                    _seeing = false;
-                    _frameUrl = null;
-                    _status = $"Waiting for {_name} to press Monitor.";
-                }
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(signal.OfferSdp))
-            {
-                if (!string.IsNullOrEmpty(signal.Frame))
-                {
-                    _seeing = true;
-                    _status = $"You can see {_name}.";
-                }
-                return;
-            }
-
-            _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
-            if (_answered != signal.Generation)
-            {
-                var ice = await Sessions.IceServersAsync(CancellationToken.None);
-                var answer = await _js.InvokeAsync<string>("createAnswer", _video, signal.OfferSdp, ice);
-                Sessions.SetAnswer(Token, _viewerId, signal.Generation, answer);
-                _answered = signal.Generation;
-                _appliedIce = 0;
-                _seeing = true;
-                _status = "Connecting the picture.";
-            }
-
-            if (signal.PatientIce.Count < _appliedIce)
-                _appliedIce = 0;
-            if (signal.PatientIce.Count > _appliedIce)
-            {
-                await _js.InvokeVoidAsync("addIce", signal.PatientIce.Skip(_appliedIce).ToArray());
-                _appliedIce = signal.PatientIce.Count;
-            }
-
-            var outgoing = await _js.InvokeAsync<string[]>("takeIce");
-            if (outgoing.Length > 0)
-                Sessions.AddViewerIce(Token, _viewerId, signal.Generation, outgoing);
-
-            var state = await _js.InvokeAsync<string>("connectionState");
             if (!string.IsNullOrEmpty(signal.Frame))
             {
                 _seeing = true;
                 _status = $"You can see {_name}.";
+                return;
             }
-            else
+
+            if (!signal.Live)
             {
-                _status = state switch
-                {
-                    "connected" => $"You can see {_name}.",
-                    "failed" or "disconnected" => "The picture paused. Refresh this page.",
-                    _ => "Connecting the picture."
-                };
-                _seeing = state is not "failed";
+                _seeing = false;
+                _frameUrl = null;
+                _status = $"Waiting for {_name} to press Monitor.";
+                return;
             }
+
+            _status = "The picture is on its way.";
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
@@ -245,41 +189,11 @@
         _status = $"You can see {_name}.";
     }
 
-    private async Task StopVideoAsync()
-    {
-        if (_js is null)
-            return;
-
-        try
-        {
-            await _js.InvokeVoidAsync("stopPeer");
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
-        {
-        }
-    }
-
     public void Dispose()
     {
         _disposed = true;
         _poll?.Cancel();
         if (_admitted)
             Sessions.DetachViewer(Token, _viewerId);
-        _ = ReleaseAsync();
-    }
-
-    private async Task ReleaseAsync()
-    {
-        if (_js is null)
-            return;
-
-        try
-        {
-            await _js.InvokeVoidAsync("stopAll", _video);
-            await _js.DisposeAsync();
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
-        {
-        }
     }
 }

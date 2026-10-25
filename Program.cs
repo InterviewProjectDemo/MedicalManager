@@ -33,11 +33,11 @@ builder.Services.AddDataProtection()
     .SetApplicationName("MedicalManager");
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
-{
-    options.MaximumReceiveMessageSize = 128 * 1024;
-});
+    .AddInteractiveServerComponents()
+    .AddHubOptions(options =>
+    {
+        options.MaximumReceiveMessageSize = 64 * 1024;
+    });
 
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
