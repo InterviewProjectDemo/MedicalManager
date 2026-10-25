@@ -39,6 +39,7 @@ public static class IdentitySeeder
         }
 
         await EnsureOnboardingColumnsAsync(db);
+        await EnsureFamilyContactColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
         await EnsureCareReminderSchemaAsync(db);
 
@@ -1006,6 +1007,50 @@ public static class IdentitySeeder
             ALTER TABLE "PatientProfiles"
             ADD COLUMN IF NOT EXISTS "OnboardingCompletedAt" TIMESTAMP WITHOUT TIME ZONE NULL;
             """);
+    }
+
+    private static async Task EnsureFamilyContactColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = await ReadSqliteColumnsAsync(connection, "PatientProfiles");
+                await TryAddColumnAsync(db, columns, "FamilyContactName",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "FamilyContactName" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "FamilyContactPhone",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "FamilyContactPhone" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "FamilyContactPhotoContentType",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "FamilyContactPhotoContentType" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "FamilyContactPhotoData",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "FamilyContactPhotoData" BLOB NULL""");
+                await TryAddColumnAsync(db, columns, "FamilyContactPhotoUpdatedAt",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "FamilyContactPhotoUpdatedAt" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "FamilyContactName" TEXT NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "FamilyContactPhone" TEXT NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "FamilyContactPhotoContentType" TEXT NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "FamilyContactPhotoData" BYTEA NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "FamilyContactPhotoUpdatedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
     }
 
     private static async Task EnsureDashboardLayoutsTableAsync(ApplicationDbContext db)

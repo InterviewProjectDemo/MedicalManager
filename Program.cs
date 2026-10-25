@@ -224,7 +224,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["X-Frame-Options"] = "DENY";
-    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(self)";
     if (!app.Environment.IsDevelopment()
         && !context.Request.Path.StartsWithSegments("/health")
         && !context.Request.IsHttps)
@@ -348,6 +348,27 @@ app.MapGet("/profile-photo/{userId}", async (
         return Results.Forbid();
 
     var photo = await photos.GetPhotoDataAsync(userId);
+    if (photo is null)
+        return Results.NotFound();
+
+    return Results.File(photo.Value.Data, photo.Value.ContentType);
+}).RequireAuthorization();
+
+app.MapGet("/family-photo/{userId}", async (
+    string userId,
+    HttpContext context,
+    ProfilePhotoService photos) =>
+{
+    var currentUserId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(currentUserId))
+        return Results.Unauthorized();
+
+    var isSelf = string.Equals(currentUserId, userId, StringComparison.Ordinal);
+    var isDoctor = context.User.IsInRole(AppRoles.Doctor);
+    if (!isSelf && !isDoctor)
+        return Results.Forbid();
+
+    var photo = await photos.GetFamilyPhotoDataAsync(userId);
     if (photo is null)
         return Results.NotFound();
 

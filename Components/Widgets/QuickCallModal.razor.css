@@ -1,0 +1,265 @@
+.quick-call-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(11, 24, 40, 0.62);
+}
+
+.quick-call-window {
+    position: relative;
+    width: min(26rem, 100%);
+    padding: 1.7rem 1.35rem 1.35rem;
+    border-radius: 1.6rem;
+    background: #fff;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(11, 24, 40, 0.28);
+}
+
+.quick-call-window.is-emergency {
+    box-shadow: 0 0 0 4px #dc2626, 0 24px 60px rgba(11, 24, 40, 0.28);
+}
+
+.quick-call-window.is-family {
+    box-shadow: 0 0 0 4px #16a34a, 0 24px 60px rgba(11, 24, 40, 0.28);
+}
+
+.quick-call-close {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.75rem;
+    width: 2.4rem;
+    height: 2.4rem;
+    border: none;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.quick-call-close:hover,
+.quick-call-close:focus-visible {
+    background: #e2e8f0;
+}
+
+.quick-call-kicker {
+    margin: 0 0 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.is-emergency .quick-call-kicker { color: #dc2626; }
+.is-family .quick-call-kicker { color: #15803d; }
+
+.quick-call-portrait {
+    width: 15.5rem;
+    height: 15.5rem;
+    max-width: 100%;
+    margin: 0 auto 0.95rem;
+    border-radius: 1.4rem;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e8f4f8;
+    box-shadow: 0 12px 30px rgba(15, 61, 92, 0.16);
+}
+
+.is-family .quick-call-portrait {
+    background: linear-gradient(160deg, #16a34a, #166534);
+}
+
+.quick-call-portrait img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.quick-call-initials {
+    color: #fff;
+    font-size: 4rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.quick-call-window h2 {
+    margin: 0;
+    color: #0f3d5c;
+    font-size: 1.55rem;
+}
+
+.quick-call-detail {
+    margin: 0.3rem 0 0;
+    color: #667085;
+    font-weight: 600;
+}
+
+.quick-call-dispatch-label {
+    margin: 0.9rem 0 0.4rem;
+    color: #b91c1c;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.quick-call-dispatch {
+    margin: 0;
+    text-align: left;
+    background: #fff5f5;
+    border: 1px solid #fecaca;
+    border-radius: 12px;
+    padding: 0.45rem 0.7rem;
+}
+
+.quick-call-dispatch div {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 0.35rem;
+    align-items: start;
+    padding: 0.22rem 0;
+}
+
+.quick-call-dispatch dt {
+    margin: 0;
+    color: #b91c1c;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.quick-call-dispatch dd {
+    margin: 0;
+    color: #0f3d5c;
+    font-size: 0.92rem;
+    font-weight: 700;
+}
+
+.quick-call-location {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+}
+
+.quick-call-coords {
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+}
+
+.quick-call-accuracy,
+.quick-call-refining,
+.quick-call-locating {
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.quick-call-locating,
+.quick-call-refining { color: #b91c1c; }
+
+.quick-call-map {
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.quick-call-status {
+    min-height: 4.4rem;
+    margin-top: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.quick-call-calling {
+    margin: 0;
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    animation: quick-call-pulse 1.1s ease-in-out infinite;
+}
+
+.is-emergency .quick-call-calling {
+    color: #dc2626;
+    text-shadow: 0 0 16px rgba(220, 38, 38, 0.55);
+}
+
+.is-family .quick-call-calling {
+    color: #16a34a;
+    text-shadow: 0 0 16px rgba(22, 163, 74, 0.55);
+}
+
+.quick-call-end,
+.quick-call-setup {
+    min-width: 11rem;
+    min-height: 3.6rem;
+    padding: 0.7rem 1.8rem;
+    border: none;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.is-emergency .quick-call-end,
+.is-emergency .quick-call-setup { background: #dc2626; }
+.is-family .quick-call-end,
+.is-family .quick-call-setup { background: #16a34a; }
+
+.quick-call-end:hover,
+.quick-call-setup:hover,
+.quick-call-end:focus-visible,
+.quick-call-setup:focus-visible {
+    filter: brightness(0.94);
+    color: #fff;
+}
+
+.quick-call-note {
+    margin: 0.35rem 0 0;
+    color: #667085;
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+@keyframes quick-call-pulse {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.08); filter: brightness(1.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .quick-call-calling { animation: none; }
+}
+
+@media (max-width: 640.98px) {
+    .quick-call-backdrop {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .quick-call-window {
+        width: 100%;
+        border-radius: 1.4rem 1.4rem 0 0;
+        padding-bottom: calc(1.35rem + env(safe-area-inset-bottom));
+    }
+
+    .quick-call-portrait {
+        width: 13.5rem;
+        height: 13.5rem;
+    }
+}

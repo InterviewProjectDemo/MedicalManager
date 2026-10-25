@@ -35,6 +35,14 @@ public class ProfilePhotoService
         return $"/profile-photo/{userId}?v={updatedAt.Value.Ticks}";
     }
 
+    public string? GetFamilyPhotoUrl(string userId, DateTime? updatedAt)
+    {
+        if (updatedAt is null)
+            return null;
+
+        return $"/family-photo/{userId}?v={updatedAt.Value.Ticks}";
+    }
+
     public async Task<string?> GetPhotoUrlForUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
@@ -130,16 +138,101 @@ public class ProfilePhotoService
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<(string? UserId, string? Error)> ResolveTargetUserIdAsync(string? targetUserId)
+    public async Task<(byte[] Data, string ContentType)?> GetFamilyPhotoDataAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await db.PatientProfiles
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && p.FamilyContactPhotoData != null)
+            .Select(p => new { p.FamilyContactPhotoData, p.FamilyContactPhotoContentType })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (profile?.FamilyContactPhotoData is null || string.IsNullOrWhiteSpace(profile.FamilyContactPhotoContentType))
+            return null;
+
+        return (profile.FamilyContactPhotoData, profile.FamilyContactPhotoContentType);
+    }
+
+    public async Task<(bool Success, string? Error, string? PhotoUrl)> SaveFamilyPhotoAsync(
+        string? targetUserId,
+        byte[] bytes,
+        string? contentType,
+        string? fileName = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var stream = new MemoryStream(bytes);
+        return await SaveFamilyUploadAsync(targetUserId, stream, fileName, contentType, bytes.LongLength, cancellationToken);
+    }
+
+    public async Task<(bool Success, string? Error, string? PhotoUrl)> SaveFamilyUploadAsync(
+        string? targetUserId,
+        Stream stream,
+        string? fileName,
+        string? contentType,
+        long size,
+        CancellationToken cancellationToken = default)
+    {
+        var (userId, resolveError) = await ResolveTargetUserIdAsync(targetUserId, "family photo");
+        if (resolveError is not null)
+            return (false, resolveError, null);
+
+        if (size <= 0 || size > MaxBytes)
+            return (false, "Image must be between 1 byte and 5 MB.", null);
+
+        var normalizedContentType = ResolveContentType(fileName, contentType);
+        if (normalizedContentType is null)
+            return (false, "Only JPG, PNG, and WebP images are allowed.", null);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await GetOrCreateProfileAsync(db, userId!, cancellationToken);
+
+        await using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory, cancellationToken);
+        var photoBytes = memory.ToArray();
+
+        if (photoBytes.Length == 0 || photoBytes.Length > MaxBytes)
+            return (false, "Image must be between 1 byte and 5 MB.", null);
+
+        profile.FamilyContactPhotoData = photoBytes;
+        profile.FamilyContactPhotoContentType = normalizedContentType;
+        profile.FamilyContactPhotoUpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return (true, null, GetFamilyPhotoUrl(userId!, profile.FamilyContactPhotoUpdatedAt));
+    }
+
+    public async Task DeleteFamilyPhotoAsync(string? targetUserId, CancellationToken cancellationToken = default)
+    {
+        var (userId, _) = await ResolveTargetUserIdAsync(targetUserId, "family photo");
+        if (userId is null)
+            return;
+
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+        if (profile is null)
+            return;
+
+        profile.FamilyContactPhotoData = null;
+        profile.FamilyContactPhotoContentType = null;
+        profile.FamilyContactPhotoUpdatedAt = null;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<(string? UserId, string? Error)> ResolveTargetUserIdAsync(string? targetUserId) =>
+        await ResolveTargetUserIdAsync(targetUserId, "profile photo");
+
+    private async Task<(string? UserId, string? Error)> ResolveTargetUserIdAsync(string? targetUserId, string item)
     {
         var state = await _auth.GetAuthenticationStateAsync();
         var principal = state.User;
         if (principal.Identity?.IsAuthenticated != true)
-            return (null, "You must be signed in to save a profile photo.");
+            return (null, $"You must be signed in to save a {item}.");
 
         var currentUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
         if (string.IsNullOrWhiteSpace(currentUserId))
-            return (null, "You must be signed in to save a profile photo.");
+            return (null, $"You must be signed in to save a {item}.");
 
         var resolved = string.IsNullOrWhiteSpace(targetUserId)
             ? currentUserId
@@ -148,7 +241,7 @@ public class ProfilePhotoService
         if (!string.Equals(resolved, currentUserId, StringComparison.Ordinal)
             && !principal.IsInRole(AppRoles.Doctor))
         {
-            return (null, "You can only update your own profile photo.");
+            return (null, $"You can only update your own {item}.");
         }
 
         return (resolved, null);

@@ -38,6 +38,19 @@ public class PatientProfile
     [MaxLength(400)]
     public string? Notes { get; set; }
 
+    [MaxLength(200)]
+    public string? FamilyContactName { get; set; }
+
+    [MaxLength(40)]
+    public string? FamilyContactPhone { get; set; }
+
+    public byte[]? FamilyContactPhotoData { get; set; }
+
+    [MaxLength(100)]
+    public string? FamilyContactPhotoContentType { get; set; }
+
+    public DateTime? FamilyContactPhotoUpdatedAt { get; set; }
+
     public byte[]? ProfilePhotoData { get; set; }
 
     [MaxLength(100)]

@@ -4,6 +4,7 @@
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider Auth
 @inject ProfilePhotoService PhotoService
+@inject PatientAccessService Access
 
 <div class="top-row nav-header navbar navbar-dark">
     <div class="nav-brand-block">
@@ -72,6 +73,14 @@
     <nav class="nav flex-column" aria-label="Main">
         <AuthorizeView>
             <Authorized Context="authContext">
+                <div class="nav-call-actions">
+                    <button type="button" class="nav-call-btn nav-call-emergency" @onclick="OpenEmergencyCall">
+                        Emergency
+                    </button>
+                    <button type="button" class="nav-call-btn nav-call-family" @onclick="OpenFamilyCall">
+                        Family
+                    </button>
+                </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-dash" href="@Href("")" Match="NavLinkMatch.All">
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
@@ -204,6 +213,14 @@
         <ProfilePhotoModal Visible="_photoModalOpen"
                            VisibleChanged="OnPhotoModalVisibleChanged"
                            PhotoSaved="OnPhotoSaved" />
+        <QuickCallModal Visible="_callOpen"
+                        VisibleChanged="OnCallVisibleChanged"
+                        Kind="@_callKind"
+                        ContactName="@_familyName"
+                        ContactPhone="@_familyPhone"
+                        PhotoUrl="@_familyPhotoUrl"
+                        CallerName="@_callerName"
+                        CallerPhone="@_callerPhone" />
     </Authorized>
 </AuthorizeView>
 
@@ -214,6 +231,13 @@
     private string? _photoUrl;
     private bool _photoModalOpen;
     private bool _navOpen;
+    private bool _callOpen;
+    private string _callKind = "emergency";
+    private string? _familyName;
+    private string? _familyPhone;
+    private string? _familyPhotoUrl;
+    private string? _callerName;
+    private string? _callerPhone;
 
     private bool IsMoreSection
     {
@@ -235,6 +259,7 @@
         UpdateFromUri();
         NavigationManager.LocationChanged += OnLocationChanged;
         await LoadPhotoAsync();
+        await LoadFamilyContactAsync();
     }
 
     private async Task LoadPhotoAsync()
@@ -248,6 +273,58 @@
         }
 
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
+    }
+
+    private async Task LoadFamilyContactAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId))
+        {
+            _familyName = null;
+            _familyPhone = null;
+            _familyPhotoUrl = null;
+            return;
+        }
+
+        var contact = await Access.GetFamilyContactAsync(_userId);
+        _familyName = contact.Name;
+        _familyPhone = contact.Phone;
+        _familyPhotoUrl = PhotoService.GetFamilyPhotoUrl(_userId, contact.PhotoUpdatedAt);
+    }
+
+    private async Task LoadCallerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId))
+        {
+            _callerName = null;
+            _callerPhone = null;
+            return;
+        }
+
+        var caller = await Access.GetEmergencyCallerAsync(_userId);
+        _callerName = caller.Name;
+        _callerPhone = caller.Phone;
+    }
+
+    private async Task OpenEmergencyCall()
+    {
+        await LoadCallerAsync();
+        _callKind = "emergency";
+        _callOpen = true;
+        _navOpen = false;
+    }
+
+    private async Task OpenFamilyCall()
+    {
+        await LoadFamilyContactAsync();
+        _callKind = "family";
+        _callOpen = true;
+        _navOpen = false;
+    }
+
+    private Task OnCallVisibleChanged(bool visible)
+    {
+        _callOpen = visible;
+        return Task.CompletedTask;
     }
 
     private void ToggleNav() => _navOpen = !_navOpen;
@@ -271,11 +348,20 @@
         return InvokeAsync(StateHasChanged);
     }
 
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         _navOpen = false;
         UpdateFromUri();
-        InvokeAsync(StateHasChanged);
+        try
+        {
+            await LoadFamilyContactAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void UpdateFromUri()

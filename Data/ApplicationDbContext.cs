@@ -202,8 +202,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<PatientProfile>().Property(x => x.HomeAddress).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.NamePronunciation).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.FamilyContactName).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.FamilyContactPhone).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
+        builder.Entity<PatientProfile>().Property(x => x.FamilyContactPhotoData).HasConversion(bytes);
 
         builder.Entity<BloodPressureReading>().Property(x => x.Systolic).HasConversion(whole).HasColumnType("text");
         builder.Entity<BloodPressureReading>().Property(x => x.Diastolic).HasConversion(whole).HasColumnType("text");

@@ -19,6 +19,8 @@ public static class PhiAtRestMigrator
         ("PatientProfiles", "HomeAddress", false),
         ("PatientProfiles", "NamePronunciation", false),
         ("PatientProfiles", "Notes", false),
+        ("PatientProfiles", "FamilyContactName", false),
+        ("PatientProfiles", "FamilyContactPhone", false),
         ("PatientProfiles", "DateOfBirth", false),
         ("BloodPressureReadings", "Systolic", false),
         ("BloodPressureReadings", "Diastolic", false),
@@ -67,7 +69,8 @@ public static class PhiAtRestMigrator
             foreach (var (table, column, _) in TextColumns)
                 updated += await EncryptTextAsync(connection, protector, table, column, deterministic: false);
             updated += await EncryptTextAsync(connection, protector, "LabResults", "TestCode", deterministic: true);
-            updated += await EncryptPhotoAsync(connection, protector);
+            updated += await EncryptPhotoAsync(connection, protector, "ProfilePhotoData");
+            updated += await EncryptPhotoAsync(connection, protector, "FamilyContactPhotoData");
             return updated;
         }
         finally
@@ -218,15 +221,21 @@ public static class PhiAtRestMigrator
         return updated;
     }
 
-    private static async Task<int> EncryptPhotoAsync(System.Data.Common.DbConnection connection, IPhiProtector protector)
+    private static async Task<int> EncryptPhotoAsync(
+        System.Data.Common.DbConnection connection,
+        IPhiProtector protector,
+        string column)
     {
+        if (column is not ("ProfilePhotoData" or "FamilyContactPhotoData"))
+            return 0;
+
         var rows = new List<(object Id, byte[] Data)>();
         await using (var select = connection.CreateCommand())
         {
-            select.CommandText = """
-                SELECT "Id", "ProfilePhotoData"
+            select.CommandText = $"""
+                SELECT "Id", "{column}"
                 FROM "PatientProfiles"
-                WHERE "ProfilePhotoData" IS NOT NULL
+                WHERE "{column}" IS NOT NULL
                 """;
             try
             {
@@ -251,7 +260,7 @@ public static class PhiAtRestMigrator
         foreach (var (id, data) in rows)
         {
             await using var update = connection.CreateCommand();
-            update.CommandText = """UPDATE "PatientProfiles" SET "ProfilePhotoData" = @value WHERE "Id" = @id""";
+            update.CommandText = $"""UPDATE "PatientProfiles" SET "{column}" = @value WHERE "Id" = @id""";
             var value = update.CreateParameter();
             value.ParameterName = "@value";
             value.Value = protector.ProtectBytes(data) ?? data;

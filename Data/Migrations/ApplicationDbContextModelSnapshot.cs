@@ -556,6 +556,24 @@ namespace MedicalManager.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FamilyContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FamilyContactPhone")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FamilyContactPhotoContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("FamilyContactPhotoData")
+                        .HasColumnType("BLOB");
+
+                    b.Property<DateTime?>("FamilyContactPhotoUpdatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("OnboardingCompletedAt")
                         .HasColumnType("TEXT");
 

@@ -26,7 +26,7 @@ else
         <div>
             <p class="eyebrow">Your account</p>
             <h1>Patient profile</h1>
-            <p class="muted">Manage your photo and health profile details.</p>
+            <p class="muted">Manage your photo, family contact, and health profile details.</p>
         </div>
     </div>
 
@@ -170,6 +170,120 @@ else
     </div>
 
     <div class="profile-page-card">
+        <div class="profile-page-details-head">
+            <div>
+                <h2 class="reminder-settings-title">Family contact</h2>
+                <p class="muted mb-0">The person reached from the Family button. Name and phone are required. A photo is optional.</p>
+            </div>
+            @if (!_editingFamily)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="StartEditFamily">
+                    @(_profile?.FamilyContactName is null ? "Add family contact" : "Edit")
+                </button>
+            }
+        </div>
+
+        @if (_editingFamily)
+        {
+            <EditForm Model="_familyForm" OnValidSubmit="SaveFamilyContact">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+                <div class="family-contact-edit">
+                    <div class="family-contact-photo">
+                        @if (!string.IsNullOrWhiteSpace(FamilyPhotoPreview))
+                        {
+                            <img src="@FamilyPhotoPreview" alt="" />
+                        }
+                        else
+                        {
+                            <span>@FamilyInitials</span>
+                        }
+                    </div>
+                    <div class="row g-3 flex-grow-1">
+                        <div class="col-md-6">
+                            <label class="form-label" for="family-name">Name</label>
+                            <InputText id="family-name" class="form-control" @bind-Value="_familyForm.Name" />
+                            <ValidationMessage For="() => _familyForm.Name" class="text-danger" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="family-phone">Phone</label>
+                            <InputText id="family-phone" class="form-control" @bind-Value="_familyForm.Phone" placeholder="555-0100" />
+                            <ValidationMessage For="() => _familyForm.Phone" class="text-danger" />
+                        </div>
+                        <div class="col-12">
+                            <label class="btn btn-outline-secondary btn-sm family-photo-file-btn">
+                                Choose photo
+                                <InputFile OnChange="OnFamilyPhotoSelected" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" class="profile-photo-file-input" />
+                            </label>
+                            @if (HasFamilyPhoto)
+                            {
+                                <button type="button" class="btn btn-outline-secondary btn-sm ms-2" @onclick="MarkFamilyPhotoCleared">
+                                    Remove photo
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_familyError))
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_familyError</div>
+                }
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-purple" disabled="@_savingFamily">
+                        @(_savingFamily ? "Saving…" : "Save family contact")
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelEditFamily" disabled="@_savingFamily">
+                        Cancel
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(_profile?.FamilyContactName))
+                    {
+                        <button type="button" class="btn btn-outline-danger ms-auto" @onclick="RemoveFamilyContact" disabled="@_savingFamily">
+                            Remove family contact
+                        </button>
+                    }
+                </div>
+            </EditForm>
+        }
+        else if (string.IsNullOrWhiteSpace(_profile?.FamilyContactName))
+        {
+            <p class="muted mb-0">No family contact yet. Add a name and phone so the Family button can reach them.</p>
+        }
+        else
+        {
+            <div class="family-contact-view">
+                <div class="family-contact-photo">
+                    @if (!string.IsNullOrWhiteSpace(_familyPhotoUrl))
+                    {
+                        <img src="@_familyPhotoUrl" alt="" />
+                    }
+                    else
+                    {
+                        <span>@FamilyInitials</span>
+                    }
+                </div>
+                <dl class="profile-page-details">
+                    <div>
+                        <dt>Name</dt>
+                        <dd>@_profile.FamilyContactName</dd>
+                    </div>
+                    <div>
+                        <dt>Phone</dt>
+                        <dd>@_profile.FamilyContactPhone</dd>
+                    </div>
+                    <div>
+                        <dt>Photo</dt>
+                        <dd>@(string.IsNullOrWhiteSpace(_familyPhotoUrl) ? "None" : "Added")</dd>
+                    </div>
+                </dl>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_familyMessage))
+            {
+                <p class="muted mb-0">@_familyMessage</p>
+            }
+        }
+    </div>
+
+    <div class="profile-page-card">
         <h2 class="reminder-settings-title">Notification services</h2>
         <p class="muted">
             Calls come from Medical Manager at (320) 350-3177. Appointment reminders also send a text. Medication and to-do reminders are phone calls.
@@ -231,15 +345,34 @@ else
     private ApplicationUser? _user;
     private PatientProfile? _profile;
     private readonly ProfileForm _profileForm = new();
+    private readonly FamilyForm _familyForm = new();
     private readonly ReminderForm _reminderForm = new();
     private string? _profileMessage;
     private string? _profileError;
     private string? _reminderMessage;
+    private bool _editingFamily;
+    private bool _savingFamily;
+    private bool _clearFamilyPhoto;
+    private string? _familyMessage;
+    private string? _familyError;
+    private string? _familyPhotoUrl;
+    private string? _familyPreviewUrl;
+    private byte[]? _familyPhotoBytes;
+    private string? _familyPhotoName;
+    private string? _familyPhotoType;
 
     private string DisplayPhone =>
         string.IsNullOrWhiteSpace(_profile?.Phone)
             ? (string.IsNullOrWhiteSpace(_user?.PhoneNumber) ? "—" : _user.PhoneNumber)
             : _profile.Phone;
+
+    private string? FamilyPhotoPreview =>
+        _clearFamilyPhoto ? null : (_familyPreviewUrl ?? _familyPhotoUrl);
+
+    private bool HasFamilyPhoto =>
+        !_clearFamilyPhoto && (!string.IsNullOrWhiteSpace(_familyPreviewUrl) || !string.IsNullOrWhiteSpace(_familyPhotoUrl));
+
+    private string FamilyInitials => InitialsFrom(_editingFamily ? _familyForm.Name : _profile?.FamilyContactName);
 
     private bool HasCustomSex =>
         !string.IsNullOrWhiteSpace(_profileForm.Sex)
@@ -272,6 +405,7 @@ else
         _reminderForm.MedicationRemindersEnabled = _profile?.MedicationRemindersEnabled ?? true;
         _reminderForm.ToDoRemindersEnabled = _profile?.ToDoRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
+        _familyPhotoUrl = PhotoService.GetFamilyPhotoUrl(_userId, _profile?.FamilyContactPhotoUpdatedAt);
         _loading = false;
     }
 
@@ -352,6 +486,144 @@ else
         _profileForm.Notes = _profile?.Notes;
     }
 
+    private void StartEditFamily()
+    {
+        _familyForm.Name = _profile?.FamilyContactName ?? "";
+        _familyForm.Phone = _profile?.FamilyContactPhone;
+        _familyPreviewUrl = null;
+        _familyPhotoBytes = null;
+        _familyPhotoName = null;
+        _familyPhotoType = null;
+        _clearFamilyPhoto = false;
+        _familyError = null;
+        _familyMessage = null;
+        _editingFamily = true;
+    }
+
+    private void CancelEditFamily()
+    {
+        _familyError = null;
+        _familyPreviewUrl = null;
+        _familyPhotoBytes = null;
+        _clearFamilyPhoto = false;
+        _editingFamily = false;
+    }
+
+    private async Task OnFamilyPhotoSelected(InputFileChangeEventArgs e)
+    {
+        _familyError = null;
+        var file = e.File;
+        if (file.Size > ProfilePhotoService.MaxBytes)
+        {
+            _familyError = "Image must be 5 MB or smaller.";
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(ProfilePhotoService.MaxBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            _familyPhotoBytes = memory.ToArray();
+            _familyPhotoName = file.Name;
+            _familyPhotoType = file.ContentType;
+            _clearFamilyPhoto = false;
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+            _familyPreviewUrl = $"data:{contentType};base64,{Convert.ToBase64String(_familyPhotoBytes)}";
+        }
+        catch (Exception ex)
+        {
+            _familyError = ex.Message;
+        }
+    }
+
+    private void MarkFamilyPhotoCleared()
+    {
+        _clearFamilyPhoto = true;
+        _familyPreviewUrl = null;
+        _familyPhotoBytes = null;
+        _familyPhotoName = null;
+        _familyPhotoType = null;
+    }
+
+    private async Task SaveFamilyContact()
+    {
+        if (_userId is null || _savingFamily)
+            return;
+
+        _savingFamily = true;
+        _familyError = null;
+        try
+        {
+            await Access.SaveFamilyContactAsync(_userId, _familyForm.Name, _familyForm.Phone);
+
+            if (_clearFamilyPhoto)
+            {
+                await PhotoService.DeleteFamilyPhotoAsync(_userId);
+            }
+            else if (_familyPhotoBytes is not null)
+            {
+                var saved = await PhotoService.SaveFamilyPhotoAsync(
+                    _userId,
+                    _familyPhotoBytes,
+                    _familyPhotoType,
+                    _familyPhotoName);
+                if (!saved.Success)
+                {
+                    _familyError = saved.Error ?? "The photo could not be saved.";
+                    _profile = await Access.GetProfileAsync(_userId);
+                    return;
+                }
+            }
+
+            _profile = await Access.GetProfileAsync(_userId);
+            _familyPhotoUrl = PhotoService.GetFamilyPhotoUrl(_userId, _profile?.FamilyContactPhotoUpdatedAt);
+            _familyPreviewUrl = null;
+            _familyPhotoBytes = null;
+            _clearFamilyPhoto = false;
+            _editingFamily = false;
+            _familyMessage = "Family contact saved.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _familyError = ex.Message;
+        }
+        finally
+        {
+            _savingFamily = false;
+        }
+    }
+
+    private async Task RemoveFamilyContact()
+    {
+        if (_userId is null || _savingFamily)
+            return;
+
+        _savingFamily = true;
+        _familyError = null;
+        try
+        {
+            await Access.ClearFamilyContactAsync(_userId);
+            _profile = await Access.GetProfileAsync(_userId);
+            _familyPhotoUrl = null;
+            _familyPreviewUrl = null;
+            _familyPhotoBytes = null;
+            _clearFamilyPhoto = false;
+            _familyForm.Name = "";
+            _familyForm.Phone = null;
+            _editingFamily = false;
+            _familyMessage = "Family contact removed.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _familyError = ex.Message;
+        }
+        finally
+        {
+            _savingFamily = false;
+        }
+    }
+
     private async Task SaveReminders()
     {
         if (_userId is null)
@@ -404,6 +676,19 @@ else
         return "?";
     }
 
+    private static string InitialsFrom(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "?";
+
+        var parts = name.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        if (parts[0].Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}";
+        return char.ToUpperInvariant(parts[0][0]).ToString();
+    }
+
     private sealed class ProfileForm
     {
         [Required(ErrorMessage = "Full name is required.")]
@@ -424,6 +709,18 @@ else
 
         [MaxLength(400)]
         public string? Notes { get; set; }
+    }
+
+    private sealed class FamilyForm
+    {
+        [Required(ErrorMessage = "Family contact name is required.")]
+        [MaxLength(200)]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Family contact phone is required.")]
+        [Phone(ErrorMessage = "Enter a valid phone number.")]
+        [MaxLength(40)]
+        public string? Phone { get; set; }
     }
 
     private sealed class ReminderForm

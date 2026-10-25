@@ -1832,6 +1832,35 @@ th[aria-sort="descending"] .sort-indicator {
 }
 .profile-page-details dd { margin: 0; font-weight: 600; color: #0f3d5c; }
 .profile-page-account-hint { margin: 0; font-size: 0.9rem; }
+.family-contact-edit,
+.family-contact-view {
+    display: flex;
+    gap: 1.1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.family-contact-photo {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(160deg, #16a34a, #166534);
+    color: #fff;
+    font-size: 1.8rem;
+    font-weight: 800;
+}
+.family-contact-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.family-photo-file-btn { position: relative; overflow: hidden; cursor: pointer; }
+.family-contact-view .profile-page-details { flex: 1; margin: 0; }
 .reminder-settings-title { margin: 0 0 0.35rem; font-size: 1.2rem; color: #0f3d5c; }
 
 @media (max-width: 1100px) {
@@ -3114,6 +3143,14 @@ body:has(.nav-scrollable.open) {
     }
 
     .demo-box { margin-top: 1rem; }
+
+.auth-product-panel a {
+    font-weight: 700;
+    color: #0f766e;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+}
+.auth-product-panel a:hover { color: #115e59; }
 
     .account-manage h1 { font-size: 1.4rem; }
     .account-manage h2 { font-size: 1.05rem; }

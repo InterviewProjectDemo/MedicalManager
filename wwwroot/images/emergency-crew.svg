@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-label="Ambulance and EMT">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ec8e3"/>
+      <stop offset="1" stop-color="#eef7fb"/>
+    </linearGradient>
+    <linearGradient id="jacket" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#sky)"/>
+  <ellipse cx="140" cy="118" rx="78" ry="26" fill="#fff" opacity="0.8"/>
+  <ellipse cx="188" cy="112" rx="48" ry="20" fill="#fff" opacity="0.9"/>
+  <ellipse cx="470" cy="96" rx="64" ry="22" fill="#fff" opacity="0.75"/>
+  <rect y="418" width="640" height="222" fill="#d5e2c8"/>
+  <rect y="508" width="640" height="58" fill="#64748b"/>
+  <rect y="530" width="640" height="8" fill="#f8fafc" opacity="0.55"/>
+  <rect x="0" y="508" width="70" height="8" fill="#f8fafc"/>
+  <rect x="140" y="508" width="90" height="8" fill="#f8fafc"/>
+  <rect x="310" y="508" width="90" height="8" fill="#f8fafc"/>
+  <rect x="490" y="508" width="90" height="8" fill="#f8fafc"/>
+
+  <g>
+    <rect x="58" y="332" width="292" height="150" rx="22" fill="#f8fafc" stroke="#cbd5e1" stroke-width="4"/>
+    <rect x="58" y="392" width="292" height="28" fill="#dc2626"/>
+    <rect x="78" y="352" width="92" height="52" rx="8" fill="#bae6fd" stroke="#7dd3fc" stroke-width="3"/>
+    <rect x="188" y="352" width="70" height="34" rx="6" fill="#e2e8f0"/>
+    <rect x="214" y="348" width="86" height="16" rx="6" fill="#1e293b"/>
+    <circle cx="236" cy="356" r="5" fill="#ef4444"/>
+    <circle cx="256" cy="356" r="5" fill="#3b82f6"/>
+    <rect x="276" y="360" width="52" height="52" rx="8" fill="#fff" stroke="#dc2626" stroke-width="4"/>
+    <rect x="297" y="370" width="10" height="32" rx="2" fill="#dc2626"/>
+    <rect x="286" y="381" width="32" height="10" rx="2" fill="#dc2626"/>
+    <circle cx="128" cy="482" r="28" fill="#1e293b"/>
+    <circle cx="128" cy="482" r="12" fill="#cbd5e1"/>
+    <circle cx="286" cy="482" r="28" fill="#1e293b"/>
+    <circle cx="286" cy="482" r="12" fill="#cbd5e1"/>
+  </g>
+
+  <g>
+    <rect x="392" y="430" width="46" height="34" rx="6" fill="#0f172a"/>
+    <rect x="400" y="418" width="30" height="16" rx="4" fill="#334155"/>
+    <path d="M430 468h46l10 28H420z" fill="#1e293b"/>
+    <rect x="404" y="248" width="132" height="168" rx="36" fill="url(#jacket)"/>
+    <rect x="418" y="292" width="104" height="16" rx="6" fill="#f8fafc" opacity="0.9"/>
+    <rect x="418" y="324" width="104" height="16" rx="6" fill="#f8fafc" opacity="0.9"/>
+    <rect x="430" y="408" width="36" height="92" rx="12" fill="#1e3a5f"/>
+    <rect x="478" y="408" width="36" height="92" rx="12" fill="#1e3a5f"/>
+    <rect x="424" y="488" width="46" height="18" rx="6" fill="#0f172a"/>
+    <rect x="472" y="488" width="46" height="18" rx="6" fill="#0f172a"/>
+    <circle cx="470" cy="214" r="48" fill="#f1c7a4"/>
+    <path d="M422 206c6-48 92-52 100-4 8 8 10 22 6 34-28 8-78 8-106-6-2-8-2-16 0-24z" fill="#1d4ed8"/>
+    <rect x="428" y="188" width="84" height="16" rx="6" fill="#1e3a8a"/>
+    <circle cx="452" cy="214" r="4" fill="#1e293b"/>
+    <circle cx="488" cy="214" r="4" fill="#1e293b"/>
+    <path d="M456 232c8 8 20 8 28 0" fill="none" stroke="#9a3412" stroke-width="3" stroke-linecap="round"/>
+    <rect x="548" y="300" width="28" height="78" rx="12" fill="#f59e0b"/>
+  </g>
+</svg>

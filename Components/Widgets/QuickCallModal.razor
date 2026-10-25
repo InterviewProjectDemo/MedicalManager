@@ -1,0 +1,341 @@
+@using System.Globalization
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (Visible)
+{
+    <div class="quick-call-backdrop" @onclick="CloseAsync">
+        <div class="quick-call-window @KindClass"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="quick-call-title"
+             @onclick:stopPropagation="true">
+            <button type="button" class="quick-call-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
+            <p class="quick-call-kicker">@Kicker</p>
+            <div class="quick-call-portrait">
+                @if (IsEmergency)
+                {
+                    <img src="/images/emergency-crew.svg" alt="Ambulance and an EMT" />
+                }
+                else if (!string.IsNullOrWhiteSpace(PhotoUrl))
+                {
+                    <img src="@PhotoUrl" alt="" />
+                }
+                else
+                {
+                    <span class="quick-call-initials" aria-hidden="true">@Initials</span>
+                }
+            </div>
+            <h2 id="quick-call-title">@Title</h2>
+            @if (!string.IsNullOrWhiteSpace(Detail))
+            {
+                <p class="quick-call-detail">@Detail</p>
+            }
+            @if (IsEmergency && CanPlaceCall)
+            {
+                <p class="quick-call-dispatch-label">Provided to the emergency center</p>
+                <dl class="quick-call-dispatch">
+                    <div>
+                        <dt>Name</dt>
+                        <dd>@Shown(CallerName)</dd>
+                    </div>
+                    <div>
+                        <dt>Phone</dt>
+                        <dd>@Shown(CallerPhone)</dd>
+                    </div>
+                    <div>
+                        <dt>Location</dt>
+                        <dd class="quick-call-location">
+                            @if (_hasFix)
+                            {
+                                <span class="quick-call-coords">@CoordinateText</span>
+                                <span class="quick-call-accuracy">± @_accuracy!.Value.ToString("0") m</span>
+                                @if (_accuracy > PreciseMeters)
+                                {
+                                    <span class="quick-call-refining">Refining GPS for a tighter pin.</span>
+                                }
+                                <a class="quick-call-map" href="@MapUrl" target="_blank" rel="noopener noreferrer">Open precise map</a>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_gpsError))
+                            {
+                                <span>@_gpsError</span>
+                            }
+                            else
+                            {
+                                <span class="quick-call-locating">Locating with GPS…</span>
+                            }
+                        </dd>
+                    </div>
+                </dl>
+            }
+            <div class="quick-call-status" aria-live="polite">
+                @if (!CanPlaceCall)
+                {
+                    <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Set up family contact</a>
+                }
+                else if (_connected)
+                {
+                    <button type="button" class="quick-call-end" @onclick="CloseAsync">End</button>
+                }
+                else
+                {
+                    <p class="quick-call-calling">Calling</p>
+                }
+            </div>
+            @if (IsEmergency)
+            {
+                <p class="quick-call-note">Your name, phone, and live GPS location are included with this call. This screen does not dial 911.</p>
+            }
+            else if (!CanPlaceCall)
+            {
+                <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional.</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public string Kind { get; set; } = "emergency";
+    [Parameter] public string? ContactName { get; set; }
+    [Parameter] public string? ContactPhone { get; set; }
+    [Parameter] public string? PhotoUrl { get; set; }
+    [Parameter] public string? CallerName { get; set; }
+    [Parameter] public string? CallerPhone { get; set; }
+
+    private const double PreciseMeters = 25;
+
+    private bool _connected;
+    private bool _armed;
+    private bool _disposed;
+    private bool _hasFix;
+    private int _session;
+    private int _watchId;
+    private double _latitude;
+    private double _longitude;
+    private double? _accuracy;
+    private string? _gpsError;
+    private CancellationTokenSource? _cts;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<QuickCallModal>? _gpsRef;
+
+    private string CoordinateText =>
+        string.Create(CultureInfo.InvariantCulture, $"{_latitude:0.000000}, {_longitude:0.000000}");
+
+    private string MapUrl =>
+        string.Create(CultureInfo.InvariantCulture, $"https://www.google.com/maps/search/?api=1&query={_latitude:0.000000},{_longitude:0.000000}");
+
+    private bool IsEmergency => string.Equals(Kind, "emergency", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanPlaceCall =>
+        IsEmergency
+        || (!string.IsNullOrWhiteSpace(ContactName) && !string.IsNullOrWhiteSpace(ContactPhone));
+
+    private string KindClass => IsEmergency ? "is-emergency" : "is-family";
+    private string Kicker => IsEmergency ? "Emergency" : "Family";
+
+    private string Title => IsEmergency
+        ? "Emergency services"
+        : (string.IsNullOrWhiteSpace(ContactName) ? "No family contact yet" : ContactName.Trim());
+
+    private string? Detail => IsEmergency
+        ? "Ambulance and EMT"
+        : (string.IsNullOrWhiteSpace(ContactPhone) ? null : ContactPhone.Trim());
+
+    private string Initials => InitialsFrom(ContactName);
+
+    private static string Shown(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Not on your profile" : value.Trim();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_armed)
+        {
+            _armed = true;
+            _connected = false;
+            ResetGps();
+            await StartCallingAsync();
+        }
+        else if (!Visible && _armed)
+        {
+            _armed = false;
+            _connected = false;
+            CancelCalling();
+        }
+    }
+
+    private async Task StartCallingAsync()
+    {
+        CancelCalling();
+        if (!CanPlaceCall || _disposed)
+            return;
+
+        var session = ++_session;
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        if (IsEmergency)
+            _ = WatchGpsAsync(session);
+
+        var started = DateTime.UtcNow;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(200, token);
+                var elapsed = DateTime.UtcNow - started;
+                if (!IsEmergency)
+                {
+                    if (elapsed >= TimeSpan.FromSeconds(2.2))
+                        break;
+                    continue;
+                }
+
+                var precise = _accuracy is <= PreciseMeters;
+                var settled = _gpsError is not null || elapsed >= TimeSpan.FromSeconds(12);
+                if (elapsed >= TimeSpan.FromSeconds(2.2) && (precise || settled))
+                    break;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (_disposed || session != _session || !Visible)
+            return;
+
+        _connected = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task WatchGpsAsync(int session)
+    {
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/QuickCallModal.razor.js");
+            _gpsRef ??= DotNetObjectReference.Create(this);
+            var id = await _module.InvokeAsync<int>("watchGps", _gpsRef);
+            if (_disposed || session != _session)
+            {
+                if (id != 0)
+                    await _module.InvokeVoidAsync("stopGps", id);
+                return;
+            }
+
+            _watchId = id;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            if (session == _session)
+            {
+                _gpsError = "GPS location is unavailable.";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnGpsFix(double latitude, double longitude, double accuracy)
+    {
+        if (_disposed)
+            return Task.CompletedTask;
+        if (_accuracy is double current && accuracy > current)
+            return Task.CompletedTask;
+
+        _latitude = latitude;
+        _longitude = longitude;
+        _accuracy = accuracy;
+        _hasFix = true;
+        _gpsError = null;
+        if (accuracy <= PreciseMeters && _watchId != 0)
+            _ = StopGpsAsync();
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnGpsError(int code)
+    {
+        if (_disposed || _hasFix)
+            return Task.CompletedTask;
+
+        _gpsError = code switch
+        {
+            1 => "Allow location access so responders can find you.",
+            3 => "GPS timed out. Try again outdoors or near a window.",
+            _ => "GPS location is unavailable."
+        };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetGps()
+    {
+        _hasFix = false;
+        _latitude = 0;
+        _longitude = 0;
+        _accuracy = null;
+        _gpsError = null;
+    }
+
+    private async Task StopGpsAsync()
+    {
+        var id = _watchId;
+        _watchId = 0;
+        if (id == 0 || _module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("stopGps", id);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        CancelCalling();
+        _connected = false;
+        _armed = false;
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private void CancelCalling()
+    {
+        _session++;
+        if (_cts is not null)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+        }
+
+        _ = StopGpsAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        CancelCalling();
+        _gpsRef?.Dispose();
+        _ = _module?.DisposeAsync().AsTask();
+    }
+
+    private static string InitialsFrom(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "?";
+
+        var parts = name.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        if (parts[0].Length >= 2)
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}";
+        return char.ToUpperInvariant(parts[0][0]).ToString();
+    }
+}

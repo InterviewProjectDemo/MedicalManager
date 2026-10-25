@@ -2,6 +2,8 @@
 .vs
 .idea
 .vscode
+.cursor
+marketing
 **/bin/
 **/obj/
 artifacts

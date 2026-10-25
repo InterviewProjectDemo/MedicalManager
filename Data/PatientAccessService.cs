@@ -163,6 +163,66 @@ public sealed class PatientAccessService(
         await db.SaveChangesAsync();
     }
 
+    public async Task<FamilyContactSummary> GetFamilyContactAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var row = await db.PatientProfiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => new FamilyContactSummary(
+                p.FamilyContactName,
+                p.FamilyContactPhone,
+                p.FamilyContactPhotoUpdatedAt))
+            .FirstOrDefaultAsync();
+
+        return row ?? new FamilyContactSummary(null, null, null);
+    }
+
+    public async Task<EmergencyCaller> GetEmergencyCallerAsync(string userId)
+    {
+        var user = await users.FindByIdAsync(userId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var phone = await db.PatientProfiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => p.Phone)
+            .FirstOrDefaultAsync();
+
+        var name = string.IsNullOrWhiteSpace(user?.FullName) ? user?.Email ?? "Patient" : user.FullName.Trim();
+        var number = string.IsNullOrWhiteSpace(phone) ? user?.PhoneNumber : phone;
+        return new EmergencyCaller(name, string.IsNullOrWhiteSpace(number) ? null : number.Trim());
+    }
+
+    public async Task SaveFamilyContactAsync(string userId, string? name, string? phone)
+    {
+        var nameValue = NormalizeOptional(name, 200, "Family contact name");
+        var phoneValue = NormalizeOptional(phone, 40, "Family contact phone");
+        if (nameValue is null)
+            throw new InvalidOperationException("Family contact name is required.");
+        if (phoneValue is null)
+            throw new InvalidOperationException("Family contact phone is required.");
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        profile.FamilyContactName = nameValue;
+        profile.FamilyContactPhone = phoneValue;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task ClearFamilyContactAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        profile.FamilyContactName = null;
+        profile.FamilyContactPhone = null;
+        profile.FamilyContactPhotoData = null;
+        profile.FamilyContactPhotoContentType = null;
+        profile.FamilyContactPhotoUpdatedAt = null;
+        await db.SaveChangesAsync();
+    }
+
     public async Task SaveReminderSettingsAsync(
         string userId,
         string? homeAddress,
@@ -209,6 +269,10 @@ public sealed class PatientAccessService(
     private static string NormalizeReturnUrl(string? returnUrl) =>
         string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl;
 }
+
+public sealed record FamilyContactSummary(string? Name, string? Phone, DateTime? PhotoUpdatedAt);
+
+public sealed record EmergencyCaller(string Name, string? Phone);
 
 public sealed record PatientScope(
     ApplicationUser CurrentUser,
