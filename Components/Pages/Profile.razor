@@ -7,6 +7,9 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject PatientAccessService Access
 @inject ProfilePhotoService PhotoService
+@inject MonitorSessionService Sessions
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 @using System.ComponentModel.DataAnnotations
 @using MedicalManager.Data.Notifications
 
@@ -26,7 +29,7 @@ else
         <div>
             <p class="eyebrow">Your account</p>
             <h1>Patient profile</h1>
-            <p class="muted">Manage your photo, family contact, and health profile details.</p>
+            <p class="muted">Manage your photo, family contact, monitor code, and health profile details.</p>
         </div>
     </div>
 
@@ -284,6 +287,43 @@ else
     </div>
 
     <div class="profile-page-card">
+        <h2 class="reminder-settings-title">Monitor Access Code</h2>
+        <p class="muted">Family uses this 4-digit code with your private monitor link. Change it anytime. The previous code stops working right away.</p>
+        @if (!string.IsNullOrWhiteSpace(_profile?.MonitorAccessCode))
+        {
+            <p class="monitor-code-label">Current code</p>
+            <p class="monitor-code-value">@string.Join(" ", _profile.MonitorAccessCode.ToCharArray())</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(_monitorLink))
+        {
+            <label class="form-label" for="monitor-share-link">Link for family</label>
+            <div class="monitor-link-row">
+                <input id="monitor-share-link" class="form-control" readonly value="@_monitorLink" />
+                <button type="button" class="btn btn-outline-secondary" @onclick="CopyMonitorLinkAsync">@(_monitorCopied ? "Copied" : "Copy")</button>
+            </div>
+        }
+        <EditForm Model="_monitorForm" OnValidSubmit="SaveMonitorCodeAsync" class="mt-3">
+            <DataAnnotationsValidator />
+            <label class="form-label" for="monitor-access-code">@(_profile?.MonitorAccessCode is null ? "Choose a 4-digit code" : "New Monitor Access Code")</label>
+            <InputText id="monitor-access-code" class="form-control monitor-code-input" @bind-Value="_monitorForm.Code" inputmode="numeric" maxlength="4" placeholder="2468" />
+            <ValidationMessage For="() => _monitorForm.Code" class="text-danger" />
+            @if (!string.IsNullOrWhiteSpace(_monitorError))
+            {
+                <div class="alert alert-danger mt-3 mb-0">@_monitorError</div>
+            }
+            <div class="form-actions">
+                <button type="submit" class="btn btn-purple" disabled="@_savingMonitor">
+                    @(_savingMonitor ? "Saving…" : "Save access code")
+                </button>
+            </div>
+        </EditForm>
+        @if (!string.IsNullOrWhiteSpace(_monitorMessage))
+        {
+            <p class="muted mb-0">@_monitorMessage</p>
+        }
+    </div>
+
+    <div class="profile-page-card">
         <h2 class="reminder-settings-title">Notification services</h2>
         <p class="muted">
             Calls come from Medical Manager at (320) 350-3177. Appointment reminders also send a text. Medication and to-do reminders are phone calls.
@@ -347,6 +387,13 @@ else
     private readonly ProfileForm _profileForm = new();
     private readonly FamilyForm _familyForm = new();
     private readonly ReminderForm _reminderForm = new();
+    private readonly MonitorCodeForm _monitorForm = new();
+    private string? _monitorLink;
+    private string? _monitorMessage;
+    private string? _monitorError;
+    private bool _savingMonitor;
+    private bool _monitorCopied;
+    private IJSObjectReference? _monitorJs;
     private string? _profileMessage;
     private string? _profileError;
     private string? _reminderMessage;
@@ -406,6 +453,9 @@ else
         _reminderForm.ToDoRemindersEnabled = _profile?.ToDoRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
         _familyPhotoUrl = PhotoService.GetFamilyPhotoUrl(_userId, _profile?.FamilyContactPhotoUpdatedAt);
+        _monitorForm.Code = _profile?.MonitorAccessCode ?? "";
+        if (!string.IsNullOrWhiteSpace(_profile?.MonitorLinkToken))
+            _monitorLink = Navigation.ToAbsoluteUri($"watch/{_profile.MonitorLinkToken}").ToString();
         _loading = false;
     }
 
@@ -676,6 +726,51 @@ else
         return "?";
     }
 
+    private async Task SaveMonitorCodeAsync()
+    {
+        if (_userId is null || _savingMonitor)
+            return;
+
+        _savingMonitor = true;
+        _monitorError = null;
+        _monitorMessage = null;
+        try
+        {
+            var (token, changed) = await Access.SaveMonitorCodeAsync(_userId, _monitorForm.Code);
+            if (changed)
+                Sessions.NoteCodeChanged(token);
+
+            _profile = await Access.GetProfileAsync(_userId);
+            _monitorForm.Code = _profile?.MonitorAccessCode ?? _monitorForm.Code;
+            _monitorLink = Navigation.ToAbsoluteUri($"watch/{token}").ToString();
+            _monitorMessage = "Access code saved. Family needs this code together with your link.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _monitorError = ex.Message;
+        }
+        finally
+        {
+            _savingMonitor = false;
+        }
+    }
+
+    private async Task CopyMonitorLinkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_monitorLink))
+            return;
+
+        try
+        {
+            _monitorJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
+            _monitorCopied = await _monitorJs.InvokeAsync<bool>("copyText", _monitorLink);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
+            _monitorCopied = false;
+        }
+    }
+
     private static string InitialsFrom(string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -687,6 +782,13 @@ else
         if (parts[0].Length >= 2)
             return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}";
         return char.ToUpperInvariant(parts[0][0]).ToString();
+    }
+
+    private sealed class MonitorCodeForm
+    {
+        [Required(ErrorMessage = "Enter four numbers.")]
+        [RegularExpression("^[0-9]{4}$", ErrorMessage = "Use four numbers, like 2468.")]
+        public string Code { get; set; } = "";
     }
 
     private sealed class ProfileForm

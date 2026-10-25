@@ -40,6 +40,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<PatientProfile>().HasIndex(x => x.UserId).IsUnique();
+        builder.Entity<PatientProfile>().HasIndex(x => x.MonitorLinkToken).IsUnique();
 
         builder.Entity<BloodPressureReading>()
             .HasOne(x => x.User)
@@ -204,6 +205,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<PatientProfile>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.FamilyContactName).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.FamilyContactPhone).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.MonitorAccessCode).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
         builder.Entity<PatientProfile>().Property(x => x.FamilyContactPhotoData).HasConversion(bytes);

@@ -1,0 +1,31 @@
+.monitor-code-label {
+    margin: 0.9rem 0 0;
+    font-weight: 800;
+    color: #0f766e;
+}
+
+.monitor-code-value {
+    margin: 0.15rem 0 0.8rem;
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: 0.35rem;
+    color: #134e4a;
+}
+
+.monitor-link-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.monitor-link-row .form-control {
+    min-width: 0;
+}
+
+.monitor-code-input {
+    max-width: 9rem;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.28rem;
+    text-align: center;
+}

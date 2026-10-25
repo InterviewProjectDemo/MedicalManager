@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -255,6 +257,69 @@ public sealed class PatientAccessService(
         return trimmed;
     }
 
+    public async Task<MonitorSetup> GetMonitorSetupAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var row = await (
+            from profile in db.PatientProfiles.AsNoTracking()
+            join user in db.Users.AsNoTracking() on profile.UserId equals user.Id
+            where profile.UserId == userId
+            select new { profile.MonitorAccessCode, profile.MonitorLinkToken, user.FullName })
+            .FirstOrDefaultAsync();
+
+        if (row is null)
+            return new MonitorSetup(null, null, "there");
+
+        return new MonitorSetup(row.MonitorAccessCode, row.MonitorLinkToken, FirstName(row.FullName));
+    }
+
+    public async Task<MonitorLink?> FindMonitorByTokenAsync(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token.Length > 64)
+            return null;
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var row = await (
+            from profile in db.PatientProfiles.AsNoTracking()
+            join user in db.Users.AsNoTracking() on profile.UserId equals user.Id
+            where profile.MonitorLinkToken == token
+            select new { profile.UserId, profile.MonitorAccessCode, user.FullName })
+            .FirstOrDefaultAsync();
+
+        return row is null
+            ? null
+            : new MonitorLink(row.UserId, FirstName(row.FullName), row.MonitorAccessCode);
+    }
+
+    public async Task<(string Token, bool Changed)> SaveMonitorCodeAsync(string userId, string code)
+    {
+        var digits = new string((code ?? "").Where(char.IsDigit).ToArray());
+        if (!Regex.IsMatch(digits, "^[0-9]{4}$"))
+            throw new InvalidOperationException("Enter four numbers, like 2468.");
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        var changed = !string.Equals(profile.MonitorAccessCode, digits, StringComparison.Ordinal);
+        profile.MonitorAccessCode = digits;
+        if (string.IsNullOrWhiteSpace(profile.MonitorLinkToken))
+            profile.MonitorLinkToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+
+        await db.SaveChangesAsync();
+        return (profile.MonitorLinkToken, changed);
+    }
+
+    private static string FirstName(string? fullName)
+    {
+        var name = (fullName ?? "").Trim();
+        if (name.Length == 0)
+            return "your family member";
+
+        var space = name.IndexOf(' ');
+        return space > 0 ? name[..space] : name;
+    }
+
     public async Task CompleteOnboardingAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -269,6 +334,10 @@ public sealed class PatientAccessService(
     private static string NormalizeReturnUrl(string? returnUrl) =>
         string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl;
 }
+
+public sealed record MonitorSetup(string? Code, string? Token, string FirstName);
+
+public sealed record MonitorLink(string UserId, string FirstName, string? Code);
 
 public sealed record FamilyContactSummary(string? Name, string? Phone, DateTime? PhotoUpdatedAt);
 

@@ -1,0 +1,180 @@
+.monitor-window {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1260;
+    width: min(24rem, calc(100vw - 1.5rem));
+    max-height: min(40rem, calc(100vh - 1.5rem));
+    overflow: auto;
+    padding: 1rem 1rem 1.1rem;
+    border-radius: 18px;
+    background: #fff;
+    color: #14324a;
+    box-shadow: 0 18px 50px rgba(15, 40, 60, 0.28);
+    pointer-events: auto;
+}
+
+.monitor-window.live {
+    animation: monitor-ring 1.15s ease-in-out infinite;
+}
+
+.monitor-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.monitor-kicker {
+    margin: 0;
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.monitor-head h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.45rem;
+}
+
+.monitor-close {
+    border: none;
+    background: transparent;
+    color: #14324a;
+    font-size: 1.8rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.monitor-lead,
+.monitor-status,
+.monitor-error,
+.monitor-code-label,
+.monitor-label {
+    margin: 0.75rem 0 0;
+    line-height: 1.4;
+}
+
+.monitor-lead,
+.monitor-status {
+    color: #34536b;
+}
+
+.monitor-error {
+    color: #9f1239;
+    font-weight: 700;
+}
+
+.monitor-stage {
+    position: relative;
+    margin-top: 0.8rem;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #134e4a;
+    min-height: 11rem;
+}
+
+.monitor-preview {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: #134e4a;
+    transform: scaleX(-1);
+}
+
+.monitor-stage-note {
+    position: absolute;
+    inset: auto 0 0.7rem;
+    margin: 0;
+    text-align: center;
+    color: #fff;
+    font-weight: 800;
+}
+
+.monitor-label,
+.monitor-code-label {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #0f766e;
+}
+
+.monitor-link-row {
+    display: flex;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
+}
+
+.monitor-link {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid #99f6e4;
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+}
+
+.monitor-copy,
+.monitor-primary,
+.monitor-stop {
+    border: none;
+    border-radius: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.monitor-copy {
+    background: #ccfbf1;
+    color: #115e59;
+    padding: 0.55rem 0.8rem;
+}
+
+.monitor-primary,
+.monitor-stop {
+    width: 100%;
+    margin-top: 0.85rem;
+    min-height: 3rem;
+    font-size: 1.05rem;
+}
+
+.monitor-primary {
+    background: #0f766e;
+    color: #fff;
+}
+
+.monitor-stop {
+    background: #fff;
+    color: #9f1239;
+    border: 2px solid #fecdd3;
+}
+
+.monitor-code {
+    margin: 0.2rem 0 0;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 0.28rem;
+    color: #134e4a;
+}
+
+@keyframes monitor-ring {
+    0%, 100% { box-shadow: 0 0 0 3px #0f766e, 0 18px 50px rgba(15, 40, 60, 0.28); }
+    50% { box-shadow: 0 0 0 3px #5eead4, 0 18px 50px rgba(15, 40, 60, 0.28); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .monitor-window.live {
+        animation: none;
+        box-shadow: 0 0 0 3px #0f766e, 0 18px 50px rgba(15, 40, 60, 0.28);
+    }
+}
+
+@media (max-width: 640.98px) {
+    .monitor-window {
+        left: 0.75rem;
+        right: 0.75rem;
+        width: auto;
+        bottom: calc(5.4rem + env(safe-area-inset-bottom));
+    }
+}

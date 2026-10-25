@@ -51,6 +51,13 @@ public class PatientProfile
 
     public DateTime? FamilyContactPhotoUpdatedAt { get; set; }
 
+    /// <summary>Four digits the family enters with the monitor link. Stored encrypted.</summary>
+    public string? MonitorAccessCode { get; set; }
+
+    /// <summary>Public id in the family watch link. The code is still required.</summary>
+    [MaxLength(64)]
+    public string? MonitorLinkToken { get; set; }
+
     public byte[]? ProfilePhotoData { get; set; }
 
     [MaxLength(100)]

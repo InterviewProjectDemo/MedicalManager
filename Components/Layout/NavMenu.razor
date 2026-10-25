@@ -171,6 +171,13 @@
                         <span>Voice Call</span>
                     </button>
                     <p class="nav-call-hint">Say Call</p>
+                    <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" aria-pressed="@_monitorLive" @onclick="OpenMonitor">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M4.5 7.2A2.2 2.2 0 0 1 6.7 5h7.1a2.2 2.2 0 0 1 2.2 2.2v1.1l2.8-1.6c.7-.4 1.7.1 1.7 1v8.6c0 .9-1 1.4-1.7 1l-2.8-1.6v1.1a2.2 2.2 0 0 1-2.2 2.2H6.7a2.2 2.2 0 0 1-2.2-2.2v-9.6z" />
+                        </svg>
+                        <span>Monitor</span>
+                    </button>
+                    <p class="nav-call-hint">@(_monitorLive ? "Camera is on" : "Family can watch")</p>
                 </div>
             </Authorized>
             <NotAuthorized>
@@ -245,6 +252,7 @@
                         CallerName="@_callerName"
                         CallerPhone="@_callerPhone" />
         <GuideCallModal Visible="_guideOpen" Seed="_guideSeed" VisibleChanged="OnGuideVisibleChanged" />
+        <MonitorWindow Visible="_monitorOpen" VisibleChanged="OnMonitorVisibleChanged" LiveChanged="OnMonitorLiveChanged" />
     </Authorized>
 </AuthorizeView>
 
@@ -257,6 +265,8 @@
     private bool _navOpen;
     private bool _callOpen;
     private bool _guideOpen;
+    private bool _monitorOpen;
+    private bool _monitorLive;
     private string? _guideSeed;
     private bool _wakeReady;
     private string _wakeStatus = "";
@@ -351,6 +361,26 @@
         _callOpen = true;
         _navOpen = false;
         _ = StopWakeAsync();
+    }
+
+    private void OpenMonitor()
+    {
+        _monitorOpen = true;
+        _navOpen = false;
+    }
+
+    private Task OnMonitorVisibleChanged(bool visible)
+    {
+        _monitorOpen = visible;
+        if (!visible)
+            _monitorLive = false;
+        return Task.CompletedTask;
+    }
+
+    private Task OnMonitorLiveChanged(bool live)
+    {
+        _monitorLive = live;
+        return Task.CompletedTask;
     }
 
     private void OpenGuide()

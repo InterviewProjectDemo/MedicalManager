@@ -1,0 +1,7 @@
+.watch-shell {
+    min-height: 100vh;
+    padding: 1.5rem 1rem 2rem;
+    background:
+        radial-gradient(circle at top, #ccfbf1 0%, rgba(204, 251, 241, 0) 42%),
+        #f4fbfa;
+}

@@ -1,0 +1,326 @@
+@implements IDisposable
+@inject AuthenticationStateProvider Auth
+@inject PatientAccessService Access
+@inject MonitorSessionService Sessions
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+@if (Visible)
+{
+    <section class="monitor-window @(_live ? "live" : null)" aria-label="Family monitor">
+        <header class="monitor-head">
+            <div>
+                <p class="monitor-kicker">Family monitor</p>
+                <h2>They can see you</h2>
+            </div>
+            <button type="button" class="monitor-close" aria-label="Stop monitoring" @onclick="CloseAsync">&times;</button>
+        </header>
+
+        @if (_loading)
+        {
+            <p class="monitor-status">One moment.</p>
+        }
+        else if (!_hasCode)
+        {
+            <p class="monitor-lead">Set a 4-digit Monitor Access Code in your profile. Family needs that code, and your private link, before they can see you.</p>
+            <button type="button" class="monitor-primary" @onclick="OpenProfile">Set the code</button>
+        }
+        else
+        {
+            <p class="monitor-lead">This window uses the camera only. Voice Call, readings, and the rest of the app keep working.</p>
+            <div class="monitor-stage">
+                <video @ref="_video" class="monitor-preview" autoplay muted playsinline></video>
+                @if (!_live)
+                {
+                    <p class="monitor-stage-note">Camera is off</p>
+                }
+            </div>
+            <p class="monitor-status" role="status">@_status</p>
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <p class="monitor-error">@_error</p>
+                <button type="button" class="monitor-primary" @onclick="StartAsync">Try the camera again</button>
+            }
+            <label class="monitor-label" for="monitor-link">Link for family</label>
+            <div class="monitor-link-row">
+                <input id="monitor-link" class="monitor-link" readonly value="@_link" />
+                <button type="button" class="monitor-copy" @onclick="CopyLinkAsync">@(_copied ? "Copied" : "Copy")</button>
+            </div>
+            <p class="monitor-code-label">Monitor Access Code</p>
+            <p class="monitor-code">@Spaced(_code)</p>
+            @if (_live)
+            {
+                <button type="button" class="monitor-stop" @onclick="CloseAsync">Stop monitoring</button>
+            }
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public EventCallback<bool> LiveChanged { get; set; }
+
+    private ElementReference _video;
+    private IJSObjectReference? _js;
+    private CancellationTokenSource? _poll;
+    private string? _userId;
+    private string? _token;
+    private string? _code;
+    private string? _link;
+    private string _status = "Turn the camera on so family can watch.";
+    private string? _error;
+    private bool _loading = true;
+    private bool _hasCode;
+    private bool _armed;
+    private bool _live;
+    private bool _pendingStart;
+    private bool _copied;
+    private bool _disposed;
+    private int _pollBusy;
+    private long _generation = -1;
+    private int _appliedIce;
+    private bool _answerApplied;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_armed)
+        {
+            _armed = true;
+            _loading = true;
+            _error = null;
+            await LoadSetupAsync();
+            _loading = false;
+            if (_hasCode)
+                _pendingStart = true;
+        }
+        else if (!Visible && _armed)
+        {
+            _armed = false;
+            await StopAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_pendingStart || _disposed)
+            return;
+
+        _pendingStart = false;
+        await StartAsync();
+    }
+
+    private async Task LoadSetupAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(_userId))
+        {
+            _hasCode = false;
+            return;
+        }
+
+        var setup = await Access.GetMonitorSetupAsync(_userId);
+        _code = setup.Code;
+        _token = setup.Token;
+        _hasCode = !string.IsNullOrWhiteSpace(_code) && !string.IsNullOrWhiteSpace(_token);
+        _link = _hasCode
+            ? Navigation.ToAbsoluteUri($"watch/{_token}").ToString()
+            : null;
+    }
+
+    private async Task StartAsync()
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(_userId) || string.IsNullOrWhiteSpace(_token))
+            return;
+
+        _error = null;
+        try
+        {
+            _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
+            await _js.InvokeAsync<bool>("startPreview", _video);
+            var setup = await Access.GetMonitorSetupAsync(_userId);
+            Sessions.GoLive(_userId, _token, setup.FirstName);
+            _live = true;
+            _generation = -1;
+            _appliedIce = 0;
+            _answerApplied = false;
+            _status = "Waiting for family. Leave this open.";
+            await LiveChanged.InvokeAsync(true);
+            StartPolling();
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+            _live = false;
+            _error = "Allow the camera in the browser, then try again. Monitoring stays off until the camera is on.";
+            _status = "The camera is not on.";
+            await LiveChanged.InvokeAsync(false);
+            StateHasChanged();
+        }
+    }
+
+    private void StartPolling()
+    {
+        _poll?.Cancel();
+        _poll = new CancellationTokenSource();
+        _ = PollLoop(_poll.Token);
+    }
+
+    private async Task PollLoop(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(900));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(PollOnceAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PollOnceAsync()
+    {
+        if (_disposed || !_live || _js is null || string.IsNullOrWhiteSpace(_userId) || Interlocked.Exchange(ref _pollBusy, 1) == 1)
+            return;
+
+        try
+        {
+            var signal = Sessions.ForPatient(_userId);
+            if (!signal.Live)
+                return;
+
+            if (signal.Generation != _generation)
+            {
+                _generation = signal.Generation;
+                _appliedIce = 0;
+                _answerApplied = false;
+                await _js.InvokeVoidAsync("stopPeer");
+                if (signal.ViewerWaiting)
+                {
+                    var ice = await Sessions.IceServersAsync(CancellationToken.None);
+                    var offer = await _js.InvokeAsync<string>("createOffer", ice);
+                    Sessions.SetOffer(_userId, _generation, offer);
+                    _status = "Family opened the link. Connecting the picture.";
+                }
+                else
+                {
+                    _status = "Waiting for family. Leave this open.";
+                }
+            }
+
+            if (signal.ViewerIce.Count < _appliedIce)
+                _appliedIce = 0;
+            if (signal.ViewerIce.Count > _appliedIce)
+            {
+                await _js.InvokeVoidAsync("addIce", signal.ViewerIce.Skip(_appliedIce).ToArray());
+                _appliedIce = signal.ViewerIce.Count;
+            }
+
+            if (!_answerApplied && !string.IsNullOrWhiteSpace(signal.AnswerSdp))
+            {
+                _answerApplied = await _js.InvokeAsync<bool>("acceptAnswer", signal.AnswerSdp);
+            }
+
+            var outgoing = await _js.InvokeAsync<string[]>("takeIce");
+            if (outgoing.Length > 0)
+                Sessions.AddPatientIce(_userId, _generation, outgoing);
+
+            if (_answerApplied)
+            {
+                var state = await _js.InvokeAsync<string>("connectionState");
+                _status = state switch
+                {
+                    "connected" => "Family can see you.",
+                    "failed" or "disconnected" => "The picture paused. Ask them to refresh their page.",
+                    _ => "Family opened the link. Connecting the picture."
+                };
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _pollBusy = 0;
+            if (!_disposed)
+                StateHasChanged();
+        }
+    }
+
+    private async Task CopyLinkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_link))
+            return;
+
+        try
+        {
+            _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
+            _copied = await _js.InvokeAsync<bool>("copyText", _link);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            _copied = false;
+        }
+    }
+
+    private void OpenProfile() => Navigation.NavigateTo("profile");
+
+    private async Task CloseAsync()
+    {
+        await StopAsync();
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task StopAsync()
+    {
+        _poll?.Cancel();
+        var wasLive = _live;
+        _live = false;
+        _pendingStart = false;
+        if (!string.IsNullOrWhiteSpace(_userId))
+            Sessions.GoOffline(_userId);
+
+        if (_js is not null)
+        {
+            try
+            {
+                await _js.InvokeVoidAsync("stopAll", _video);
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+            {
+            }
+        }
+
+        if (wasLive)
+            await LiveChanged.InvokeAsync(false);
+    }
+
+    private static string Spaced(string? code) =>
+        string.IsNullOrWhiteSpace(code) ? "" : string.Join(' ', code.ToCharArray());
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _poll?.Cancel();
+        if (!string.IsNullOrWhiteSpace(_userId))
+            Sessions.GoOffline(_userId);
+        _ = ReleaseAsync();
+    }
+
+    private async Task ReleaseAsync()
+    {
+        if (_js is null)
+            return;
+
+        try
+        {
+            await _js.InvokeVoidAsync("stopAll", _video);
+            await _js.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+}

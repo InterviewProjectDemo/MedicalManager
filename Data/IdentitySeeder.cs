@@ -40,6 +40,7 @@ public static class IdentitySeeder
 
         await EnsureOnboardingColumnsAsync(db);
         await EnsureFamilyContactColumnsAsync(db);
+        await EnsureMonitorColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
         await EnsureCareReminderSchemaAsync(db);
 
@@ -1123,6 +1124,41 @@ public static class IdentitySeeder
             """);
         await db.Database.ExecuteSqlRawAsync(
             """CREATE INDEX IF NOT EXISTS "IX_ToDoItems_UserId_FinishBy" ON "ToDoItems" ("UserId", "FinishBy");""");
+    }
+
+    private static async Task EnsureMonitorColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = await ReadSqliteColumnsAsync(connection, "PatientProfiles");
+                await TryAddColumnAsync(db, columns, "MonitorAccessCode",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "MonitorAccessCode" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "MonitorLinkToken",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "MonitorLinkToken" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+        }
+        else
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "MonitorAccessCode" TEXT NULL;""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "MonitorLinkToken" TEXT NULL;""");
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientProfiles_MonitorLinkToken" ON "PatientProfiles" ("MonitorLinkToken");""");
     }
 
     private static async Task TryAddColumnAsync(

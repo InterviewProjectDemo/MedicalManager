@@ -359,8 +359,14 @@
 .nav-call-emergency { background: #dc2626; }
 .nav-call-family { background: #16a34a; }
 .nav-call-guide { background: #0284c7; }
+.nav-call-monitor { background: #0f766e; }
 
-.nav-call-guide svg {
+.nav-call-monitor.live {
+    animation: monitor-nav-blink 1.15s ease-in-out infinite;
+}
+
+.nav-call-guide svg,
+.nav-call-monitor svg {
     width: 1.15rem;
     height: 1.15rem;
     flex: 0 0 auto;
@@ -376,8 +382,21 @@
     background: linear-gradient(180deg, rgba(15, 61, 92, 0) 0%, #0f3d5c 28%);
 }
 
+@keyframes monitor-nav-blink {
+    0%, 100% { background: #0f766e; color: #fff; }
+    50% { background: #99f6e4; color: #134e4a; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-call-monitor.live {
+        animation: none;
+        background: #0f766e;
+        color: #fff;
+    }
+}
+
 .nav-call-hint {
-    margin: 0.35rem 0 0;
+    margin: 0.35rem 0 0.45rem;
     color: #d7eef8;
     font-size: 0.78rem;
     font-weight: 700;

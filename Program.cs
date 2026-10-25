@@ -195,6 +195,7 @@ builder.Services.AddSingleton<OnboardingVoiceService>();
 builder.Services.AddSingleton<TravelTimeService>();
 builder.Services.AddSingleton<TwilioNotificationSender>();
 builder.Services.AddSingleton<FamilyVoiceCallService>();
+builder.Services.AddSingleton<MonitorSessionService>();
 builder.Services.AddScoped<AppointmentReminderService>();
 builder.Services.AddScoped<MedicationReminderService>();
 builder.Services.AddScoped<ToDoReminderService>();

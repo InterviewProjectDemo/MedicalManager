@@ -1,0 +1,87 @@
+.watch-card {
+    width: min(40rem, 100%);
+    margin: 0 auto;
+    padding: 1.4rem 1.2rem 1.5rem;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgba(15, 61, 70, 0.12);
+}
+
+.watch-kicker {
+    margin: 0;
+    color: #0f766e;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.watch-card h1 {
+    margin: 0.3rem 0 0;
+    font-size: clamp(1.8rem, 4vw, 2.4rem);
+    color: #14324a;
+}
+
+.watch-lead,
+.watch-status,
+.watch-message {
+    margin: 0.8rem 0 0;
+    line-height: 1.45;
+    color: #34536b;
+    font-size: 1.08rem;
+}
+
+.watch-message {
+    color: #9f1239;
+    font-weight: 700;
+}
+
+.watch-label {
+    display: block;
+    margin-top: 1.1rem;
+    font-weight: 800;
+    color: #0f766e;
+}
+
+.watch-code {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    border: 2px solid #99f6e4;
+    border-radius: 14px;
+    padding: 0.7rem 0.8rem;
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: 0.45rem;
+    text-align: center;
+    color: #134e4a;
+}
+
+.watch-go {
+    width: 100%;
+    margin-top: 1rem;
+    min-height: 3.4rem;
+    border: none;
+    border-radius: 14px;
+    background: #0f766e;
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.watch-stage {
+    margin-top: 1rem;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #134e4a;
+    min-height: 16rem;
+}
+
+.watch-video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: contain;
+    background: #134e4a;
+}

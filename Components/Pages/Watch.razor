@@ -1,0 +1,244 @@
+@page "/watch/{Token}"
+@attribute [AllowAnonymous]
+@layout WatchLayout
+@implements IDisposable
+@inject PatientAccessService Access
+@inject MonitorSessionService Sessions
+@inject IJSRuntime JS
+
+<PageTitle>Family watch</PageTitle>
+
+<main class="watch-card">
+    @if (_missing)
+    {
+        <p class="watch-kicker">Family watch</p>
+        <h1>This link is not active</h1>
+        <p class="watch-lead">Ask them to open Monitor in Medical Manager and share the new link.</p>
+    }
+    else if (!_admitted)
+    {
+        <p class="watch-kicker">Family watch</p>
+        <h1>Enter the code</h1>
+        <p class="watch-lead">Someone you care for shared this private link. Enter the 4-digit Monitor Access Code they gave you.</p>
+        <form @onsubmit="SubmitCodeAsync">
+            <label class="watch-label" for="watch-code">Monitor Access Code</label>
+            <input id="watch-code"
+                   class="watch-code"
+                   inputmode="numeric"
+                   autocomplete="one-time-code"
+                   maxlength="4"
+                   placeholder="0000"
+                   @bind="_entered"
+                   @bind:event="oninput" />
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <p class="watch-message" role="alert">@_message</p>
+            }
+            <button type="submit" class="watch-go">See them</button>
+        </form>
+    }
+    else
+    {
+        <p class="watch-kicker">With @_name</p>
+        <h1>@(_seeing ? $"You are watching {_name}" : $"Waiting for {_name}")</h1>
+        <p class="watch-lead">
+            @(_seeing
+                ? "This picture is private. Only people with this link and the code can see it."
+                : $"{_name} has not turned the camera on yet. Leave this page open. The picture appears when they press Monitor.")
+        </p>
+        <div class="watch-stage @(_seeing ? "seeing" : null)">
+            <video @ref="_video" class="watch-video" autoplay playsinline></video>
+        </div>
+        <p class="watch-status" role="status">@_status</p>
+    }
+</main>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+
+    private readonly string _viewerId = Guid.NewGuid().ToString("N");
+    private ElementReference _video;
+    private IJSObjectReference? _js;
+    private CancellationTokenSource? _poll;
+    private string _entered = "";
+    private string _name = "your family member";
+    private string _status = "Waiting for the camera.";
+    private string? _message;
+    private bool _missing;
+    private bool _admitted;
+    private bool _seeing;
+    private bool _checkedLink;
+    private bool _disposed;
+    private int _pollBusy;
+    private long _stamp;
+    private long _answered = -1;
+    private int _appliedIce;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_checkedLink)
+            return;
+
+        _checkedLink = true;
+        var link = await Access.FindMonitorByTokenAsync(Token);
+        _missing = link is null || string.IsNullOrWhiteSpace(link.Code);
+        if (link is not null)
+            _name = link.FirstName;
+    }
+
+    private async Task SubmitCodeAsync()
+    {
+        var link = await Access.FindMonitorByTokenAsync(Token);
+        if (link is null || string.IsNullOrWhiteSpace(link.Code))
+        {
+            _missing = true;
+            return;
+        }
+
+        var gate = Sessions.TryCode(Token, _entered, link.Code);
+        if (!gate.Ok)
+        {
+            _message = gate.Message;
+            return;
+        }
+
+        _name = link.FirstName;
+        _stamp = gate.Stamp;
+        _admitted = true;
+        _entered = "";
+        _message = null;
+        StartPolling();
+    }
+
+    private void StartPolling()
+    {
+        _poll?.Cancel();
+        _poll = new CancellationTokenSource();
+        _ = PollLoop(_poll.Token);
+    }
+
+    private async Task PollLoop(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(900));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(PollOnceAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PollOnceAsync()
+    {
+        if (_disposed || !_admitted || Interlocked.Exchange(ref _pollBusy, 1) == 1)
+            return;
+
+        try
+        {
+            var signal = Sessions.ForViewer(Token, _viewerId, _stamp);
+            if (signal.NeedsCode)
+            {
+                _admitted = false;
+                _seeing = false;
+                _answered = -1;
+                _message = "The code was changed. Enter the new 4-digit code.";
+                await StopVideoAsync();
+                return;
+            }
+
+            if (!signal.Live || string.IsNullOrWhiteSpace(signal.OfferSdp))
+            {
+                if (_seeing || _answered >= 0)
+                    await StopVideoAsync();
+                _seeing = false;
+                _answered = -1;
+                _appliedIce = 0;
+                _status = $"Waiting for {_name} to press Monitor.";
+                return;
+            }
+
+            _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/MonitorWindow.razor.js");
+            if (_answered != signal.Generation)
+            {
+                var ice = await Sessions.IceServersAsync(CancellationToken.None);
+                var answer = await _js.InvokeAsync<string>("createAnswer", _video, signal.OfferSdp, ice);
+                Sessions.SetAnswer(Token, _viewerId, signal.Generation, answer);
+                _answered = signal.Generation;
+                _appliedIce = 0;
+                _seeing = true;
+                _status = "Connecting the picture.";
+            }
+
+            if (signal.PatientIce.Count < _appliedIce)
+                _appliedIce = 0;
+            if (signal.PatientIce.Count > _appliedIce)
+            {
+                await _js.InvokeVoidAsync("addIce", signal.PatientIce.Skip(_appliedIce).ToArray());
+                _appliedIce = signal.PatientIce.Count;
+            }
+
+            var outgoing = await _js.InvokeAsync<string[]>("takeIce");
+            if (outgoing.Length > 0)
+                Sessions.AddViewerIce(Token, _viewerId, signal.Generation, outgoing);
+
+            var state = await _js.InvokeAsync<string>("connectionState");
+            _status = state switch
+            {
+                "connected" => $"You can see {_name}.",
+                "failed" or "disconnected" => "The picture paused. Refresh this page.",
+                _ => "Connecting the picture."
+            };
+            _seeing = state is not "failed";
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            _status = "Refresh this page to try the picture again.";
+        }
+        finally
+        {
+            _pollBusy = 0;
+            if (!_disposed)
+                StateHasChanged();
+        }
+    }
+
+    private async Task StopVideoAsync()
+    {
+        if (_js is null)
+            return;
+
+        try
+        {
+            await _js.InvokeVoidAsync("stopPeer");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _poll?.Cancel();
+        if (_admitted)
+            Sessions.DetachViewer(Token, _viewerId);
+        _ = ReleaseAsync();
+    }
+
+    private async Task ReleaseAsync()
+    {
+        if (_js is null)
+            return;
+
+        try
+        {
+            await _js.InvokeVoidAsync("stopAll", _video);
+            await _js.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+}
