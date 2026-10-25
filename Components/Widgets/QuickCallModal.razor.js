@@ -75,7 +75,7 @@ export async function startFamilyCall(token, ticket, dotNetRef) {
     call.on("accept", () => notify(dotNetRef, "OnFamilyCallConnected"));
     call.on("disconnect", () => notify(dotNetRef, "OnFamilyCallEnded"));
     call.on("cancel", () => notify(dotNetRef, "OnFamilyCallEnded"));
-    call.on("reject", () => notify(dotNetRef, "OnFamilyCallError", "The call was declined."));
+    call.on("reject", () => notify(dotNetRef, "OnFamilyCallEnded"));
     call.on("error", (error) => notify(dotNetRef, "OnFamilyCallError", friendlyDeviceError(error)));
 }
 

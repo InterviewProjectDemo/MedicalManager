@@ -97,6 +97,24 @@ public sealed class TwilioNotificationSender(
         return (_accountSid, _fromNumber);
     }
 
+    public async Task<bool> IsCallFinishedAsync(string? callSid, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(callSid) || string.IsNullOrWhiteSpace(_accountSid))
+            return false;
+
+        var twilio = options.Value.Twilio;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://api.twilio.com/2010-04-01/Accounts/{_accountSid}/Calls/{Uri.EscapeDataString(callSid)}.json");
+        request.Headers.Authorization = Basic(twilio);
+        using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return false;
+
+        var status = ReadString(await response.Content.ReadAsStringAsync(cancellationToken), "status");
+        return status is "completed" or "busy" or "failed" or "no-answer" or "canceled";
+    }
+
     public async Task EndCallAsync(string? callSid, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(callSid))

@@ -253,7 +253,31 @@
 
         _callSid = result.Sid;
         _connected = true;
+        if (!string.IsNullOrWhiteSpace(result.Sid))
+            _ = WatchEmergencyCallAsync(session, result.Sid);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task WatchEmergencyCallAsync(int session, string callSid)
+    {
+        try
+        {
+            while (!_disposed && !_ending && session == _session && Visible)
+            {
+                await Task.Delay(2000);
+                if (_disposed || _ending || session != _session || !Visible)
+                    return;
+
+                if (await Calls.IsCallFinishedAsync(callSid, CancellationToken.None))
+                {
+                    await InvokeAsync(CloseFromRemoteAsync);
+                    return;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ObjectDisposedException)
+        {
+        }
     }
 
     private async Task StartFamilyTalkAsync(int session)
@@ -312,13 +336,10 @@
         if (_disposed || _ending || _familySession != _session)
             return Task.CompletedTask;
 
-        _familyAudio = false;
-        if (!string.IsNullOrWhiteSpace(_callError))
-            return InvokeAsync(StateHasChanged);
+        if (!_connected && !string.IsNullOrWhiteSpace(_callError))
+            return Task.CompletedTask;
 
-        _connected = false;
-        _callError = "The call ended.";
-        return InvokeAsync(StateHasChanged);
+        return CloseFromRemoteAsync();
     }
 
     [JSInvokable]
@@ -327,11 +348,19 @@
         if (_disposed || _ending || _familySession != _session)
             return Task.CompletedTask;
 
+        if (_connected && IsRemoteHangup(message))
+            return CloseFromRemoteAsync();
+
         _familyAudio = false;
         _connected = false;
         _callError = string.IsNullOrWhiteSpace(message) ? "The call could not be placed." : message.Trim();
         return InvokeAsync(StateHasChanged);
     }
+
+    private static bool IsRemoteHangup(string? message) =>
+        !string.IsNullOrWhiteSpace(message)
+        && (message.Contains("hangup", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("31005", StringComparison.Ordinal));
 
     private static string FriendlyCallError(string? detail) => detail switch
     {
@@ -432,6 +461,15 @@
         _connected = false;
         _armed = false;
         await VisibleChanged.InvokeAsync(false);
+    }
+
+    private Task CloseFromRemoteAsync()
+    {
+        if (_disposed || _ending)
+            return Task.CompletedTask;
+
+        _callSid = null;
+        return CloseAsync();
     }
 
     private void CancelCalling()
