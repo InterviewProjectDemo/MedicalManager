@@ -11,7 +11,7 @@
 @if (Visible)
 {
     <div class="guide-backdrop" @onclick="CloseAsync">
-        <div class="guide-window" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
+        <div class="guide-window @(_listening ? "listening" : null)" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
             <button type="button" class="guide-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
             <p class="guide-kicker">With you</p>
             <h2 id="guide-call-title">@_title</h2>

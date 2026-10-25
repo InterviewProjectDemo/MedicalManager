@@ -19,6 +19,49 @@
     box-shadow: 0 0 0 4px #0284c7, 0 24px 60px rgba(11, 24, 40, 0.28);
 }
 
+.guide-window.listening {
+    animation: guide-listen-blink 1.15s ease-in-out infinite;
+}
+
+.guide-window.listening h2,
+.guide-window.listening .guide-kicker,
+.guide-window.listening .guide-prompt,
+.guide-window.listening .guide-listening,
+.guide-window.listening .guide-note {
+    animation: guide-listen-text 1.15s ease-in-out infinite;
+}
+
+@keyframes guide-listen-blink {
+    0%, 100% {
+        background: #16a34a;
+        box-shadow: 0 0 0 6px #bbf7d0, 0 24px 60px rgba(11, 24, 40, 0.28);
+    }
+
+    50% {
+        background: #f0fdf4;
+        box-shadow: 0 0 0 8px #16a34a, 0 24px 60px rgba(22, 163, 74, 0.45);
+    }
+}
+
+@keyframes guide-listen-text {
+    0%, 100% { color: #fff; }
+    50% { color: #14532d; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .guide-window.listening,
+    .guide-window.listening h2,
+    .guide-window.listening .guide-kicker,
+    .guide-window.listening .guide-prompt,
+    .guide-window.listening .guide-listening,
+    .guide-window.listening .guide-note {
+        animation: none;
+        background: #16a34a;
+        color: #fff;
+        box-shadow: 0 0 0 6px #bbf7d0, 0 24px 60px rgba(11, 24, 40, 0.28);
+    }
+}
+
 .guide-close {
     position: absolute;
     top: 0.7rem;
