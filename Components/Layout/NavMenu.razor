@@ -219,6 +219,19 @@
 </AuthorizeView>
 
 <AuthorizeView>
+    <Authorized>
+        @if (_wakeStatus is "needs-tap" or "blocked")
+        {
+            <button type="button" class="wake-arm" @onclick="ArmWakeAsync">
+                @(_wakeStatus == "blocked"
+                    ? "Allow the microphone, then say Call."
+                    : "Tap once. After that, saying Call opens help.")
+            </button>
+        }
+    </Authorized>
+</AuthorizeView>
+
+<AuthorizeView>
     <Authorized Context="authContext">
         <ProfilePhotoModal Visible="_photoModalOpen"
                            VisibleChanged="OnPhotoModalVisibleChanged"
@@ -246,6 +259,7 @@
     private bool _guideOpen;
     private string? _guideSeed;
     private bool _wakeReady;
+    private string _wakeStatus = "";
     private IJSObjectReference? _wake;
     private DotNetObjectReference<NavMenu>? _wakeSelf;
     private string _callKind = "emergency";
@@ -280,7 +294,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || string.IsNullOrWhiteSpace(_userId) || _wakeReady)
+        if (_wakeReady || string.IsNullOrWhiteSpace(_userId))
             return;
 
         _wakeReady = true;
@@ -345,6 +359,26 @@
         _guideOpen = true;
         _navOpen = false;
         _ = StopWakeAsync();
+    }
+
+    [JSInvokable]
+    public Task OnWakeStatus(string status)
+    {
+        _wakeStatus = status ?? "";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ArmWakeAsync()
+    {
+        try
+        {
+            _wake ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
+            _wakeSelf ??= DotNetObjectReference.Create(this);
+            await _wake.InvokeVoidAsync("armWake", _wakeSelf);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
     }
 
     [JSInvokable]
