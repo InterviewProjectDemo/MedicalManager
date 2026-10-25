@@ -230,6 +230,16 @@
     color: #fff;
 }
 
+.quick-call-error {
+    margin: 0;
+    max-width: 16rem;
+    color: #b42318;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.35;
+    text-align: center;
+}
+
 .quick-call-note {
     margin: 0.35rem 0 0;
     color: #667085;

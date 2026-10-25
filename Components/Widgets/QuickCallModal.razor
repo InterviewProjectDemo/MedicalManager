@@ -1,6 +1,10 @@
 @using System.Globalization
+@using MedicalManager.Data.Notifications
+@using Microsoft.Extensions.Options
 @implements IDisposable
 @inject IJSRuntime JS
+@inject TwilioNotificationSender Calls
+@inject IOptions<NotificationOptions> NotificationOptions
 
 @if (Visible)
 {
@@ -69,9 +73,17 @@
                 </dl>
             }
             <div class="quick-call-status" aria-live="polite">
-                @if (!CanPlaceCall)
+                @if (!HasUserPhone)
+                {
+                    <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Add your phone number</a>
+                }
+                else if (!CanPlaceCall)
                 {
                     <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Set up family contact</a>
+                }
+                else if (!string.IsNullOrWhiteSpace(_callError))
+                {
+                    <p class="quick-call-error">@_callError</p>
                 }
                 else if (_connected)
                 {
@@ -82,13 +94,21 @@
                     <p class="quick-call-calling">Calling</p>
                 }
             </div>
-            @if (IsEmergency)
+            @if (!HasUserPhone)
             {
-                <p class="quick-call-note">Your name, phone, and live GPS location are included with this call. This screen does not dial 911.</p>
+                <p class="quick-call-note">This call rings the phone number on your profile, the same number used for alerts.</p>
+            }
+            else if (IsEmergency)
+            {
+                <p class="quick-call-note">This call rings your phone and includes your name and live GPS location. It does not dial 911.</p>
             }
             else if (!CanPlaceCall)
             {
-                <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional.</p>
+                <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional. The call still rings your phone.</p>
+            }
+            else
+            {
+                <p class="quick-call-note">This call rings your phone, the same number used for alerts.</p>
             }
         </div>
     </div>
@@ -109,6 +129,8 @@
     private bool _connected;
     private bool _armed;
     private bool _disposed;
+    private string? _callSid;
+    private string? _callError;
     private bool _hasFix;
     private int _session;
     private int _watchId;
@@ -128,9 +150,12 @@
 
     private bool IsEmergency => string.Equals(Kind, "emergency", StringComparison.OrdinalIgnoreCase);
 
-    private bool CanPlaceCall =>
-        IsEmergency
-        || (!string.IsNullOrWhiteSpace(ContactName) && !string.IsNullOrWhiteSpace(ContactPhone));
+    private bool HasUserPhone => PhoneNumbers.ToE164(CallerPhone) is not null;
+
+    private bool HasFamilyContact =>
+        !string.IsNullOrWhiteSpace(ContactName) && !string.IsNullOrWhiteSpace(ContactPhone);
+
+    private bool CanPlaceCall => HasUserPhone && (IsEmergency || HasFamilyContact);
 
     private string KindClass => IsEmergency ? "is-emergency" : "is-family";
     private string Kicker => IsEmergency ? "Emergency" : "Family";
@@ -141,7 +166,7 @@
 
     private string? Detail => IsEmergency
         ? "Ambulance and EMT"
-        : (string.IsNullOrWhiteSpace(ContactPhone) ? null : ContactPhone.Trim());
+        : (HasUserPhone ? $"Your phone · {CallerPhone!.Trim()}" : null);
 
     private string Initials => InitialsFrom(ContactName);
 
@@ -154,6 +179,8 @@
         {
             _armed = true;
             _connected = false;
+            _callError = null;
+            _callSid = null;
             ResetGps();
             await StartCallingAsync();
         }
@@ -177,25 +204,11 @@
         if (IsEmergency)
             _ = WatchGpsAsync(session);
 
-        var started = DateTime.UtcNow;
         try
         {
-            while (!token.IsCancellationRequested)
-            {
+            var started = DateTime.UtcNow;
+            while (IsEmergency && !_hasFix && _gpsError is null && DateTime.UtcNow - started < TimeSpan.FromSeconds(4))
                 await Task.Delay(200, token);
-                var elapsed = DateTime.UtcNow - started;
-                if (!IsEmergency)
-                {
-                    if (elapsed >= TimeSpan.FromSeconds(2.2))
-                        break;
-                    continue;
-                }
-
-                var precise = _accuracy is <= PreciseMeters;
-                var settled = _gpsError is not null || elapsed >= TimeSpan.FromSeconds(12);
-                if (elapsed >= TimeSpan.FromSeconds(2.2) && (precise || settled))
-                    break;
-            }
         }
         catch (TaskCanceledException)
         {
@@ -205,9 +218,35 @@
         if (_disposed || session != _session || !Visible)
             return;
 
+        var ssml = IsEmergency
+            ? QuickCallCopy.EmergencySsml(CallerName, CallerPhone, _hasFix ? _latitude : null, _hasFix ? _longitude : null, _accuracy)
+            : QuickCallCopy.FamilySsml(CallerName, ContactName);
+        var result = await Calls.CallAsync(CallerPhone!, ssml, NotificationOptions.Value.Voice.PollyVoice, CancellationToken.None);
+        if (_disposed || session != _session || !Visible)
+        {
+            if (!string.IsNullOrWhiteSpace(result.Sid))
+                await Calls.EndCallAsync(result.Sid, CancellationToken.None);
+            return;
+        }
+
+        if (!result.Ok)
+        {
+            _callError = FriendlyCallError(result.Detail);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _callSid = result.Sid;
         _connected = true;
         await InvokeAsync(StateHasChanged);
     }
+
+    private static string FriendlyCallError(string? detail) => detail switch
+    {
+        "The phone number is not a valid US number." => "Add a 10-digit phone number on your Profile.",
+        "Twilio is not ready to send." => "Calling is not available right now.",
+        _ => "The call could not be placed."
+    };
 
     private async Task WatchGpsAsync(int session)
     {
@@ -311,6 +350,11 @@
             _cts.Dispose();
             _cts = null;
         }
+
+        var sid = _callSid;
+        _callSid = null;
+        if (!string.IsNullOrWhiteSpace(sid))
+            _ = Calls.EndCallAsync(sid, CancellationToken.None);
 
         _ = StopGpsAsync();
     }

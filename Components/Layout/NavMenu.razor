@@ -316,6 +316,7 @@
     private async Task OpenFamilyCall()
     {
         await LoadFamilyContactAsync();
+        await LoadCallerAsync();
         _callKind = "family";
         _callOpen = true;
         _navOpen = false;

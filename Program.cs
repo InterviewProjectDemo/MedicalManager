@@ -207,6 +207,7 @@ if (app.Environment.IsDevelopment())
     AppointmentReminderSchedule.SelfCheck();
     MedicationReminderCopy.SelfCheck();
     ToDoReminderCopy.SelfCheck();
+    QuickCallCopy.SelfCheck();
     _ = Task.Run(async () =>
     {
         var voice = app.Services.GetRequiredService<OnboardingVoiceService>();

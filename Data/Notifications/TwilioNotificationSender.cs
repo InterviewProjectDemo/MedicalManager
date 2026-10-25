@@ -89,6 +89,32 @@ public sealed class TwilioNotificationSender(
         CancellationToken cancellationToken) =>
         SendAsync(to, voice: true, ssml, pollyVoice, cancellationToken);
 
+    public async Task EndCallAsync(string? callSid, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(callSid))
+            return;
+
+        if ((string.IsNullOrWhiteSpace(_accountSid) || string.IsNullOrWhiteSpace(_fromNumber))
+            && !await EnsureReadyAsync(cancellationToken))
+            return;
+
+        if (string.IsNullOrWhiteSpace(_accountSid))
+            return;
+
+        var twilio = options.Value.Twilio;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://api.twilio.com/2010-04-01/Accounts/{_accountSid}/Calls/{Uri.EscapeDataString(callSid)}.json")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["Status"] = "completed" })
+        };
+        request.Headers.Authorization = Basic(twilio);
+
+        using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            logger.LogWarning("Twilio call could not be ended ({Status}).", (int)response.StatusCode);
+    }
+
     public Task<OutboundResult> TextAsync(string to, string body, CancellationToken cancellationToken) =>
         SendAsync(to, voice: false, body, pollyVoice: null, cancellationToken);
 
