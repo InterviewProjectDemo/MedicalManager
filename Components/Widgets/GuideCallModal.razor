@@ -13,8 +13,17 @@
     <div class="guide-backdrop" @onclick="CloseAsync">
         <div class="guide-window" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
             <button type="button" class="guide-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
-            <p class="guide-kicker">Call helper</p>
+            <p class="guide-kicker">With you</p>
             <h2 id="guide-call-title">@_title</h2>
+            @if (_lines.Count > 0)
+            {
+                <div class="guide-thread">
+                    @foreach (var line in _lines)
+                    {
+                        <p class="@(line.FromUser ? "guide-user" : "guide-assistant")">@line.Text</p>
+                    }
+                </div>
+            }
             <p class="guide-prompt">@_prompt</p>
             <div class="guide-status" aria-live="polite">
                 @if (!string.IsNullOrWhiteSpace(_callError))
@@ -35,13 +44,13 @@
                     <div class="guide-choices">
                         @if (_offerKind)
                         {
-                            <button type="button" @onclick='() => AnswerAsync("family")'>Family</button>
-                            <button type="button" @onclick='() => AnswerAsync("doctor")'>Doctor</button>
+                            <button type="button" @onclick='() => AnswerAsync("family")'>My family</button>
+                            <button type="button" @onclick='() => AnswerAsync("doctor")'>A doctor</button>
                         }
                         @if (_offerYesNo)
                         {
-                            <button type="button" @onclick='() => AnswerAsync("yes")'>Yes</button>
-                            <button type="button" @onclick='() => AnswerAsync("no")'>No</button>
+                            <button type="button" @onclick='() => AnswerAsync("yes")'>Yes, call them</button>
+                            <button type="button" @onclick='() => AnswerAsync("no")'>Someone else</button>
                         }
                     </div>
                 }
@@ -52,7 +61,7 @@
             }
             else if (!_placing)
             {
-                <p class="guide-note">Please take your time. You can answer out loud, and I'll wait.</p>
+                <p class="guide-note">Tell me in your own words. I'll stay with you until we reach the right person.</p>
             }
         </div>
     </div>
@@ -76,6 +85,8 @@
     private string _title = "I am here to help";
     private string _prompt = "";
     private string? _callError;
+    private bool _nudgedSilence;
+    private readonly List<GuideLine> _lines = new();
     private CallGuide? _guide;
     private IJSObjectReference? _speech;
     private IJSObjectReference? _calls;
@@ -125,9 +136,15 @@
 
         var doctorPeople = doctors
             .Where(doctor => PhoneNumbers.ToE164(doctor.PhoneNumber) is not null)
-            .Select(doctor => new GuidePerson("doctor", doctor.Name.Trim(), doctor.PhoneNumber.Trim()))
+            .Select(doctor => new GuidePerson(
+                "doctor",
+                doctor.Name.Trim(),
+                doctor.PhoneNumber.Trim(),
+                string.IsNullOrWhiteSpace(doctor.Specialty) ? null : doctor.Specialty.Trim()))
             .ToList();
 
+        _lines.Clear();
+        _nudgedSilence = false;
         _guide = new CallGuide(string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name, family, doctorPeople);
         _prompt = _guide.Opening();
         _title = "I am here to help";
@@ -142,6 +159,8 @@
 
         var session = _session;
         await StopSpeechAsync();
+        ArchivePrompt();
+        Remember(true, Said(transcript));
         var turn = _guide.Hear(transcript);
         await ApplyTurnAsync(session, turn);
     }
@@ -212,11 +231,51 @@
             return Task.CompletedTask;
 
         _listening = false;
-        if (string.IsNullOrWhiteSpace(transcript))
+        if (transcript == "\u0000")
             return InvokeAsync(StateHasChanged);
 
+        if (string.IsNullOrWhiteSpace(transcript))
+        {
+            if (_nudgedSilence)
+                return InvokeAsync(StateHasChanged);
+
+            _nudgedSilence = true;
+            ArchivePrompt();
+            return ApplyTurnAsync(_session, _guide.StillHere());
+        }
+
+        _nudgedSilence = false;
+        ArchivePrompt();
+        Remember(true, Said(transcript));
         return ApplyTurnAsync(_session, _guide.Hear(transcript));
     }
+
+    private void ArchivePrompt()
+    {
+        if (!string.IsNullOrWhiteSpace(_prompt))
+            Remember(false, _prompt);
+    }
+
+    private void Remember(bool fromUser, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        _lines.Add(new GuideLine(fromUser, text.Trim()));
+        while (_lines.Count > 6)
+            _lines.RemoveAt(0);
+    }
+
+    private static string Said(string transcript) => transcript.Trim().ToLowerInvariant() switch
+    {
+        "family" => "My family",
+        "doctor" => "A doctor",
+        "yes" => "Yes, please call them",
+        "no" => "Someone else",
+        _ => transcript.Trim()
+    };
+
+    private sealed record GuideLine(bool FromUser, string Text);
 
     private async Task PlaceCallAsync(int session, GuidePerson person)
     {

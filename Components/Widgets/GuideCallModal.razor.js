@@ -132,7 +132,12 @@ export function listenGuide(dotNetRef) {
             .trim();
         report(text);
     };
-    recognition.onerror = () => report("");
+    recognition.onerror = (event) => {
+        if (event.error === "no-speech")
+            report("");
+        else
+            report("\u0000");
+    };
     recognition.onend = () => {
         if (!reported)
             report("");
