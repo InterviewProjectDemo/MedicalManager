@@ -162,6 +162,13 @@
                         </button>
                     </form>
                 </div>
+                <div class="nav-guide-dock">
+                    <button type="button" class="nav-guide-call" aria-label="Call with help" @onclick="OpenGuide">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.2.9c.5.2.8.7.8 1.3l-.3 2.2c-.1.5 0 1 .4 1.3l1.6 1.3a9 9 0 0 0 3.4 2l1.2-1.6c.3-.4.8-.6 1.3-.5l2.2.4c.6.1 1 .6 1.1 1.2l.3 2.3c.1.6-.2 1.2-.7 1.5-1.6 1-3.6 1.4-5.6.9A15 15 0 0 1 5.2 8.8c-.7-1.9-.5-4 .6-5.6z" />
+                        </svg>
+                    </button>
+                </div>
             </Authorized>
             <NotAuthorized>
                 <div class="nav-item px-3">
@@ -221,6 +228,7 @@
                         PhotoUrl="@_familyPhotoUrl"
                         CallerName="@_callerName"
                         CallerPhone="@_callerPhone" />
+        <GuideCallModal Visible="_guideOpen" VisibleChanged="OnGuideVisibleChanged" />
     </Authorized>
 </AuthorizeView>
 
@@ -232,6 +240,7 @@
     private bool _photoModalOpen;
     private bool _navOpen;
     private bool _callOpen;
+    private bool _guideOpen;
     private string _callKind = "emergency";
     private string? _familyName;
     private string? _familyPhone;
@@ -311,6 +320,18 @@
         _callKind = "emergency";
         _callOpen = true;
         _navOpen = false;
+    }
+
+    private void OpenGuide()
+    {
+        _guideOpen = true;
+        _navOpen = false;
+    }
+
+    private Task OnGuideVisibleChanged(bool visible)
+    {
+        _guideOpen = visible;
+        return Task.CompletedTask;
     }
 
     private async Task OpenFamilyCall()

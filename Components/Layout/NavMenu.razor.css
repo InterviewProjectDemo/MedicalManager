@@ -342,6 +342,53 @@
 .nav-call-emergency { background: #dc2626; }
 .nav-call-family { background: #16a34a; }
 
+.nav-guide-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    margin-top: auto;
+    padding: 0.85rem 0 1rem;
+    background: linear-gradient(180deg, rgba(15, 61, 92, 0) 0%, #0f3d5c 42%);
+}
+
+.nav-guide-call {
+    width: 4.6rem;
+    height: 4.6rem;
+    border: 3px solid rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0284c7;
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(2, 132, 199, 0.45);
+    cursor: pointer;
+}
+
+.nav-guide-call svg {
+    width: 2rem;
+    height: 2rem;
+    fill: currentColor;
+}
+
+.nav-guide-call:hover,
+.nav-guide-call:focus-visible {
+    filter: brightness(1.08);
+}
+
+.nav-guide-call:focus-visible {
+    outline: 2px solid #56ccf2;
+    outline-offset: 3px;
+}
+
+@media (max-width: 640.98px) {
+    .nav-guide-dock {
+        bottom: 4.8rem;
+    }
+}
+
 @media (min-width: 641px) {
     .nav-call-actions {
         position: sticky;
@@ -399,6 +446,10 @@
 .nav-item ::deep .nav-link:hover {
     background-color: rgba(255,255,255,0.1);
     color: white;
+}
+
+.nav-scrollable > .nav {
+    min-height: 100%;
 }
 
 .nav-scrollable {

@@ -209,6 +209,7 @@ if (app.Environment.IsDevelopment())
     MedicationReminderCopy.SelfCheck();
     ToDoReminderCopy.SelfCheck();
     QuickCallCopy.SelfCheck();
+    CallGuide.SelfCheck();
     _ = Task.Run(async () =>
     {
         var voice = app.Services.GetRequiredService<OnboardingVoiceService>();

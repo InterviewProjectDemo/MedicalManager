@@ -31,6 +31,47 @@ public sealed class FamilyVoiceCallService(
         if (destination is null)
             return new FamilyTalkSetup(false, null, null, "Add a 10-digit phone number for this family contact.");
 
+        return await IssueAsync(userId, destination, cancellationToken);
+    }
+
+    public async Task<FamilyTalkSetup> PrepareDirectoryCallAsync(
+        string userId,
+        string kind,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        var destination = await ResolveDirectoryNumberAsync(userId, kind, name);
+        if (destination is null)
+            return new FamilyTalkSetup(false, null, null, "I can't find a phone number for that person.");
+
+        return await IssueAsync(userId, destination, cancellationToken);
+    }
+
+    private async Task<string?> ResolveDirectoryNumberAsync(string userId, string kind, string name)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        if (string.Equals(kind, "doctor", StringComparison.OrdinalIgnoreCase))
+        {
+            var doctors = scope.ServiceProvider.GetRequiredService<DoctorService>();
+            var matches = (await doctors.GetDoctorsAsync(userId))
+                .Where(doctor => CallGuide.NameMatches(name, doctor.Name))
+                .Select(doctor => PhoneNumbers.ToE164(doctor.PhoneNumber))
+                .Where(phone => phone is not null)
+                .Distinct()
+                .ToList();
+            return matches.Count == 1 ? matches[0] : null;
+        }
+
+        var access = scope.ServiceProvider.GetRequiredService<PatientAccessService>();
+        var contact = await access.GetFamilyContactAsync(userId);
+        if (contact.Name is null || !CallGuide.NameMatches(name, contact.Name))
+            return null;
+
+        return PhoneNumbers.ToE164(contact.Phone);
+    }
+
+    private async Task<FamilyTalkSetup> IssueAsync(string userId, string destination, CancellationToken cancellationToken)
+    {
         var route = await sender.GetVoiceRouteAsync(cancellationToken);
         var twilio = options.Value.Twilio;
         if (route.AccountSid is null || route.FromNumber is null

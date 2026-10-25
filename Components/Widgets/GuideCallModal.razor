@@ -1,0 +1,364 @@
+@using System.Security.Claims
+@using MedicalManager.Data.Notifications
+@using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider Auth
+@inject PatientAccessService Access
+@inject DoctorService Doctors
+@inject FamilyVoiceCallService FamilyCalls
+
+@if (Visible)
+{
+    <div class="guide-backdrop" @onclick="CloseAsync">
+        <div class="guide-window" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
+            <button type="button" class="guide-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
+            <p class="guide-kicker">Call helper</p>
+            <h2 id="guide-call-title">@_title</h2>
+            <p class="guide-prompt">@_prompt</p>
+            <div class="guide-status" aria-live="polite">
+                @if (!string.IsNullOrWhiteSpace(_callError))
+                {
+                    <p class="guide-error">@_callError</p>
+                }
+                else if (_connected)
+                {
+                    <button type="button" class="guide-end" @onclick="CloseAsync">End</button>
+                }
+                else if (_placing)
+                {
+                    <p class="guide-calling">Calling</p>
+                }
+                else
+                {
+                    <p class="guide-listening">@(_listening ? "Listening" : "Speaking")</p>
+                    <div class="guide-choices">
+                        @if (_offerKind)
+                        {
+                            <button type="button" @onclick='() => AnswerAsync("family")'>Family</button>
+                            <button type="button" @onclick='() => AnswerAsync("doctor")'>Doctor</button>
+                        }
+                        @if (_offerYesNo)
+                        {
+                            <button type="button" @onclick='() => AnswerAsync("yes")'>Yes</button>
+                            <button type="button" @onclick='() => AnswerAsync("no")'>No</button>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_connected)
+            {
+                <p class="guide-note">Talk through this device. The microphone and speaker are on.</p>
+            }
+            else if (!_placing)
+            {
+                <p class="guide-note">You can answer out loud. I will wait for you.</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    private bool _armed;
+    private bool _disposed;
+    private bool _ending;
+    private bool _listening;
+    private bool _placing;
+    private bool _connected;
+    private bool _offerKind;
+    private bool _offerYesNo;
+    private bool _familyAudio;
+    private int _session;
+    private int _guideSession;
+    private string _title = "I am here to help";
+    private string _prompt = "";
+    private string? _callError;
+    private CallGuide? _guide;
+    private IJSObjectReference? _speech;
+    private IJSObjectReference? _calls;
+    private DotNetObjectReference<GuideCallModal>? _self;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_armed)
+        {
+            _armed = true;
+            _ending = false;
+            _listening = false;
+            _placing = false;
+            _connected = false;
+            _callError = null;
+            _offerKind = false;
+            _offerYesNo = false;
+            await StartAsync();
+        }
+        else if (!Visible && _armed)
+        {
+            _armed = false;
+            StopGuide();
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        StopGuide();
+        var session = ++_session;
+        var state = await Auth.GetAuthenticationStateAsync();
+        var user = state.User;
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId) || _disposed || session != _session)
+            return;
+
+        var name = user.Identity?.Name;
+        var caller = await Access.GetEmergencyCallerAsync(userId);
+        var familyContact = await Access.GetFamilyContactAsync(userId);
+        var doctors = await Doctors.GetDoctorsAsync(userId);
+        if (_disposed || session != _session || !Visible)
+            return;
+
+        var family = new List<GuidePerson>();
+        if (!string.IsNullOrWhiteSpace(familyContact.Name) && PhoneNumbers.ToE164(familyContact.Phone) is not null)
+            family.Add(new GuidePerson("family", familyContact.Name.Trim(), familyContact.Phone!.Trim()));
+
+        var doctorPeople = doctors
+            .Where(doctor => PhoneNumbers.ToE164(doctor.PhoneNumber) is not null)
+            .Select(doctor => new GuidePerson("doctor", doctor.Name.Trim(), doctor.PhoneNumber.Trim()))
+            .ToList();
+
+        _guide = new CallGuide(string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name, family, doctorPeople);
+        _prompt = _guide.Opening();
+        _title = "I am here to help";
+        _offerKind = true;
+        await SpeakAsync(session, _prompt, slow: false, listenAfter: true);
+    }
+
+    private async Task AnswerAsync(string transcript)
+    {
+        if (_guide is null || _placing || _connected)
+            return;
+
+        var session = _session;
+        await StopSpeechAsync();
+        var turn = _guide.Hear(transcript);
+        await ApplyTurnAsync(session, turn);
+    }
+
+    private async Task ApplyTurnAsync(int session, GuideTurn turn)
+    {
+        if (_disposed || session != _session || !Visible)
+            return;
+
+        _prompt = turn.Prompt;
+        _offerKind = turn.OfferKind;
+        _offerYesNo = turn.OfferYesNo;
+        _listening = false;
+        await InvokeAsync(StateHasChanged);
+
+        if (turn.Call is not null)
+        {
+            _title = turn.Call.Name;
+            await PlaceCallAsync(session, turn.Call);
+            return;
+        }
+
+        await SpeakAsync(session, turn.Prompt, turn.Slow, turn.Listen);
+    }
+
+    private async Task SpeakAsync(int session, string prompt, bool slow, bool listenAfter)
+    {
+        try
+        {
+            _speech ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            _guideSession = session;
+            _listening = false;
+            await _speech.InvokeVoidAsync("speakGuide", prompt, slow, _self);
+            if (!listenAfter && session == _session)
+                await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            if (listenAfter && session == _session)
+                _listening = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnGuideSpoken()
+    {
+        if (_disposed || _ending || _guideSession != _session || _placing || _connected)
+            return;
+
+        _listening = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            if (_speech is not null && _self is not null)
+                await _speech.InvokeVoidAsync("listenGuide", _self);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            _listening = false;
+        }
+    }
+
+    [JSInvokable]
+    public Task OnGuideHeard(string transcript)
+    {
+        if (_disposed || _ending || _guideSession != _session || _guide is null || _placing || _connected)
+            return Task.CompletedTask;
+
+        _listening = false;
+        if (string.IsNullOrWhiteSpace(transcript))
+            return InvokeAsync(StateHasChanged);
+
+        return ApplyTurnAsync(_session, _guide.Hear(transcript));
+    }
+
+    private async Task PlaceCallAsync(int session, GuidePerson person)
+    {
+        _placing = true;
+        _listening = false;
+        _offerKind = false;
+        _offerYesNo = false;
+        await InvokeAsync(StateHasChanged);
+        await StopSpeechAsync();
+
+        var state = await Auth.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId) || _disposed || session != _session)
+            return;
+
+        var setup = await FamilyCalls.PrepareDirectoryCallAsync(userId, person.Kind, person.Name, CancellationToken.None);
+        if (_disposed || session != _session || !Visible)
+            return;
+        if (!setup.Ok || setup.Token is null || setup.Ticket is null)
+        {
+            _placing = false;
+            _callError = setup.Error ?? "The call could not be placed.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            _calls ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/QuickCallModal.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            _familyAudio = true;
+            _guideSession = session;
+            await _calls.InvokeVoidAsync("startFamilyCall", setup.Token, setup.Ticket, _self);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            if (session == _session)
+            {
+                _familyAudio = false;
+                _placing = false;
+                _callError = "Allow the microphone so you can talk.";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallConnected()
+    {
+        if (_disposed || _ending || _guideSession != _session)
+            return Task.CompletedTask;
+
+        _placing = false;
+        _connected = true;
+        _callError = null;
+        _prompt = "You are connected. You can talk now.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallEnded()
+    {
+        if (_disposed || _ending || _guideSession != _session)
+            return Task.CompletedTask;
+        if (!_connected && !string.IsNullOrWhiteSpace(_callError))
+            return Task.CompletedTask;
+
+        return CloseAsync();
+    }
+
+    [JSInvokable]
+    public Task OnFamilyCallError(string message)
+    {
+        if (_disposed || _ending || _guideSession != _session)
+            return Task.CompletedTask;
+        if (_connected && !string.IsNullOrWhiteSpace(message)
+            && (message.Contains("hangup", StringComparison.OrdinalIgnoreCase) || message.Contains("31005", StringComparison.Ordinal)))
+            return CloseAsync();
+
+        _familyAudio = false;
+        _placing = false;
+        _connected = false;
+        _callError = string.IsNullOrWhiteSpace(message) ? "The call could not be placed." : message.Trim();
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseAsync()
+    {
+        _ending = true;
+        StopGuide();
+        _connected = false;
+        _placing = false;
+        _armed = false;
+        await VisibleChanged.InvokeAsync(false);
+    }
+
+    private void StopGuide()
+    {
+        _session++;
+        _listening = false;
+        _ = StopSpeechAsync();
+        if (_familyAudio)
+        {
+            _familyAudio = false;
+            _ = EndCallAsync();
+        }
+    }
+
+    private async Task StopSpeechAsync()
+    {
+        if (_speech is null)
+            return;
+        try
+        {
+            await _speech.InvokeVoidAsync("stopGuide");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task EndCallAsync()
+    {
+        if (_calls is null)
+            return;
+        try
+        {
+            await _calls.InvokeVoidAsync("endFamilyCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        StopGuide();
+        _self?.Dispose();
+        _ = _speech?.DisposeAsync().AsTask();
+        _ = _calls?.DisposeAsync().AsTask();
+    }
+}
