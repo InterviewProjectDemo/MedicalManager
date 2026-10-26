@@ -158,6 +158,109 @@
     color: #134e4a;
 }
 
+.monitor-share-open {
+    width: 100%;
+    margin-top: 0.85rem;
+    min-height: 3rem;
+    border: none;
+    border-radius: 12px;
+    background: #0f766e;
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.monitor-share-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1270;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 40, 60, 0.38);
+}
+
+.monitor-share {
+    width: min(22rem, 100%);
+    margin: 0;
+    padding: 1rem 1rem 1.1rem;
+    border-radius: 16px;
+    background: #fff;
+    color: #14324a;
+    box-shadow: 0 18px 50px rgba(15, 40, 60, 0.28);
+}
+
+.monitor-share h3 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.monitor-share-lead {
+    margin: 0.45rem 0 0.2rem;
+    color: #34536b;
+    line-height: 1.4;
+}
+
+.monitor-share-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.3rem;
+    border: 1px solid #99f6e4;
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    font-size: 1rem;
+}
+
+.monitor-share-alert {
+    margin: 0.8rem 0 0;
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    background: #fff1f2;
+    color: #9f1239;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.monitor-share-alert.ok {
+    background: #ecfdf5;
+    color: #065f46;
+}
+
+.monitor-share-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+}
+
+.monitor-share-cancel,
+.monitor-share-send {
+    flex: 1;
+    min-height: 2.8rem;
+    border-radius: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.monitor-share-cancel {
+    border: 2px solid #ccfbf1;
+    background: #fff;
+    color: #115e59;
+}
+
+.monitor-share-send {
+    border: none;
+    background: #0f766e;
+    color: #fff;
+}
+
+.monitor-share-send:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
 @keyframes monitor-ring {
     0%, 100% { box-shadow: 0 0 0 3px #0f766e, 0 18px 50px rgba(15, 40, 60, 0.28); }
     50% { box-shadow: 0 0 0 3px #5eead4, 0 18px 50px rgba(15, 40, 60, 0.28); }

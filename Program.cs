@@ -198,6 +198,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<OnboardingVoiceService>();
 builder.Services.AddSingleton<TravelTimeService>();
 builder.Services.AddSingleton<TwilioNotificationSender>();
+builder.Services.AddSingleton<MonitorShareService>();
 builder.Services.AddSingleton<FamilyVoiceCallService>();
 builder.Services.AddSingleton<MonitorSessionService>();
 builder.Services.AddScoped<AppointmentReminderService>();

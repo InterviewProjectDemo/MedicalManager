@@ -4,6 +4,8 @@
 @inject MonitorSessionService Sessions
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject MonitorShareService Share
+@using MedicalManager.Data.Notifications
 
 @if (Visible)
 {
@@ -48,12 +50,34 @@
             </div>
             <p class="monitor-code-label">Monitor Access Code</p>
             <p class="monitor-code">@Spaced(_code)</p>
+            <button type="button" class="monitor-share-open" @onclick="OpenShare">Share</button>
             @if (_live)
             {
                 <button type="button" class="monitor-stop" @onclick="CloseAsync">Stop monitoring</button>
             }
         }
     </section>
+    @if (_shareOpen)
+    {
+        <div class="monitor-share-backdrop" @onclick="CloseShare">
+            <form class="monitor-share" role="dialog" aria-modal="true" aria-labelledby="monitor-share-title" @onclick:stopPropagation @onsubmit="SendShareAsync" @onsubmit:preventDefault>
+                <h3 id="monitor-share-title">Share the link and code</h3>
+                <p class="monitor-share-lead">Send them by text, email, or both. A phone number or an email is needed.</p>
+                <label class="monitor-label" for="monitor-share-phone">Phone number</label>
+                <input id="monitor-share-phone" class="monitor-share-input" type="tel" inputmode="tel" autocomplete="tel" @bind="_sharePhone" @bind:event="oninput" />
+                <label class="monitor-label" for="monitor-share-email">Email</label>
+                <input id="monitor-share-email" class="monitor-share-input" type="email" autocomplete="email" @bind="_shareEmail" @bind:event="oninput" />
+                @if (!string.IsNullOrWhiteSpace(_shareMessage))
+                {
+                    <p class="monitor-share-alert @(_shareOk ? "ok" : null)" role="alert">@_shareMessage</p>
+                }
+                <div class="monitor-share-actions">
+                    <button type="button" class="monitor-share-cancel" @onclick="CloseShare">Cancel</button>
+                    <button type="submit" class="monitor-share-send" disabled="@_shareBusy">@(_shareBusy ? "Sending" : "Send")</button>
+                </div>
+            </form>
+        </div>
+    }
 }
 
 @code {
@@ -69,6 +93,8 @@
     private string? _token;
     private string? _code;
     private string? _link;
+    private string? _name;
+    private string? _familyPhone;
     private string _status = "Turn the camera on so family can watch.";
     private string? _error;
     private bool _loading = true;
@@ -77,6 +103,12 @@
     private bool _live;
     private bool _pendingStart;
     private bool _copied;
+    private bool _shareOpen;
+    private bool _shareBusy;
+    private bool _shareOk;
+    private string _sharePhone = "";
+    private string _shareEmail = "";
+    private string? _shareMessage;
     private bool _disposed;
     private int _pollBusy;
     private long _generation = -1;
@@ -124,8 +156,11 @@
         }
 
         var setup = await Access.GetMonitorSetupAsync(_userId);
+        var family = await Access.GetFamilyContactAsync(_userId);
         _code = setup.Code;
         _token = setup.Token;
+        _name = setup.FirstName;
+        _familyPhone = family.Phone?.Trim();
         _hasCode = !string.IsNullOrWhiteSpace(_code) && !string.IsNullOrWhiteSpace(_token);
         _link = _hasCode
             ? Navigation.ToAbsoluteUri($"watch/{_token}").ToString()
@@ -302,6 +337,68 @@
             _pollBusy = 0;
             if (!_disposed)
                 StateHasChanged();
+        }
+    }
+
+    private void OpenShare()
+    {
+        _shareOpen = true;
+        _shareMessage = null;
+        _shareOk = false;
+        if (!string.IsNullOrWhiteSpace(_familyPhone))
+            _sharePhone = _familyPhone;
+    }
+
+    private void CloseShare()
+    {
+        if (_shareBusy)
+            return;
+
+        _shareOpen = false;
+    }
+
+    private async Task SendShareAsync()
+    {
+        if (_shareBusy || string.IsNullOrWhiteSpace(_userId) || string.IsNullOrWhiteSpace(_link) || string.IsNullOrWhiteSpace(_code))
+            return;
+
+        if (string.IsNullOrWhiteSpace(_sharePhone) && string.IsNullOrWhiteSpace(_shareEmail))
+        {
+            _shareOk = false;
+            _shareMessage = "Enter a phone number or an email. One of them is needed.";
+            return;
+        }
+
+        _shareBusy = true;
+        _shareMessage = null;
+        try
+        {
+            var outcome = await Share.SendAsync(_userId, _sharePhone, _shareEmail, _name ?? "", _link, _code, CancellationToken.None);
+            var wantsPhone = !string.IsNullOrWhiteSpace(_sharePhone);
+            var wantsEmail = !string.IsNullOrWhiteSpace(_shareEmail);
+            var delivered = (!wantsPhone || outcome.PhoneSent) && (!wantsEmail || outcome.EmailSent);
+            if (delivered)
+            {
+                _shareOpen = false;
+                _sharePhone = "";
+                _shareEmail = "";
+                _shareMessage = null;
+                _shareOk = false;
+            }
+            else
+            {
+                _shareOk = outcome.PhoneSent || outcome.EmailSent;
+                _shareMessage = outcome.Message;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _shareOk = false;
+            _shareMessage = "The link and code could not be sent. Try again.";
+        }
+        finally
+        {
+            _shareBusy = false;
         }
     }
 

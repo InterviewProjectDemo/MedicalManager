@@ -174,4 +174,53 @@ internal static class EmailTemplates
 
         return (html, plainText);
     }
+
+    public static (string Html, string PlainText) MonitorShare(string patientName, string link, string code)
+    {
+        var name = string.IsNullOrWhiteSpace(patientName) ? "Your family" : patientName.Trim();
+        var encodedName = WebUtility.HtmlEncode(name);
+        var encodedLink = WebUtility.HtmlEncode(link);
+        var spaced = WebUtility.HtmlEncode(string.Join(' ', code.ToCharArray()));
+
+        var plainText = $"""
+            {name} shared a Medical Manager family monitor.
+
+            Open this link: {link}
+            Monitor Access Code: {code}
+
+            The picture is on only while {name} leaves Monitor open.
+            """;
+
+        var html = $"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:{TextColor};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;">
+                      <tr>
+                        <td style="padding:32px;">
+                          <h1 style="margin:0 0 16px;font-size:22px;color:{BrandColor};">Family monitor</h1>
+                          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">{encodedName} shared a link so you can watch.</p>
+                          <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:{MutedColor};">Monitor Access Code</p>
+                          <p style="margin:0 0 24px;font-size:28px;font-weight:800;letter-spacing:0.28em;color:#134e4a;">{spaced}</p>
+                          <p style="margin:0 0 24px;text-align:center;">
+                            <a href="{encodedLink}" style="display:inline-block;background:{BrandColor};color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:12px 28px;border-radius:8px;">Open the monitor</a>
+                          </p>
+                          <p style="margin:0 0 16px;font-size:13px;line-height:1.5;word-break:break-all;color:{MutedColor};"><a href="{encodedLink}" style="color:{BrandColor};">{encodedLink}</a></p>
+                          <p style="margin:0;font-size:14px;line-height:1.6;">The picture is on only while {encodedName} leaves Monitor open.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        return (html, plainText);
+    }
 }

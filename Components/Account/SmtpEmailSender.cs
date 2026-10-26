@@ -29,6 +29,24 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         return SendAsync(email, "Welcome to Medical Manager", html, plainText, cancellationToken);
     }
 
+    public async Task<bool> SendMonitorShareAsync(
+        string email,
+        string patientName,
+        string link,
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.Smtp.Password))
+        {
+            _logger.LogWarning("Email SMTP password is not configured. The family monitor share was not emailed.");
+            return false;
+        }
+
+        var (html, plainText) = EmailTemplates.MonitorShare(patientName, link, code);
+        await SendAsync(email, "A family monitor link for you", html, plainText, cancellationToken);
+        return true;
+    }
+
     public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
     {
         var (html, plainText) = EmailTemplates.EmailConfirmation(confirmationLink);
