@@ -141,8 +141,18 @@ public sealed class TwilioNotificationSender(
             logger.LogWarning("Twilio call could not be ended ({Status}).", (int)response.StatusCode);
     }
 
-    public Task<OutboundResult> TextAsync(string to, string body, CancellationToken cancellationToken) =>
-        SendAsync(to, voice: false, body, pollyVoice: null, cancellationToken);
+    public async Task<OutboundResult> TextAsync(
+        string to,
+        string body,
+        CancellationToken cancellationToken,
+        bool confirmDelivery = false)
+    {
+        var result = await SendAsync(to, voice: false, body, pollyVoice: null, cancellationToken);
+        if (!confirmDelivery || !result.Ok || string.IsNullOrWhiteSpace(result.Sid))
+            return result;
+
+        return await ConfirmTextAsync(result.Sid, cancellationToken);
+    }
 
     private async Task<OutboundResult> SendAsync(
         string to,
@@ -191,6 +201,9 @@ public sealed class TwilioNotificationSender(
         if (response.IsSuccessStatusCode)
         {
             var sid = ReadString(json, "sid");
+            if (!voice && TryReadTextFailure(json, out var failure))
+                return new OutboundResult(false, failure.Permanent, sid, failure.Detail);
+
             return new OutboundResult(true, false, sid, null);
         }
 
@@ -199,6 +212,64 @@ public sealed class TwilioNotificationSender(
         logger.LogWarning("Twilio {Channel} was not accepted ({Code}).", voice ? "call" : "text", code);
         return new OutboundResult(false, permanent, null, code is null ? "Twilio did not accept the message." : $"Twilio {code}");
     }
+
+    private async Task<OutboundResult> ConfirmTextAsync(string sid, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(attempt == 0 ? 1 : 1.5), cancellationToken);
+            var json = await FetchMessageAsync(sid, cancellationToken);
+            if (json is null)
+                continue;
+
+            var status = ReadString(json, "status");
+            if (status is "sent" or "delivered" or "read")
+                return new OutboundResult(true, false, sid, null);
+
+            if (TryReadTextFailure(json, out var failure))
+                return new OutboundResult(false, failure.Permanent, sid, failure.Detail);
+        }
+
+        logger.LogWarning("Twilio text was still waiting to leave.");
+        return new OutboundResult(false, false, sid, "waiting");
+    }
+
+    private async Task<string?> FetchMessageAsync(string sid, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_accountSid))
+            return null;
+
+        var twilio = options.Value.Twilio;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://api.twilio.com/2010-04-01/Accounts/{_accountSid}/Messages/{Uri.EscapeDataString(sid)}.json");
+        request.Headers.Authorization = Basic(twilio);
+        using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private readonly record struct TextFailure(bool Permanent, string Detail);
+
+    private bool TryReadTextFailure(string json, out TextFailure failure)
+    {
+        var status = ReadString(json, "status");
+        var code = ReadInt(json, "error_code");
+        if (status is not ("failed" or "undelivered") && code is null)
+        {
+            failure = default;
+            return false;
+        }
+
+        logger.LogWarning("Twilio text {Status} ({Code}).", status ?? "unknown", code);
+        failure = new TextFailure(IsPermanentText(code), code?.ToString() ?? status ?? "failed");
+        return true;
+    }
+
+    private static bool IsPermanentText(int? code) =>
+        code is 21211 or 21610 or 21614 or 30005 or 30006 or 30034;
 
     private async Task<string?> ResolveAccountSidAsync(TwilioOptions twilio, CancellationToken cancellationToken)
     {
