@@ -199,21 +199,53 @@
 <AuthorizeView>
     <Authorized>
         <nav class="mobile-tabbar" aria-label="Primary">
+            <button type="button" class="mobile-tab mobile-tab-emergency" @onclick="OpenEmergencyCall">Emergency</button>
+            <button type="button" class="mobile-tab mobile-tab-family" @onclick="OpenFamilyCall">Family</button>
+            <button type="button" class="mobile-tab mobile-tab-guide" @onclick="OpenGuide">Voice Call</button>
+            <button type="button" class="mobile-tab mobile-tab-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">Monitor</button>
             <NavLink class="mobile-tab" href="@Href("")" Match="NavLinkMatch.All">
                 <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
                 Home
             </NavLink>
             <NavLink class="mobile-tab" href="@Href("blood-pressure")">
                 <span class="bi bi-heart-nav-menu" aria-hidden="true"></span>
-                BP
+                Blood pressure
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("sugar")">
+                <span class="bi bi-droplet-nav-menu" aria-hidden="true"></span>
+                Sugar
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("labs")">
+                <span class="bi bi-flask-nav-menu" aria-hidden="true"></span>
+                Labs
             </NavLink>
             <NavLink class="mobile-tab" href="@Href("medications")">
                 <span class="bi bi-pill-nav-menu" aria-hidden="true"></span>
-                Meds
+                Medications
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("med-check")">
+                <span class="bi bi-search-heart-nav-menu" aria-hidden="true"></span>
+                Med Check
             </NavLink>
             <NavLink class="mobile-tab" href="@Href("appointments")">
                 <span class="bi bi-calendar-nav-menu" aria-hidden="true"></span>
-                Appts
+                Appointments
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("todos")">
+                <span class="bi bi-check2-square-nav-menu" aria-hidden="true"></span>
+                To Do
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("profile")">
+                <span class="bi bi-person-circle-nav-menu" aria-hidden="true"></span>
+                Profile
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("doctors")">
+                <span class="bi bi-stethoscope-nav-menu" aria-hidden="true"></span>
+                Doctors
+            </NavLink>
+            <NavLink class="mobile-tab" href="@Href("resource")">
+                <span class="bi bi-journal-nav-menu" aria-hidden="true"></span>
+                Resource
             </NavLink>
             <button type="button"
                     class="mobile-tab @(_navOpen || IsMoreSection ? "active" : null)"
