@@ -36,7 +36,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddHubOptions(options =>
     {
-        options.MaximumReceiveMessageSize = 64 * 1024;
+        options.MaximumReceiveMessageSize = 512 * 1024;
     });
 
 builder.Services.AddCascadingAuthenticationState();
@@ -125,6 +125,15 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, UserClaimsPrincipalFactory<ApplicationUser, IdentityRole>>();
 
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.PostConfigure<EmailOptions>(email =>
+{
+    email.FromAddress = FirstNonEmpty(email.FromAddress, Environment.GetEnvironmentVariable("Email__FromAddress"));
+    email.Smtp.User = FirstNonEmpty(email.Smtp.User, Environment.GetEnvironmentVariable("Email__Smtp__User"));
+    email.Smtp.Password = FirstNonEmpty(
+        email.Smtp.Password,
+        Environment.GetEnvironmentVariable("Email__Smtp__Password"),
+        Environment.GetEnvironmentVariable("EMAIL_SMTP_PASSWORD"));
+});
 builder.Services.AddSingleton<SmtpEmailSender>();
 builder.Services.AddSingleton<IAppEmailSender>(sp => sp.GetRequiredService<SmtpEmailSender>());
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>>(sp => sp.GetRequiredService<SmtpEmailSender>());

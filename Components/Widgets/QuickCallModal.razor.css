@@ -1,17 +1,6 @@
-.quick-call-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1300;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.25rem;
-    background: rgba(11, 24, 40, 0.62);
-}
-
 .quick-call-window {
     position: relative;
-    width: min(26rem, 100%);
+    width: 100%;
     padding: 1.7rem 1.35rem 1.35rem;
     border-radius: 1.6rem;
     background: #fff;
@@ -59,8 +48,8 @@
 .is-family .quick-call-kicker { color: #15803d; }
 
 .quick-call-portrait {
-    width: 15.5rem;
-    height: 15.5rem;
+    width: 9rem;
+    height: 9rem;
     max-width: 100%;
     margin: 0 auto 0.95rem;
     border-radius: 1.4rem;
@@ -257,19 +246,12 @@
 }
 
 @media (max-width: 640.98px) {
-    .quick-call-backdrop {
-        align-items: flex-end;
-        padding: 0;
-    }
-
     .quick-call-window {
         width: 100%;
-        border-radius: 1.4rem 1.4rem 0 0;
-        padding-bottom: calc(1.35rem + env(safe-area-inset-bottom));
     }
 
     .quick-call-portrait {
-        width: 13.5rem;
-        height: 13.5rem;
+        width: 7.5rem;
+        height: 7.5rem;
     }
 }

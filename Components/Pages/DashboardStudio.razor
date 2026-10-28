@@ -218,7 +218,8 @@ else
 
 @if (_cancelOpen)
 {
-    <div class="med-update-backdrop" role="dialog" aria-modal="true" aria-labelledby="studio-cancel-title">
+    <div class="med-update-backdrop">
+        <FloatPanel Class="place-modal" LabelledBy="studio-cancel-title">
         <div class="med-update-modal">
             <div class="med-update-head">
                 <div>
@@ -232,6 +233,7 @@ else
                 <button type="button" class="btn btn-teal" @onclick="ConfirmCancel">Discard changes</button>
             </div>
         </div>
+        </FloatPanel>
     </div>
 }
 

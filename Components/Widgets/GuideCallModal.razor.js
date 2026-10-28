@@ -71,7 +71,7 @@ export function speakGuide(text, slow, dotNetRef) {
         const utterance = new SpeechSynthesisUtterance(sentences[index]);
         index += 1;
         utterance.lang = "en-US";
-        utterance.rate = slow ? 0.74 : 0.82;
+        utterance.rate = slow ? 0.68 : 0.78;
         utterance.pitch = 1.02;
         utterance.volume = 1;
         const voice = pickVoice();
@@ -80,7 +80,7 @@ export function speakGuide(text, slow, dotNetRef) {
         utterance.onend = () => {
             if (token !== speakToken)
                 return;
-            window.setTimeout(speakNext, slow ? 480 : 340);
+            window.setTimeout(speakNext, slow ? 720 : 420);
         };
         utterance.onerror = finish;
         window.speechSynthesis.speak(utterance);
@@ -166,7 +166,6 @@ function ensureSession() {
             }
             if (!result.isFinal || guideSpeaking || !acceptCommands || isEcho(text))
                 continue;
-            acceptCommands = false;
             notify(sessionRef, "OnGuideHeard", text);
         }
     };
@@ -268,6 +267,47 @@ let wakeTimer;
 let wakeWatch;
 let wakeGesture;
 let wakeStartedAt = 0;
+let wakeStatus = "";
+let wakeStream;
+let wakeAudio;
+let wakeAnalyser;
+let wakeVadTimer = 0;
+let wakeOpening = false;
+let handoffFails = 0;
+let wakeCooldownUntil = 0;
+let vadArmed = false;
+let loudSince = 0;
+let nextWakeAt = 0;
+let nextMicAt = 0;
+
+function androidLike() {
+    const ua = navigator.userAgent || "";
+    const platform = navigator.userAgentData?.platform || navigator.platform || "";
+    if (/Android|Samsung|Galaxy|SM-[A-Z]\d/i.test(ua) || /Android/i.test(platform))
+        return true;
+    if (navigator.userAgentData?.mobile === true && !/Windows|Mac/i.test(platform))
+        return true;
+    if (appleTouch())
+        return false;
+    if (/Windows|Macintosh|Mac OS/i.test(ua) || /Win|Mac/i.test(platform))
+        return false;
+    const touch = (navigator.maxTouchPoints || 0) > 0;
+    const coarse = window.matchMedia("(pointer: coarse), (hover: none)").matches;
+    return touch && coarse;
+}
+
+function appleTouch() {
+    const ua = navigator.userAgent || "";
+    return /iPhone|iPad|iPod/.test(ua)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function setWakeStatus(status) {
+    if (wakeStatus === status)
+        return;
+    wakeStatus = status;
+    notify(wakeRef, "OnWakeStatus", status);
+}
 
 function phraseHasCall(text) {
     const words = String(text || "")
@@ -293,12 +333,141 @@ function triggerWake(text) {
     notify(wakeRef, "OnWakeCall", text);
 }
 
+function releaseMic() {
+    if (wakeVadTimer) {
+        window.cancelAnimationFrame(wakeVadTimer);
+        wakeVadTimer = 0;
+    }
+    if (wakeStream) {
+        wakeStream.getTracks().forEach((track) => track.stop());
+        wakeStream = null;
+    }
+    const audio = wakeAudio;
+    wakeAudio = null;
+    wakeAnalyser = null;
+    if (audio)
+        audio.close().catch(() => { });
+}
+
+function sampleLevel() {
+    if (!wakeAnalyser)
+        return 0;
+    const data = new Uint8Array(wakeAnalyser.fftSize);
+    wakeAnalyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let index = 0; index < data.length; index += 1) {
+        const value = (data[index] - 128) / 128;
+        sum += value * value;
+    }
+    return Math.sqrt(sum / data.length);
+}
+
+function watchVoice() {
+    if (!wakeOn || !wakeAnalyser || wakeRec || wakeFired || wakeNeedsGesture)
+        return;
+    const level = sampleLevel();
+    const now = Date.now();
+    const quiet = androidLike() ? 0.02 : 0.03;
+    const loud = androidLike() ? 0.12 : 0.055;
+    const hold = androidLike() ? 400 : 80;
+    if (now < wakeCooldownUntil || (androidLike() && now < nextWakeAt)) {
+        vadArmed = level < quiet;
+        loudSince = 0;
+    } else if (level < quiet) {
+        vadArmed = true;
+        loudSince = 0;
+    } else if (vadArmed && level > loud) {
+        if (!loudSince)
+            loudSince = now;
+        if (now - loudSince >= hold) {
+            loudSince = 0;
+            vadArmed = false;
+            releaseMic();
+            window.clearTimeout(wakeTimer);
+            wakeTimer = window.setTimeout(() => {
+                wakeTimer = 0;
+                beginWake();
+            }, 200);
+            return;
+        }
+    } else {
+        loudSince = 0;
+    }
+    wakeVadTimer = window.requestAnimationFrame(watchVoice);
+}
+
+async function listenForVoice() {
+    if (!wakeOn || wakeFired || wakeNeedsGesture || wakeStream || wakeRec || wakeOpening)
+        return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+        beginWake();
+        return;
+    }
+    wakeOpening = true;
+    try {
+        wakeStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+        });
+        if (!wakeOn || wakeFired || wakeNeedsGesture) {
+            releaseMic();
+            return;
+        }
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+            releaseMic();
+            beginWake();
+            return;
+        }
+        wakeAudio = new AudioContext();
+        if (wakeAudio.state === "suspended")
+            await wakeAudio.resume();
+        if (wakeAudio.state === "suspended") {
+            releaseMic();
+            wakeNeedsGesture = true;
+            setWakeStatus("needs-tap");
+            waitForGesture();
+            return;
+        }
+        const source = wakeAudio.createMediaStreamSource(wakeStream);
+        wakeAnalyser = wakeAudio.createAnalyser();
+        wakeAnalyser.fftSize = 512;
+        source.connect(wakeAnalyser);
+        vadArmed = false;
+        loudSince = 0;
+        setWakeStatus("listening");
+        watchVoice();
+    } catch (error) {
+        releaseMic();
+        nextMicAt = Date.now() + 20000;
+        if (!wakeOn)
+            return;
+        wakeNeedsGesture = true;
+        const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+        setWakeStatus(denied ? "blocked" : "needs-tap");
+        waitForGesture();
+    } finally {
+        wakeOpening = false;
+    }
+}
+
+function quietAfterRecognition(ran) {
+    if (!androidLike())
+        return;
+    const pause = ran < 4000 ? 25000 : 8000;
+    nextWakeAt = Date.now() + pause;
+    wakeCooldownUntil = nextWakeAt;
+}
+
 function beginWake() {
     if (!wakeOn || wakeRec || wakeFired || wakeNeedsGesture)
         return;
+    if (androidLike() && Date.now() < nextWakeAt) {
+        void listenForVoice();
+        return;
+    }
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
-        notify(wakeRef, "OnWakeStatus", "unsupported");
+        setWakeStatus("unsupported");
         return;
     }
 
@@ -306,12 +475,13 @@ function beginWake() {
     wakeRec = rec;
     wakeStartedAt = Date.now();
     rec.lang = "en-US";
-    rec.continuous = true;
+    rec.continuous = !androidLike();
     rec.interimResults = true;
     rec.maxAlternatives = 3;
     rec.onstart = () => {
         wakeStartedAt = Date.now();
-        notify(wakeRef, "OnWakeStatus", "listening");
+        handoffFails = 0;
+        setWakeStatus("listening");
     };
     rec.onresult = (event) => {
         wakeStartedAt = Date.now();
@@ -324,10 +494,12 @@ function beginWake() {
         }
     };
     rec.onerror = (event) => {
+        if (event.error === "audio-capture")
+            handoffFails += 1;
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
             wakeRec = null;
             wakeNeedsGesture = true;
-            notify(wakeRef, "OnWakeStatus", "needs-tap");
+            setWakeStatus("needs-tap");
             waitForGesture();
         }
     };
@@ -335,15 +507,34 @@ function beginWake() {
         if (wakeRec !== rec)
             return;
         wakeRec = null;
-        if (wakeOn && !wakeFired && !wakeNeedsGesture)
-            wakeTimer = window.setTimeout(beginWake, 150);
+        if (!wakeOn || wakeFired || wakeNeedsGesture)
+            return;
+        if (androidLike()) {
+            if (handoffFails >= 2) {
+                wakeNeedsGesture = true;
+                setWakeStatus("needs-tap");
+                waitForGesture();
+                return;
+            }
+            quietAfterRecognition(wakeStartedAt ? Date.now() - wakeStartedAt : 0);
+            void listenForVoice();
+            return;
+        }
+        const ran = wakeStartedAt ? Date.now() - wakeStartedAt : 0;
+        wakeTimer = window.setTimeout(beginWake, ran < 2000 ? 2000 : 400);
     };
     try {
         rec.start();
     } catch {
         wakeRec = null;
-        if (wakeOn && !wakeFired && !wakeNeedsGesture)
-            wakeTimer = window.setTimeout(beginWake, 500);
+        if (!wakeOn || wakeFired || wakeNeedsGesture)
+            return;
+        if (androidLike()) {
+            quietAfterRecognition(0);
+            void listenForVoice();
+            return;
+        }
+        wakeTimer = window.setTimeout(beginWake, 500);
     }
 }
 
@@ -376,6 +567,11 @@ function ensureWatch() {
     wakeWatch = window.setInterval(() => {
         if (!wakeOn || wakeFired || wakeNeedsGesture)
             return;
+        if (androidLike()) {
+            if (!wakeRec && !wakeStream && !wakeOpening && !wakeTimer && Date.now() >= nextMicAt)
+                void listenForVoice();
+            return;
+        }
         if (!wakeRec) {
             beginWake();
             return;
@@ -392,47 +588,69 @@ function ensureWatch() {
 }
 
 async function primeWake() {
+    if (!wakeOn || wakeFired)
+        return;
+    if (appleTouch()) {
+        wakeNeedsGesture = true;
+        setWakeStatus("needs-tap");
+        waitForGesture();
+        return;
+    }
     const permission = await micPermission();
     if (!wakeOn || wakeFired)
         return;
+    if (permission === "denied") {
+        wakeNeedsGesture = true;
+        setWakeStatus("blocked");
+        waitForGesture();
+        return;
+    }
+    if (androidLike()) {
+        if (permission !== "granted") {
+            wakeNeedsGesture = true;
+            setWakeStatus("needs-tap");
+            waitForGesture();
+            return;
+        }
+        wakeNeedsGesture = false;
+        void listenForVoice();
+        return;
+    }
     if (permission === "granted") {
         wakeNeedsGesture = false;
         beginWake();
         return;
     }
     wakeNeedsGesture = true;
-    notify(wakeRef, "OnWakeStatus", permission === "denied" ? "blocked" : "needs-tap");
+    setWakeStatus("needs-tap");
     waitForGesture();
 }
 
 export function startWake(dotNetRef) {
     wakeOn = true;
     wakeFired = false;
+    wakeNeedsGesture = false;
+    handoffFails = 0;
     wakeRef = dotNetRef;
     window.clearTimeout(wakeTimer);
     ensureWatch();
     void primeWake();
 }
 
-export async function armWake(dotNetRef) {
+export function armWake(dotNetRef) {
     if (dotNetRef)
         wakeRef = dotNetRef;
     wakeOn = true;
     wakeFired = false;
     wakeNeedsGesture = false;
+    handoffFails = 0;
+    wakeCooldownUntil = 0;
+    nextWakeAt = 0;
+    nextMicAt = 0;
     window.clearTimeout(wakeTimer);
     ensureWatch();
-    if (!navigator.mediaDevices?.getUserMedia) {
-        beginWake();
-        return;
-    }
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-    } catch {
-        wakeNeedsGesture = true;
-        notify(wakeRef, "OnWakeStatus", "blocked");
-        waitForGesture();
+    if (androidLike()) {
+        void listenForVoice();
         return;
     }
     beginWake();
@@ -440,7 +658,15 @@ export async function armWake(dotNetRef) {
 
 export function stopWake() {
     wakeOn = false;
+    wakeStatus = "";
+    wakeOpening = false;
+    handoffFails = 0;
+    releaseMic();
     window.clearTimeout(wakeTimer);
+    if (wakeWatch) {
+        window.clearInterval(wakeWatch);
+        wakeWatch = null;
+    }
     if (wakeGesture) {
         document.removeEventListener("pointerdown", wakeGesture, true);
         document.removeEventListener("keydown", wakeGesture, true);

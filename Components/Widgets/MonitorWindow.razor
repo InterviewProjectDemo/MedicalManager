@@ -9,11 +9,12 @@
 
 @if (Visible)
 {
+    <FloatPanel Class="place-monitor" LabelledBy="monitor-title">
     <section class="monitor-window @(_live ? "live" : null)" aria-label="Family monitor">
         <header class="monitor-head">
             <div>
                 <p class="monitor-kicker">Family monitor</p>
-                <h2>They can see you</h2>
+                <h2 id="monitor-title">They can see you</h2>
             </div>
             <button type="button" class="monitor-close" aria-label="Stop monitoring" @onclick="CloseAsync">&times;</button>
         </header>
@@ -56,11 +57,9 @@
                 <button type="button" class="monitor-stop" @onclick="CloseAsync">Stop monitoring</button>
             }
         }
-    </section>
-    @if (_shareOpen)
-    {
-        <div class="monitor-share-backdrop" @onclick="CloseShare">
-            <form class="monitor-share" role="dialog" aria-modal="true" aria-labelledby="monitor-share-title" @onclick:stopPropagation @onsubmit="SendShareAsync" @onsubmit:preventDefault>
+        @if (_shareOpen)
+        {
+            <form class="monitor-share" aria-labelledby="monitor-share-title" @onsubmit="SendShareAsync" @onsubmit:preventDefault>
                 <h3 id="monitor-share-title">Share the link and code</h3>
                 <p class="monitor-share-lead">Send them by text, email, or both. A phone number or an email is needed.</p>
                 <label class="monitor-label" for="monitor-share-phone">Phone number</label>
@@ -76,8 +75,9 @@
                     <button type="submit" class="monitor-share-send" disabled="@_shareBusy">@(_shareBusy ? "Sending" : "Send")</button>
                 </div>
             </form>
-        </div>
-    }
+        }
+    </section>
+    </FloatPanel>
 }
 
 @code {

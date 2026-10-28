@@ -1,0 +1,95 @@
+.float-panel {
+    position: fixed;
+    z-index: 1320;
+    width: min(24rem, calc(100vw - 1.5rem));
+    max-height: min(42rem, calc(100dvh - 6.5rem));
+    overflow: auto;
+    pointer-events: auto;
+}
+
+.float-panel.place-phone {
+    top: 4.6rem;
+    right: 1rem;
+}
+
+.float-panel.place-guide {
+    top: 5.4rem;
+    left: 17.5rem;
+}
+
+.float-panel.place-monitor {
+    top: auto;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1280;
+    width: min(24rem, calc(100vw - 1.5rem));
+    max-height: min(40rem, calc(100dvh - 1.5rem));
+}
+
+.float-panel.place-modal {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1400;
+    width: min(28rem, calc(100vw - 1.5rem));
+    max-height: min(92dvh, calc(100dvh - 2rem));
+}
+
+.float-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.2rem;
+    margin-bottom: 0.4rem;
+    border-radius: 999px;
+    background: #fff;
+    color: #0f3d5c;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    box-shadow: 0 8px 22px rgba(11, 24, 40, 0.16);
+}
+
+.float-grip:active {
+    cursor: grabbing;
+}
+
+.float-body {
+    min-width: 0;
+}
+
+@media (max-width: 640.98px) {
+    .float-panel.place-phone,
+    .float-panel.place-guide {
+        top: 0.65rem;
+        left: 0.65rem;
+        right: auto;
+        width: min(22rem, calc(100vw - 1.3rem));
+        max-height: calc(100dvh - 7.2rem);
+    }
+
+    .float-panel.place-guide {
+        top: 3.2rem;
+    }
+
+    .float-panel.place-monitor {
+        left: 0.65rem;
+        right: auto;
+        bottom: calc(5.5rem + env(safe-area-inset-bottom));
+        width: min(22rem, calc(100vw - 1.3rem));
+        max-height: min(28rem, calc(100dvh - 8rem));
+    }
+
+    .float-panel.place-modal {
+        top: auto;
+        left: 0.65rem;
+        right: auto;
+        bottom: calc(5.5rem + env(safe-area-inset-bottom));
+        transform: none;
+        width: min(28rem, calc(100vw - 1.3rem));
+    }
+}

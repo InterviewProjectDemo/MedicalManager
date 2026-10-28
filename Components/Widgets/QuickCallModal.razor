@@ -12,12 +12,8 @@
 
 @if (Visible)
 {
-    <div class="quick-call-backdrop" @onclick="CloseAsync">
-        <div class="quick-call-window @KindClass"
-             role="dialog"
-             aria-modal="true"
-             aria-labelledby="quick-call-title"
-             @onclick:stopPropagation="true">
+    <FloatPanel Class="place-phone" LabelledBy="quick-call-title">
+        <div class="quick-call-window @KindClass">
             <button type="button" class="quick-call-close" aria-label="Close" @onclick="CloseAsync">&times;</button>
             <p class="quick-call-kicker">@Kicker</p>
             <div class="quick-call-portrait">
@@ -119,7 +115,7 @@
                 <p class="quick-call-note">This call uses this device's microphone and speaker so you can talk with @Shown(ContactName).</p>
             }
         </div>
-    </div>
+    </FloatPanel>
 }
 
 @code {

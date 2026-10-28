@@ -438,13 +438,6 @@
         _ = StopWakeAsync();
     }
 
-    [JSInvokable]
-    public Task OnWakeStatus(string status)
-    {
-        _wakeStatus = status ?? "";
-        return InvokeAsync(StateHasChanged);
-    }
-
     private async Task ArmWakeAsync()
     {
         try
@@ -456,6 +449,13 @@
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
+    }
+
+    [JSInvokable]
+    public Task OnWakeStatus(string status)
+    {
+        _wakeStatus = status ?? "";
+        return InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
@@ -502,11 +502,9 @@
 
     private async Task StopWakeAsync()
     {
-        if (_wake is null)
-            return;
-
         try
         {
+            _wake ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
             await _wake.InvokeVoidAsync("stopWake");
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)

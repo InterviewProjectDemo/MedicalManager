@@ -1,4 +1,4 @@
-const CACHE = "medical-manager-shell-v1";
+const CACHE = "medical-manager-shell-v2";
 const PRECACHE = [
     "/manifest.webmanifest",
     "/icons/icon-192.png",

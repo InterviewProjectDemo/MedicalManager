@@ -10,8 +10,8 @@
 
 @if (Visible)
 {
-    <div class="guide-backdrop" @onclick="EndSessionAsync">
-        <div class="guide-window @(_listening ? "listening" : null)" role="dialog" aria-modal="true" aria-labelledby="guide-call-title" @onclick:stopPropagation="true">
+    <FloatPanel Class="place-guide" LabelledBy="guide-call-title">
+        <div class="guide-window @(_listening ? "listening" : null)">
             <button type="button" class="guide-close" aria-label="Close" @onclick="EndSessionAsync">&times;</button>
             <p class="guide-kicker">With you</p>
             <h2 id="guide-call-title">@_title</h2>
@@ -36,7 +36,7 @@
                 }
                 else if (!_connected && !_ending)
                 {
-                    <p class="guide-listening">@(_listening ? "I'm listening" : "One moment")</p>
+                    <p class="guide-listening">@(_listening ? "I'm listening. Take your time." : "One moment")</p>
                     <div class="guide-choices">
                         @if (_offerKind)
                         {
@@ -58,10 +58,10 @@
             }
             else if (!_placing && !_ending)
             {
-                <p class="guide-note">You can say yes, no, or end. I'm right here with you.</p>
+                <p class="guide-note">You can say yes, no, or end. I'll wait a minute so you don't have to rush.</p>
             }
         </div>
-    </div>
+    </FloatPanel>
 }
 
 @code {
@@ -86,8 +86,10 @@
     private string _noLabel = "No";
     private string _prompt = "";
     private string? _callError;
-    private bool _nudgedSilence;
+    private bool _committing;
+    private bool _listenAfter;
     private readonly List<GuideLine> _lines = new();
+    private CancellationTokenSource? _patience;
     private CallGuide? _guide;
     private IJSObjectReference? _speech;
     private IJSObjectReference? _calls;
@@ -146,7 +148,6 @@
             .ToList();
 
         _lines.Clear();
-        _nudgedSilence = false;
         var displayName = string.IsNullOrWhiteSpace(caller.Name) ? name : caller.Name;
         _guide = new CallGuide(displayName, family, doctorPeople);
         var firstName = displayName?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
@@ -176,6 +177,7 @@
         if (_disposed || session != _session || !Visible)
             return;
 
+        CancelPatience();
         _prompt = turn.Prompt;
         _offerKind = turn.OfferKind;
         _offerYesNo = turn.OfferYesNo;
@@ -207,6 +209,7 @@
             _speech ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
             _self ??= DotNetObjectReference.Create(this);
             _guideSession = session;
+            _listenAfter = listenAfter;
             _listening = false;
             await _speech.InvokeVoidAsync("speakGuide", prompt, slow, _self);
             if (!listenAfter && session == _session)
@@ -225,7 +228,16 @@
         if (_disposed || _ending || _guideSession != _session || _placing || _connected)
             return;
 
+        if (!_listenAfter)
+        {
+            _listening = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _committing = false;
         _listening = true;
+        StartPatience(_session);
         await InvokeAsync(StateHasChanged);
         try
         {
@@ -235,7 +247,47 @@
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
             _listening = false;
+            CancelPatience();
         }
+    }
+
+    private void StartPatience(int session)
+    {
+        CancelPatience();
+        var wait = new CancellationTokenSource();
+        _patience = wait;
+        _ = WaitForAnswerAsync(session, wait.Token);
+    }
+
+    private async Task WaitForAnswerAsync(int session, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(60), token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_disposed || token.IsCancellationRequested || session != _session || _guide is null || !_listening || _committing || _placing || _connected || _ending)
+            return;
+
+        _committing = true;
+        _listening = false;
+        ArchivePrompt();
+        await ApplyTurnAsync(session, _guide.StillHere());
+    }
+
+    private void CancelPatience()
+    {
+        var wait = _patience;
+        _patience = null;
+        if (wait is null)
+            return;
+
+        wait.Cancel();
+        wait.Dispose();
     }
 
     [JSInvokable]
@@ -245,26 +297,27 @@
             return Task.CompletedTask;
 
         if (CallGuide.WantsToEnd(transcript))
-            return EndSessionAsync();
-
-        if (_placing || _connected)
-            return Task.CompletedTask;
-
-        _listening = false;
-        if (transcript == "\u0000")
-            return InvokeAsync(StateHasChanged);
-
-        if (string.IsNullOrWhiteSpace(transcript))
         {
-            if (_nudgedSilence)
-                return InvokeAsync(StateHasChanged);
-
-            _nudgedSilence = true;
-            ArchivePrompt();
-            return ApplyTurnAsync(_session, _guide.StillHere());
+            CancelPatience();
+            return EndSessionAsync();
         }
 
-        _nudgedSilence = false;
+        if (_placing || _connected || _committing)
+            return Task.CompletedTask;
+
+        if (transcript == "\u0000")
+        {
+            CancelPatience();
+            _listening = false;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        if (!_guide.IsDecisive(transcript))
+            return Task.CompletedTask;
+
+        _committing = true;
+        _listening = false;
+        CancelPatience();
         ArchivePrompt();
         Remember(true, Said(transcript));
         return ApplyTurnAsync(_session, _guide.Hear(transcript));
@@ -389,6 +442,8 @@
 
         _ending = true;
         _listening = false;
+        _committing = true;
+        CancelPatience();
         _prompt = "Goodbye.";
         await InvokeAsync(StateHasChanged);
 
@@ -437,6 +492,8 @@
     {
         _session++;
         _listening = false;
+        _committing = false;
+        CancelPatience();
         _ = StopSessionAsync();
         if (_familyAudio)
         {

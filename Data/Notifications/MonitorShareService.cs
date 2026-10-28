@@ -114,7 +114,7 @@ public sealed class MonitorShareService(
                 return "The text was sent. The email could not be sent.";
             if (emailSent)
                 return "The email was sent. " + phoneProblem;
-            return phoneProblem;
+            return phoneProblem + " The email could not be sent.";
         }
 
         if (wantsPhone)

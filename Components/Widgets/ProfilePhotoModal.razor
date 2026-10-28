@@ -7,11 +7,12 @@
 @if (Visible)
 {
     <div class="med-update-backdrop profile-photo-backdrop" @onclick="CloseAsync">
-        <div class="med-update-modal profile-photo-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Profile photo">
+        <FloatPanel Class="place-modal" LabelledBy="profile-photo-title">
+        <div class="med-update-modal profile-photo-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Profile photo">
             <div class="med-update-head">
                 <div>
                     <p class="eyebrow profile-photo-eyebrow">Your profile</p>
-                    <h3>Profile photo</h3>
+                    <h3 id="profile-photo-title">Profile photo</h3>
                     <p class="muted">Choose a photo, drag one in, or use your camera.</p>
                 </div>
                 <button type="button" class="med-update-close" @onclick="CloseAsync" aria-label="Close">&times;</button>
@@ -78,6 +79,7 @@
                 </div>
             </div>
         </div>
+        </FloatPanel>
     </div>
 }
 
@@ -215,7 +217,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _error = ex is JSException js ? MapCaptureError(js) : "Could not capture the photo. Try again.";
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -291,6 +293,18 @@
             _saving = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private static string MapCaptureError(JSException ex)
+    {
+        var message = ex.Message ?? string.Empty;
+        if (message.Contains("not ready", StringComparison.OrdinalIgnoreCase))
+            return "The camera picture is not ready yet. Wait for the preview, then capture again.";
+        if (message.Contains("maximum message size", StringComparison.OrdinalIgnoreCase))
+            return "The photo was too large to save. Try again.";
+        if (message.Contains("NotAllowedError", StringComparison.OrdinalIgnoreCase))
+            return "Camera access was blocked. Allow camera permission in your browser and try again.";
+        return "Could not capture the photo. Try again.";
     }
 
     private static string MapCameraError(JSException ex)

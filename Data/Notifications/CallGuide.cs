@@ -49,6 +49,11 @@ public sealed class CallGuide
         var unsure = guide.Hear("I don't know");
         if (!unsure.Prompt.Contains("family", StringComparison.OrdinalIgnoreCase) || !unsure.Prompt.Contains("doctor", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("A confused answer should ask about family or a doctor.");
+        if (guide.IsDecisive("I'm not sure") || guide.IsDecisive("hmm") || !guide.IsDecisive("yes"))
+            throw new InvalidOperationException("The guide should wait until the answer is clearly yes, no, a name, family, or a doctor.");
+        var hesitating = guide.Hear("I'm not sure");
+        if (!hesitating.Prompt.Contains("Jordan Rivera", StringComparison.Ordinal))
+            throw new InvalidOperationException("Hesitating should keep the same person instead of moving on.");
 
         var byName = new CallGuide("Alex Rivera", family, doctors);
         byName.Opening();
@@ -118,6 +123,28 @@ public sealed class CallGuide
             return AskPerson($"I'm right here, {_firstName}. Should I call {_pending.Name}?", doctorNext: _listKind == "family" && _index == 0);
 
         return new GuideTurn($"I'm right here, {_firstName}. Who do you want to talk to, your family or a doctor?", true, true, true, false, null);
+    }
+
+    public bool IsDecisive(string? transcript)
+    {
+        if (WantsToEnd(transcript))
+            return true;
+
+        var options = (transcript ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (options.Length == 0)
+            return false;
+
+        var best = options.OrderByDescending(Score).First();
+        if (string.IsNullOrWhiteSpace(Normalize(best)) || IsEcho(best) || (WantsFamily(best) && WantsDoctor(best)))
+            return false;
+        if (SingleNameMatch(best) is not null)
+            return true;
+        if (WantsFamily(best) || WantsDoctor(best))
+            return true;
+        if (_pending is null || _phase is not ("list" or "confirm"))
+            return false;
+
+        return IsYes(best) || IsNo(best);
     }
 
     public bool IsClearChoice(string? transcript)
@@ -352,9 +379,13 @@ public sealed class CallGuide
 
     private static bool IsYes(string heard)
     {
-        var words = Normalize(heard).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0)
+        var text = Normalize(heard);
+        if (text.Length == 0
+            || text.Contains("not sure", StringComparison.Ordinal)
+            || text.Contains("not yet", StringComparison.Ordinal))
             return false;
+
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Any(word => word is "yes" or "yeah" or "yep" or "sure" or "ok" or "okay"))
             return true;
         if (words.Any(word => word is "should" or "who" or "how"))
@@ -365,9 +396,20 @@ public sealed class CallGuide
     private static bool IsNo(string heard)
     {
         var text = Normalize(heard);
+        if (text.Length == 0
+            || text.Contains("not sure", StringComparison.Ordinal)
+            || text.Contains("not yet", StringComparison.Ordinal)
+            || text.Contains("dont know", StringComparison.Ordinal)
+            || text.Contains("do not know", StringComparison.Ordinal))
+            return false;
+
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Any(word => word is "no" or "nope" or "not" or "next" or "nah")
-            || text.Contains("someone else", StringComparison.Ordinal);
+        if (words.Any(word => word is "no" or "nope" or "nah"))
+            return true;
+        if (text.Contains("someone else", StringComparison.Ordinal))
+            return true;
+
+        return words.Length <= 2 && words.Any(word => word is "not" or "next");
     }
 
     private static bool Mentions(string heard, params string[] words)

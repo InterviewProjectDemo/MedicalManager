@@ -149,10 +149,11 @@
 @if (_pendingEditId is not null)
 {
     <div class="med-update-backdrop" @onclick="CancelEdit">
-        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Confirm lab report edit">
+        <FloatPanel Class="place-modal" LabelledBy="lab-edit-title">
+        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Confirm lab report edit">
             <div class="med-update-head">
                 <div>
-                    <h3>Confirm edit access</h3>
+                    <h3 id="lab-edit-title">Confirm edit access</h3>
                     <p>
                         @if (_pendingEditDate is DateOnly editDate)
                         {
@@ -190,6 +191,7 @@
                 </div>
             </EditForm>
         </div>
+        </FloatPanel>
     </div>
 }
 

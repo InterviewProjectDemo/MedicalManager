@@ -87,10 +87,11 @@
 @if (_pendingUpdate is not null)
 {
     <div class="med-update-backdrop" @onclick="CancelUpdate">
-        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Confirm medication status update">
+        <FloatPanel Class="place-modal" LabelledBy="med-status-title">
+        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Confirm medication status update">
             <div class="med-update-head">
                 <div>
-                    <h3>Confirm status update</h3>
+                    <h3 id="med-status-title">Confirm status update</h3>
                     <p>@DoseStatusLabel(_pendingUpdate.Status) · @_pendingUpdate.DoseName</p>
                 </div>
                 <button type="button" class="med-update-close" @onclick="CancelUpdate" aria-label="Close">&times;</button>
@@ -115,6 +116,7 @@
                 </div>
             </EditForm>
         </div>
+        </FloatPanel>
     </div>
 }
 

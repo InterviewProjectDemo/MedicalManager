@@ -156,10 +156,11 @@
 @if (_rescheduleItem is not null)
 {
     <div class="med-update-backdrop" @onclick="CancelReschedule">
-        <div class="med-update-modal todo-reschedule-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Reschedule to-do">
+        <FloatPanel Class="place-modal" LabelledBy="todo-reschedule-title">
+        <div class="med-update-modal todo-reschedule-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Reschedule to-do">
             <div class="med-update-head">
                 <div>
-                    <h3>Reschedule</h3>
+                    <h3 id="todo-reschedule-title">Reschedule</h3>
                     <p>@_rescheduleItem.Description</p>
                 </div>
                 <button type="button" class="med-update-close" @onclick="CancelReschedule" aria-label="Close">&times;</button>
@@ -182,6 +183,7 @@
                 </div>
             </EditForm>
         </div>
+        </FloatPanel>
     </div>
 }
 

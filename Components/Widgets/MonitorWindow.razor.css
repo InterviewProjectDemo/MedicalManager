@@ -1,11 +1,6 @@
 .monitor-window {
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 1260;
-    width: min(24rem, calc(100vw - 1.5rem));
-    max-height: min(40rem, calc(100vh - 1.5rem));
-    overflow: auto;
+    position: relative;
+    width: 100%;
     padding: 1rem 1rem 1.1rem;
     border-radius: 18px;
     background: #fff;
@@ -183,8 +178,8 @@
 }
 
 .monitor-share {
-    width: min(22rem, 100%);
-    margin: 0;
+    width: 100%;
+    margin: 0.9rem 0 0;
     padding: 1rem 1rem 1.1rem;
     border-radius: 16px;
     background: #fff;
@@ -275,9 +270,6 @@
 
 @media (max-width: 640.98px) {
     .monitor-window {
-        left: 0.75rem;
-        right: 0.75rem;
-        width: auto;
-        bottom: calc(5.4rem + env(safe-area-inset-bottom));
+        width: 100%;
     }
 }

@@ -3,11 +3,12 @@
 @if (Visible)
 {
     <div class="med-update-backdrop med-research-backdrop" @onclick="Close">
-        <div class="med-research-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Medication research">
+        <FloatPanel Class="place-modal" LabelledBy="med-research-title">
+        <div class="med-research-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Medication research">
             <div class="med-research-head">
                 <div>
                     <p class="eyebrow med-research-eyebrow">Drug lookup agent</p>
-                    <h3>@(string.IsNullOrWhiteSpace(_medicationInput) ? "Research medication" : _medicationInput)</h3>
+                    <h3 id="med-research-title">@(string.IsNullOrWhiteSpace(_medicationInput) ? "Research medication" : _medicationInput)</h3>
                     <p class="muted">Cross-check interactions with your active medications and review known side effects.</p>
                 </div>
                 <button type="button" class="med-update-close" @onclick="Close" aria-label="Close">&times;</button>
@@ -125,6 +126,7 @@
                 </div>
             }
         </div>
+        </FloatPanel>
     </div>
 }
 
