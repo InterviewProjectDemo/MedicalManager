@@ -812,7 +812,7 @@ html, body {
 .btn-outline-teal { color: #0f766e; border-color: #0f766e; }
 .btn-outline-teal:hover { background: #0f766e; color: #fff; }
 .btn-green { background: #27ae60; color: #fff; border: none; }
-.form-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.2rem; }
 .form-card { max-width: 820px; }
 .table-card { overflow: auto; }
 

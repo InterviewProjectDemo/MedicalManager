@@ -17,6 +17,10 @@
             <p class="eyebrow">Blood pressure</p>
             <h1>@(Id is null ? "Add reading" : "Update reading")</h1>
         </div>
+        @if (CanOverwrite)
+        {
+            <button type="button" class="btn btn-light" @onclick="BeginOverwrite">Overwrite</button>
+        }
     </div>
 
     <EditForm Model="model" OnValidSubmit="Save" class="form-card">
@@ -40,16 +44,12 @@
                 <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
             </div>
             <div class="col-12">
-                <ReadingOverwrite @ref="_overwrite" OfferOverwrite="@(Id is null)" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
+                <ReadingOverwrite @ref="_overwrite" OfferOverwrite="true" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
             </div>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary" disabled="@_overwritePending">Save</button>
             <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
-            @if (Id is null && _overwrite?.IsActive != true)
-            {
-                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="BeginOverwrite">Overwrite</button>
-            }
             @if (Id is not null)
             {
                 <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
@@ -66,6 +66,7 @@
     private ReadingOverwrite? _overwrite;
     private bool _overwritePending;
     private string Back => CareLinks.To("blood-pressure", PatientUserId);
+    private bool CanOverwrite => model is not null && !OverwriteNote.IsOverwrite(model.Notes);
 
     protected override async Task OnParametersSetAsync()
     {
