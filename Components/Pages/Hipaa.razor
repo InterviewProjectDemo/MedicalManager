@@ -1,0 +1,64 @@
+@page "/hipaa"
+
+<PageTitle>HIPAA compliance confirmation</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Medical Manager</p>
+        <h1>HIPAA compliance confirmation</h1>
+        <p class="muted">Effective October 28, 2026. This page confirms the safeguards built into Medical Manager and the duties that stay with the organization running it.</p>
+    </div>
+</div>
+
+<article class="legal-page">
+    <div class="legal-confirm" role="note">
+        <p>
+            <strong>Confirmation.</strong>
+            Medical Manager encrypts health information at rest, limits a patient account to that patient's own chart, lets any doctor account open a chart after selecting that patient, and protects sign-in with hashed passwords, lockout, and an HTTPS-only cookie outside local development.
+            The U.S. Department of Health and Human Services does not certify software as HIPAA compliant.
+            A clinic or other covered organization is HIPAA compliant only after it also completes the operator duties listed below, including Business Associate Agreements with vendors that can see health information.
+        </p>
+    </div>
+
+    <h2>Safeguards confirmed in the application</h2>
+    <ul>
+        <li><strong>Access control.</strong> Pages that hold health records require a signed-in account. A patient account can open only that patient's own blood pressure, sugar, labs, medications, appointments, to-dos, and profile. A doctor account can list every patient and open the chart after selecting that patient. The selected patient stays in the page address so the doctor does not lose context.</li>
+        <li><strong>Authentication.</strong> ASP.NET Core Identity stores passwords as hashes. Passwords need a mix of letters and a number. Optional two-factor authentication and passkeys are available from account settings. Repeated failed sign-ins lock the account.</li>
+        <li><strong>Encryption at rest.</strong> Names, email addresses, phone numbers, home addresses, notes, photos, vitals, medication details, appointment details, lab values, family-contact details, and the monitor access code are stored as AES-256-GCM ciphertext. Production refuses to start if <code>MEDICALMANAGER_PHI_KEY</code> is missing.</li>
+        <li><strong>Encryption in transit.</strong> Outside local development, the authentication cookie is sent only over HTTPS and HSTS is enabled for one year. Docker and AWS deployments require TLS between the application and PostgreSQL.</li>
+        <li><strong>Session cookie.</strong> The sign-in cookie is HttpOnly and uses SameSite Lax, so page scripts cannot read it.</li>
+        <li><strong>Family monitor.</strong> The watch link shows the camera picture after the secret token and the four-digit code. It does not open the clinical chart.</li>
+        <li><strong>Patient choice.</strong> Appointment, medication, and to-do reminders can each be turned off. The account holder can permanently delete the account and the records the database deletes with that user. Medication reminder delivery logs are stored by user id without a foreign key, so those rows can remain.</li>
+    </ul>
+
+    <h2>What you confirm at registration</h2>
+    <p>
+        Creating a patient account requires a confirmation that you have read the <a href="privacy">Privacy Policy</a> and this notice.
+        Medical Manager stores the UTC time of that confirmation on your profile as <em>Privacy policy accepted</em> and <em>HIPAA notice accepted</em>.
+        Doctor accounts are issued by the clinic and are covered by the clinic's own policies.
+    </p>
+
+    <h2>Duties of the organization running Medical Manager</h2>
+    <p>
+        These items are outside the application. A covered entity or business associate still completes them before treating a deployment as HIPAA compliant.
+    </p>
+    <ul>
+        <li><strong>Business Associate Agreements.</strong> Sign a BAA with Amazon Web Services before hosting production data there, with Twilio before sending reminder calls or texts that include a name or visit details, and with the email provider before sending a family-monitor message. That message contains the patient's name, a link, and an access code. Welcome and password-reset email do not include clinical readings. Consumer Gmail does not offer a BAA. Use an email service that will sign one before a covered organization sends the family-monitor message.</li>
+        <li><strong>Maps.</strong> When drive-time lookup is enabled, reminders send the home address and visit location to OpenStreetMap Nominatim and coordinates to OSRM. Production leaves this lookup off unless <code>MEDICALMANAGER_TRAVEL_LOOKUP</code> is true. Use a mapping vendor under a BAA when those addresses are protected health information.</li>
+        <li><strong>Spoken guidance.</strong> Onboarding and walkthrough lines are sent to Microsoft's consumer speech service at speech.platform.bing.com. That service is outside a Business Associate Agreement.</li>
+        <li><strong>Resource search and medication lookup.</strong> A Resource question is sent to MedlinePlus, Wikipedia, and, when configured, an AI provider. A medication name may be sent to openFDA. Keep names and other identifiers out of those questions. The product already tells people that on the Resource page.</li>
+        <li><strong>Administrative safeguards.</strong> Keep written privacy and security policies, complete a risk analysis, train the workforce, and keep a process for reporting and responding to incidents.</li>
+        <li><strong>Audit of record views.</strong> Medical Manager does not store a separate log of each time someone opens a chart. Add that audit trail if your risk analysis requires it. Sign-in failures are written to the application log.</li>
+        <li><strong>Local development.</strong> The SQLite development database and the built-in development encryption key are for building the product. They are not a production HIPAA environment. Production requires the encryption key and TLS to the database.</li>
+    </ul>
+
+    <h2>Health information this notice covers</h2>
+    <p>
+        In this application, protected health information includes the profile, vitals, labs, medications, appointments, doctors, to-dos, photos, and family contact details tied to an account, together with the phone number and address used to deliver reminders.
+    </p>
+
+    <p>
+        Questions about this confirmation can be sent through <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+        Read the <a href="privacy">Privacy Policy</a> for the full description of collection, use, and deletion.
+    </p>
+</article>

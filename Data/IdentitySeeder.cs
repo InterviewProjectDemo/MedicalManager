@@ -40,6 +40,7 @@ public static class IdentitySeeder
 
         await EnsureOnboardingColumnsAsync(db);
         await EnsureFamilyContactColumnsAsync(db);
+        await EnsurePolicyAcceptanceColumnsAsync(db);
         await EnsureMonitorColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
         await EnsureCareReminderSchemaAsync(db);
@@ -1008,6 +1009,38 @@ public static class IdentitySeeder
             ALTER TABLE "PatientProfiles"
             ADD COLUMN IF NOT EXISTS "OnboardingCompletedAt" TIMESTAMP WITHOUT TIME ZONE NULL;
             """);
+    }
+
+    private static async Task EnsurePolicyAcceptanceColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = await ReadSqliteColumnsAsync(connection, "PatientProfiles");
+                await TryAddColumnAsync(db, columns, "PrivacyPolicyAcceptedAt",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "PrivacyPolicyAcceptedAt" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "HipaaNoticeAcceptedAt",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "HipaaNoticeAcceptedAt" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "PrivacyPolicyAcceptedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "HipaaNoticeAcceptedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
     }
 
     private static async Task EnsureFamilyContactColumnsAsync(ApplicationDbContext db)

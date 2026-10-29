@@ -4110,3 +4110,53 @@ body:has(.nav-scrollable.open) {
         opacity: 1;
     }
 }
+
+.legal-page {
+    max-width: 760px;
+    padding-bottom: 2rem;
+}
+
+.legal-page h2 {
+    margin-top: 1.6rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.15rem;
+    color: #0f3d5c;
+}
+
+.legal-page p,
+.legal-page li {
+    color: #344054;
+    line-height: 1.55;
+}
+
+.legal-page ul {
+    padding-left: 1.2rem;
+}
+
+.legal-page li + li {
+    margin-top: 0.45rem;
+}
+
+.legal-confirm {
+    background: #f4faf7;
+    border: 1px solid #c8e6d4;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.legal-confirm p {
+    margin: 0;
+}
+
+.legal-accept {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-weight: 400;
+}
+
+.legal-accept .form-check-input {
+    margin-top: 0.25rem;
+    flex: 0 0 auto;
+}

@@ -577,6 +577,12 @@ namespace MedicalManager.Migrations
                     b.Property<DateTime?>("OnboardingCompletedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("PrivacyPolicyAcceptedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("HipaaNoticeAcceptedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Phone")
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");

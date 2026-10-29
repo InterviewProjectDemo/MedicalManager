@@ -68,4 +68,10 @@ public class PatientProfile
     public bool HasCompletedOnboarding { get; set; }
 
     public DateTime? OnboardingCompletedAt { get; set; }
+
+    /// <summary>When the account holder confirmed the Privacy Policy at registration.</summary>
+    public DateTime? PrivacyPolicyAcceptedAt { get; set; }
+
+    /// <summary>When the account holder confirmed the HIPAA notice at registration.</summary>
+    public DateTime? HipaaNoticeAcceptedAt { get; set; }
 }

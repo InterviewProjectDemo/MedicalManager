@@ -60,6 +60,18 @@ public sealed class PatientAccessService(
         await db.SaveChangesAsync();
     }
 
+    public async Task RecordPolicyAcceptanceAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
+            ?? throw new InvalidOperationException("Patient profile not found.");
+
+        var acceptedAt = DateTime.UtcNow;
+        profile.PrivacyPolicyAcceptedAt = acceptedAt;
+        profile.HipaaNoticeAcceptedAt = acceptedAt;
+        await db.SaveChangesAsync();
+    }
+
     public async Task<PatientProfile?> GetProfileAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

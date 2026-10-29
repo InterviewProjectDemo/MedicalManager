@@ -1,0 +1,133 @@
+@page "/privacy"
+
+<PageTitle>Privacy Policy</PageTitle>
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Medical Manager</p>
+        <h1>Privacy Policy</h1>
+        <p class="muted">Effective October 28, 2026. This policy describes how Medical Manager handles account and health information, and what the software confirms under United States health-privacy rules.</p>
+    </div>
+</div>
+
+<article class="legal-page">
+    <p>
+        Medical Manager is a personal health record for blood pressure, blood sugar, lab results, medications, appointments, and to-dos.
+        It is not a certified medical device and it does not replace a clinician.
+        Medical Manager operates this service. Product news and questions go through
+        <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+    </p>
+
+    <h2>Information we collect</h2>
+    <ul>
+        <li><strong>Account.</strong> Full name, email address, and a password. You can add a phone number, turn on two-factor authentication, or register a passkey. If an external sign-in provider is configured, that provider handles the sign-in request.</li>
+        <li><strong>Profile.</strong> Date of birth, sex, phone, home address, name pronunciation, notes, and a profile photo. You can save a family contact name, phone, and photo, plus a four-digit code for the family monitor link.</li>
+        <li><strong>Health records.</strong> Blood pressure, pulse, blood sugar, lab reports and results, medications, doses, and dose times, appointments, doctors you save, and to-dos, including notes on those records.</li>
+        <li><strong>Reminders and calls.</strong> Whether appointment, medication, and to-do reminders are on. The phone number comes from the profile, then from the account. An emergency call can include your name, phone number, and GPS location if the browser shares it. A family call includes your name and the family contact name.</li>
+        <li><strong>Family monitor.</strong> A secret link and a four-digit code. While Monitor is on, camera frames are shown to someone who has both. Sharing the monitor can send your name, the link, and the code by text or email.</li>
+        <li><strong>Technical data.</strong> An authentication cookie that keeps you signed in, and an antiforgery cookie used for form posts such as logout. Medical Manager does not set advertising cookies.</li>
+    </ul>
+
+    <h2>How we use it</h2>
+    <ul>
+        <li>To show the dashboard, charts, and records.</li>
+        <li>To let a patient open only that patient's own records, and to let a doctor account list patients and open a chart after selecting that patient.</li>
+        <li>To send a welcome email and a password-reset email. Those messages do not include clinical readings.</li>
+        <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call and sends a text. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls and texts include the name and the details needed for that reminder, such as the visit or the medication and dose.</li>
+        <li>When drive-time lookup is enabled, to estimate travel from the home address to the visit location and include that estimate in the appointment reminder. Production leaves this lookup off unless <code>MEDICALMANAGER_TRAVEL_LOOKUP</code> is set to true.</li>
+        <li>To look up a medication name for side-effect information, and to answer a Resource question with public health references.</li>
+        <li>To speak onboarding and walkthrough lines, and to place emergency and family calls when you start them.</li>
+        <li>To show a live camera picture on a family monitor link after the four-digit code is entered.</li>
+    </ul>
+
+    <h2>Who receives information</h2>
+    <ul>
+        <li><strong>The account holder.</strong> A patient account can open only that patient's records. The application rejects a patient request for another person's chart.</li>
+        <li><strong>Doctor accounts.</strong> A signed-in doctor can list every patient account and open the chart after selecting that patient. Doctor accounts are issued by the clinic. They are not limited to a private panel of assigned patients.</li>
+        <li><strong>Family monitor viewers.</strong> Someone with the monitor link and the four-digit code can see the camera picture and the first name used on that page. They do not receive the blood pressure, sugar, lab, medication, or appointment chart through that link.</li>
+        <li><strong>Twilio.</strong> Phone numbers and the words of a reminder, emergency call, family call, or monitor text are sent to Twilio so the call or message can be delivered.</li>
+        <li><strong>Email.</strong> Welcome, password-reset, and family-monitor messages go through the configured mail server. A family-monitor email includes the patient's name, the link, and the access code. The mail path used for this product is Gmail SMTP.</li>
+        <li><strong>Maps, when enabled.</strong> The home address and the visit location are sent to OpenStreetMap Nominatim. The resulting coordinates are sent to the OSRM routing service.</li>
+        <li><strong>openFDA.</strong> A medication name may be sent to <code>api.fda.gov</code> for labeling. The patient's name is not included in that request.</li>
+        <li><strong>Resource search.</strong> The question you type is sent to MedlinePlus and Wikipedia. If an AI key is configured, the same question is also sent to that provider (Groq, OpenAI, or Gemini). The Resource page asks you to leave out names, dates of birth, and other personal details.</li>
+        <li><strong>Spoken guidance.</strong> Onboarding and walkthrough lines are sent as text to Microsoft's online speech service at <code>speech.platform.bing.com</code> so they can be read aloud.</li>
+        <li><strong>Hosting.</strong> When Medical Manager runs on Amazon Web Services, the application and database run there. The database holds encrypted health information.</li>
+    </ul>
+    <p>Medical Manager does not sell personal information or health information.</p>
+
+    <h2>Encryption, transport, and access control</h2>
+    <p>
+        Names, email addresses, phone numbers, addresses, notes, photos, vitals, medication details, appointment details, lab values, family-contact details, and the monitor access code are encrypted in the database with AES-256-GCM.
+        Passwords are stored as hashes, separate from that field encryption.
+        Outside local development, the application will not start without <code>MEDICALMANAGER_PHI_KEY</code>.
+    </p>
+    <p>
+        The sign-in cookie is HttpOnly and uses SameSite Lax. Outside local development it is sent only over HTTPS, and browsers are told to use HTTPS for one year (HSTS).
+        Docker and AWS deployments connect to PostgreSQL over TLS.
+        Repeated failed sign-ins lock the account. Two-factor authentication and passkeys are available from account settings.
+    </p>
+    <p>
+        Local development can use SQLite. If no encryption key is configured there, the app uses a built-in development key. That setup is for building the product. It is not a production health-privacy environment.
+    </p>
+
+    <h2>United States health-privacy confirmation</h2>
+    <div class="legal-confirm" role="note">
+        <p>
+            <strong>What the software confirms.</strong>
+            Medical Manager encrypts the health fields listed above at rest, protects the sign-in cookie in transit outside local development, and limits a patient account to that patient's own records.
+            A doctor account can open a chart after selecting the patient, and that doctor can select any patient in the system.
+            The U.S. Department of Health and Human Services does not certify software as HIPAA compliant.
+            A covered organization still has to complete the duties below before a live deployment is HIPAA compliant.
+            The same confirmation is kept on the <a href="hipaa">HIPAA compliance confirmation</a> page.
+        </p>
+    </div>
+    <ul>
+        <li><strong>Business Associate Agreements.</strong> Sign a BAA with Amazon Web Services before hosting production data there, with Twilio before sending calls or texts that include a name, visit, medication, or location, and with the email provider before sending a family-monitor message. Consumer Gmail does not offer a BAA.</li>
+        <li><strong>Maps and search.</strong> Drive-time lookup sends addresses to Nominatim and coordinates to OSRM. Resource questions go to MedlinePlus, Wikipedia, and any configured AI provider. Medication names may go to openFDA. Keep identifiers out of Resource questions, and turn travel lookup off when those addresses are protected health information and the mapping service is not under a BAA.</li>
+        <li><strong>Spoken guidance.</strong> Guide and onboarding lines go to Microsoft's consumer speech service, which is not a covered email or hosting vendor under a BAA.</li>
+        <li><strong>Administrative safeguards.</strong> Keep written privacy and security policies, complete a risk analysis, train the workforce, and keep a process for reporting incidents.</li>
+        <li><strong>Audit of record views.</strong> Medical Manager does not store a separate log of each time someone opens a chart. Sign-in failures are written to the application log. Add a view audit trail if the risk analysis requires one.</li>
+    </ul>
+
+    <h2>How long we keep it</h2>
+    <p>
+        Account and health information stays while the account is open.
+        From <a href="Account/Manage/DeletePersonalData">Delete Personal Data</a>, the account holder can permanently delete the account. The password is required when the account has one.
+        Deleting the user removes the profile, vitals, labs, medications, appointments, doctors, to-dos, dashboard layout, and reminder rows that the database deletes with those records.
+        Medication reminder log rows are stored by user id without a foreign key, so those delivery logs can remain after the account is gone. They hold status and a provider message id. The spoken reminder itself is not stored in that log.
+        Deletion cannot be undone. Copies already sent to Twilio, email, maps, openFDA, or a speech provider are subject to those services' retention.
+    </p>
+
+    <h2>Your choices</h2>
+    <ul>
+        <li>Update the profile, phone, password, and reminder switches at any time.</li>
+        <li>Turn appointment, medication, and to-do reminders off from the profile page. Each switch is on until you turn it off.</li>
+        <li>Replace the family monitor code with a new four-digit code. The monitor page still requires the current code. The product does not offer a way to clear the code entirely.</li>
+        <li>Start or skip emergency calls, family calls, and Monitor. GPS is included in an emergency call only when the browser provides it.</li>
+        <li>Medical Manager does not offer a separate download of the chart. You can review records in the app and delete the account when you are finished.</li>
+    </ul>
+
+    <h2>Registration confirmation</h2>
+    <p>
+        Creating a patient account requires confirmation that you have read this policy and the <a href="hipaa">HIPAA compliance confirmation</a>.
+        Medical Manager stores the UTC time of that confirmation on the patient profile.
+        Doctor accounts are issued by the clinic and are covered by the clinic's own policies.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+        Medical Manager is for adults tracking their own care, and for doctor accounts reviewing a patient's chart.
+        We do not knowingly collect information from children under 13.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+        When this policy changes, the effective date at the top of this page changes with it.
+        New accounts confirm the policy that is current at registration.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+        Questions about this policy can be sent through <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+    </p>
+</article>
