@@ -50,7 +50,8 @@ if ($repoMissing) {
 $registry = "$account.dkr.ecr.$region.amazonaws.com"
 $imageUri = "${registry}/${repo}:latest"
 Write-Host "Logging in to ECR..."
-& $aws ecr get-login-password --region $region | docker login --username AWS --password-stdin $registry
+# Windows PowerShell re-encodes a native pipeline and ECR answers 400. cmd passes the token through unchanged.
+cmd /c "aws ecr get-login-password --region $region | docker login --username AWS --password-stdin $registry"
 if ($LASTEXITCODE -ne 0) { throw "ECR login failed. Is Docker Desktop running?" }
 
 Write-Host "Building and pushing $imageUri ..."
