@@ -225,6 +225,7 @@ if (app.Environment.IsDevelopment())
     ToDoReminderCopy.SelfCheck();
     QuickCallCopy.SelfCheck();
     CallGuide.SelfCheck();
+    OverwriteNote.SelfCheck();
     _ = Task.Run(async () =>
     {
         var voice = app.Services.GetRequiredService<OnboardingVoiceService>();

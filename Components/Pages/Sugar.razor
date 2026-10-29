@@ -128,8 +128,18 @@
                 @foreach (var item in VisibleItems)
                 {
                     var tag = VitalStatus.ForSugar(item.Value, item.Kind);
-                    <tr>
-                        <td data-label="When">@item.RecordedAt.ToString("g")</td>
+                    var overwritten = OverwriteNote.IsOverwrite(item.Notes);
+                    <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                        <td data-label="When">
+                            <span>
+                                @if (overwritten)
+                                {
+                                    <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                    <span class="visually-hidden">Overwritten. </span>
+                                }
+                                @item.RecordedAt.ToString("g")
+                            </span>
+                        </td>
                         <td data-label="Value">@item.Value.ToString("0.#") @item.Unit</td>
                         <td data-label="Type">@item.Kind</td>
                         <td data-label="Status"><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>

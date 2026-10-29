@@ -39,14 +39,17 @@
                 <label class="form-label">Recorded at</label>
                 <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
             </div>
-            <div class="col-md-6">
-                <label class="form-label">Notes</label>
-                <InputText class="form-control" @bind-Value="model.Notes" />
+            <div class="col-12">
+                <ReadingOverwrite @ref="_overwrite" OfferOverwrite="@(Id is null)" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
             </div>
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="submit" class="btn btn-primary" disabled="@_overwritePending">Save</button>
             <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
+            @if (Id is null && _overwrite?.IsActive != true)
+            {
+                <button type="button" class="btn btn-outline-danger ms-auto" @onclick="BeginOverwrite">Overwrite</button>
+            }
             @if (Id is not null)
             {
                 <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
@@ -60,6 +63,8 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private BloodPressureReading? model;
+    private ReadingOverwrite? _overwrite;
+    private bool _overwritePending;
     private string Back => CareLinks.To("blood-pressure", PatientUserId);
 
     protected override async Task OnParametersSetAsync()
@@ -72,6 +77,14 @@
             model = await Records.GetBloodPressureByIdAsync(id, patientId);
         }
         model ??= new BloodPressureReading { UserId = patientId, RecordedAt = DateTime.Now, Systolic = 120, Diastolic = 80 };
+        if (OverwriteNote.IsOverwrite(model.Notes))
+            model.AllowOutOfRange = true;
+    }
+
+    private async Task BeginOverwrite()
+    {
+        if (_overwrite is not null)
+            await _overwrite.BeginAsync();
     }
 
     private async Task Save()

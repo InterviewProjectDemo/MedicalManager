@@ -89,7 +89,11 @@ public sealed class CallGuide
         var ending = new CallGuide("Alex Rivera", family, doctors);
         ending.Opening();
         var endTurn = ending.Hear("end");
-        if (!endTurn.End || endTurn.Call is not null || !CallGuide.WantsToEnd("please end the call") || CallGuide.WantsToEnd("Jordan"))
+        if (!endTurn.End || endTurn.Call is not null
+            || !CallGuide.WantsToEnd("please end the call")
+            || !CallGuide.WantsToEnd("I would like to end this conversation now")
+            || CallGuide.WantsToEnd("Jordan")
+            || CallGuide.WantsToEnd("weekend plans"))
             throw new InvalidOperationException("End should close the conversation without placing a call.");
     }
 
@@ -180,7 +184,7 @@ public sealed class CallGuide
         return options.Any(option =>
         {
             var words = Normalize(option).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return words.Length is > 0 and <= 6 && words.Any(word => word is "end" or "ended" or "ending");
+            return words.Any(word => word is "end" or "ended" or "ending");
         });
     }
 

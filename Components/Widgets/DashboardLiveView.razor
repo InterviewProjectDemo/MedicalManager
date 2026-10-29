@@ -423,7 +423,8 @@ else if (snapshot is not null && scope.Patient is not null)
                     x.Systolic,
                     x.RecordedAt,
                     $"{x.Systolic} mmHg",
-                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             },
             new TrendChart.ChartSeries
             {
@@ -434,7 +435,8 @@ else if (snapshot is not null && scope.Patient is not null)
                     x.Diastolic,
                     x.RecordedAt,
                     $"{x.Diastolic} mmHg",
-                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             }
         ];
         bpStats = ChartStatsHelper.ForBloodPressureMonth(ordered);
@@ -454,7 +456,8 @@ else if (snapshot is not null && scope.Patient is not null)
                     (double)x.Value,
                     x.RecordedAt,
                     $"{x.Value:0} {x.Unit} · {x.Kind}",
-                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind))).ToList()
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             }
         ];
         sugarStats = ChartStatsHelper.ForSugarMonth(ordered);

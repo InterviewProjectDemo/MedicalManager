@@ -81,8 +81,16 @@
                                 @foreach (var bp in BpReadings.OrderByDescending(x => x.RecordedAt))
                                 {
                                     var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
-                                    <tr>
-                                        <td class="vitals-time">@bp.RecordedAt.ToString("h:mm tt")</td>
+                                    var overwritten = OverwriteNote.IsOverwrite(bp.Notes);
+                                    <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                                        <td class="vitals-time">
+                                            @if (overwritten)
+                                            {
+                                                <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                                <span class="visually-hidden">Overwritten. </span>
+                                            }
+                                            @bp.RecordedAt.ToString("h:mm tt")
+                                        </td>
                                         <td><span class="vitals-reading-value @tag.CssClass">@bp.Systolic/@bp.Diastolic</span> <small class="muted">mmHg</small></td>
                                         <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
                                     </tr>
@@ -114,8 +122,16 @@
                                 @foreach (var sugar in SugarReadings.OrderByDescending(x => x.RecordedAt))
                                 {
                                     var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
-                                    <tr>
-                                        <td class="vitals-time">@sugar.RecordedAt.ToString("h:mm tt")</td>
+                                    var overwritten = OverwriteNote.IsOverwrite(sugar.Notes);
+                                    <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                                        <td class="vitals-time">
+                                            @if (overwritten)
+                                            {
+                                                <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                                <span class="visually-hidden">Overwritten. </span>
+                                            }
+                                            @sugar.RecordedAt.ToString("h:mm tt")
+                                        </td>
                                         <td><span class="vitals-reading-value @tag.CssClass">@sugar.Value.ToString("0")</span> <small class="muted">@sugar.Unit</small></td>
                                         <td class="vitals-kind">@sugar.Kind</td>
                                         <td><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
@@ -194,7 +210,8 @@
                     x.Systolic,
                     x.RecordedAt,
                     $"{x.Systolic} mmHg",
-                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             },
             new TrendChart.ChartSeries
             {
@@ -205,7 +222,8 @@
                     x.Diastolic,
                     x.RecordedAt,
                     $"{x.Diastolic} mmHg",
-                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic))).ToList()
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             }
         ];
     }
@@ -224,7 +242,8 @@
                     (double)x.Value,
                     x.RecordedAt,
                     $"{x.Value:0} {x.Unit} · {x.Kind}",
-                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind))).ToList()
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
             }
         ];
     }

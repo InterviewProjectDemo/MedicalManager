@@ -92,12 +92,19 @@
             <span>Hover to trace values</span>
             <span>@EndLabel</span>
         </div>
-        @if (Series.Count > 1)
+        @if (Series.Count > 1 || HasOverwrite)
         {
             <div class="chart-legend">
-                @foreach (var series in Series)
+                @if (Series.Count > 1)
                 {
-                    <span><i style="background:@series.Color"></i>@series.Name</span>
+                    @foreach (var series in Series)
+                    {
+                        <span><i style="background:@series.Color"></i>@series.Name</span>
+                    }
+                }
+                @if (HasOverwrite)
+                {
+                    <span class="chart-legend-overwrite"><span aria-hidden="true">★</span> Overwritten</span>
                 }
             </div>
         }
@@ -260,7 +267,7 @@
                 foreach (var bar in series.Bars)
                 {
                     var isActive = hoverIndex >= 0 && bar.Index == hoverIndex;
-                    var color = bar.IsOutOfRange ? OutOfRangeColor : series.Color;
+                    var color = bar.IsOverwrite || bar.IsOutOfRange ? OutOfRangeColor : series.Color;
                     var grow = isActive ? 1.6 : 0;
                     builder.OpenElement(seq++, "rect");
                     builder.AddAttribute(seq++, "x", (bar.X - grow / 2).ToString("0.##"));
@@ -272,6 +279,8 @@
                     builder.AddAttribute(seq++, "opacity", isActive ? "1" : "0.88");
                     if (isActive) builder.AddAttribute(seq++, "class", "chart-bar-active");
                     builder.CloseElement();
+                    if (bar.IsOverwrite)
+                        DrawOverwriteStar(builder, ref seq, bar.X + bar.Width / 2, bar.Y, isActive);
                 }
                 continue;
             }
@@ -304,6 +313,12 @@
             foreach (var point in series.Points)
             {
                 var isActive = hoverIndex >= 0 && point.Index == hoverIndex;
+                if (point.IsOverwrite)
+                {
+                    DrawOverwriteStar(builder, ref seq, point.X, point.Y, isActive);
+                    continue;
+                }
+
                 var pointColor = point.IsOutOfRange ? OutOfRangeColor : series.Color;
                 builder.OpenElement(seq++, "circle");
                 builder.AddAttribute(seq++, "cx", point.X.ToString("0.##"));
@@ -428,8 +443,10 @@
             if (index >= series.Points.Count) continue;
             var point = series.Points[index];
             var text = point.Detail ?? point.Value.ToString("0.##");
-            var color = point.IsOutOfRange ? OutOfRangeColor : series.Color;
-            yield return (series.Name, text, color, point.IsOutOfRange);
+            if (point.IsOverwrite)
+                text += " · Overwritten";
+            var color = point.IsOverwrite || point.IsOutOfRange ? OutOfRangeColor : series.Color;
+            yield return (series.Name, text, color, point.IsOutOfRange || point.IsOverwrite);
         }
     }
 
@@ -493,14 +510,14 @@
             {
                 var centerX = count == 1 ? leftPad + plotWidth / 2 : leftPad + i * (plotWidth / (count - 1));
                 var y = plotBottom - ((series.Points[i].Value - min) / (max - min) * plotHeight);
-                points.Add(new DrawnPoint(i, centerX, y, series.Points[i].IsOutOfRange));
+                points.Add(new DrawnPoint(i, centerX, y, series.Points[i].IsOutOfRange, series.Points[i].IsOverwrite));
 
                 var slot = count == 1 ? plotWidth * 0.36 : plotWidth / count;
                 var groupWidth = Math.Min(slot * 0.72, Math.Max(34, plotWidth / 18));
                 var barW = Math.Max(3.5, groupWidth / seriesCount);
                 var x = centerX - groupWidth / 2 + s * barW;
                 var height = Math.Max(2, plotBottom - y);
-                bars.Add(new DrawnBar(i, x, y, barW - 1.1, height, series.Points[i].IsOutOfRange));
+                bars.Add(new DrawnBar(i, x, y, barW - 1.1, height, series.Points[i].IsOutOfRange, series.Points[i].IsOverwrite));
             }
 
             string? area = null;
@@ -662,7 +679,31 @@
         double Value,
         DateTime RecordedAt = default,
         string? Detail = null,
-        bool IsOutOfRange = false);
+        bool IsOutOfRange = false,
+        bool IsOverwrite = false);
+
+    private bool HasOverwrite => Series.Any(series => series.Points.Any(point => point.IsOverwrite));
+
+    private static void DrawOverwriteStar(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder, ref int seq, double x, double y, bool active)
+    {
+        var outer = active ? 12 : 9.5;
+        var inner = outer * 0.42;
+        var parts = new string[10];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var radius = i % 2 == 0 ? outer : inner;
+            var angle = -Math.PI / 2 + i * Math.PI / 5;
+            parts[i] = $"{x + Math.Cos(angle) * radius:0.##},{y + Math.Sin(angle) * radius:0.##}";
+        }
+
+        builder.OpenElement(seq++, "polygon");
+        builder.AddAttribute(seq++, "points", string.Join(' ', parts));
+        builder.AddAttribute(seq++, "fill", OutOfRangeColor);
+        builder.AddAttribute(seq++, "stroke", "#fff");
+        builder.AddAttribute(seq++, "stroke-width", "0.8");
+        builder.AddAttribute(seq++, "class", "chart-overwrite-star");
+        builder.CloseElement();
+    }
 
     public sealed class ChartSeries
     {
@@ -672,7 +713,7 @@
     }
 
     private enum DisplayMode { Line, Bar }
-    private sealed record DrawnPoint(int Index, double X, double Y, bool IsOutOfRange);
-    private sealed record DrawnBar(int Index, double X, double Y, double Width, double Height, bool IsOutOfRange);
+    private sealed record DrawnPoint(int Index, double X, double Y, bool IsOutOfRange, bool IsOverwrite);
+    private sealed record DrawnBar(int Index, double X, double Y, double Width, double Height, bool IsOutOfRange, bool IsOverwrite);
     private sealed record DrawnSeries(string Color, string? Area, List<DrawnPoint> Points, List<DrawnBar> Bars);
 }

@@ -152,8 +152,18 @@
                 @foreach (var item in VisibleItems)
                 {
                     var tag = VitalStatus.ForBloodPressure(item.Systolic, item.Diastolic);
-                    <tr>
-                        <td data-label="When">@item.RecordedAt.ToString("g")</td>
+                    var overwritten = OverwriteNote.IsOverwrite(item.Notes);
+                    <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                        <td data-label="When">
+                            <span>
+                                @if (overwritten)
+                                {
+                                    <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                    <span class="visually-hidden">Overwritten. </span>
+                                }
+                                @item.RecordedAt.ToString("g")
+                            </span>
+                        </td>
                         <td data-label="Reading">@item.Systolic/@item.Diastolic mmHg</td>
                         <td data-label="Pulse">@(item.Pulse?.ToString() ?? "—")</td>
                         <td data-label="Status"><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>

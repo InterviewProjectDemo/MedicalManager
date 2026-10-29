@@ -1,8 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MedicalManager.Data;
 
-public class BloodPressureReading
+public class BloodPressureReading : IAllowOutOfRange
 {
     public int Id { get; set; }
 
@@ -11,14 +12,20 @@ public class BloodPressureReading
 
     public ApplicationUser? User { get; set; }
 
-    [Range(60, 250)]
+    [Display(Name = "Systolic")]
+    [VitalRange(60, 250)]
     public int Systolic { get; set; }
 
-    [Range(40, 160)]
+    [Display(Name = "Diastolic")]
+    [VitalRange(40, 160)]
     public int Diastolic { get; set; }
 
-    [Range(30, 220)]
+    [Display(Name = "Pulse")]
+    [VitalRange(30, 220)]
     public int? Pulse { get; set; }
+
+    [NotMapped]
+    public bool AllowOutOfRange { get; set; }
 
     public DateTime RecordedAt { get; set; } = DateTime.Now;
 

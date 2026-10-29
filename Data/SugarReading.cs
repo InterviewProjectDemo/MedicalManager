@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MedicalManager.Data;
 
@@ -10,7 +11,7 @@ public enum SugarKind
     Random
 }
 
-public class SugarReading
+public class SugarReading : IAllowOutOfRange
 {
     public int Id { get; set; }
 
@@ -19,8 +20,12 @@ public class SugarReading
 
     public ApplicationUser? User { get; set; }
 
-    [Range(20, 800)]
+    [Display(Name = "Value")]
+    [VitalRange(20, 800)]
     public decimal Value { get; set; }
+
+    [NotMapped]
+    public bool AllowOutOfRange { get; set; }
 
     [MaxLength(20)]
     public string Unit { get; set; } = "mg/dL";

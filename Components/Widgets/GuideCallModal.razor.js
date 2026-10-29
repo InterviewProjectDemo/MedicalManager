@@ -123,9 +123,9 @@ function phraseHasEnd(text) {
         .replace(/[^a-z\s]/g, " ")
         .split(/\s+/)
         .filter(Boolean);
-    return words.length > 0
-        && words.length <= 6
-        && words.some((word) => word === "end" || word === "ended" || word === "ending");
+    if (!words.some((word) => word === "end" || word === "ended" || word === "ending"))
+        return false;
+    return !sharingCall || words.length <= 8;
 }
 
 let sessionRec;
@@ -134,6 +134,7 @@ let sessionOn = false;
 let sessionTimer;
 let acceptCommands = false;
 let guideSpeaking = false;
+let sharingCall = false;
 let sessionQuiet = 0;
 
 function ensureSession() {
@@ -160,6 +161,8 @@ function ensureSession() {
                 heard.push(result[alt]?.transcript || "");
             const text = heard.map((item) => item.trim()).filter(Boolean).join("|");
             if (heard.some((item) => phraseHasEnd(item))) {
+                speakToken += 1;
+                window.speechSynthesis?.cancel();
                 stopSession();
                 notify(sessionRef, "OnGuideEnd", text);
                 return;
@@ -174,7 +177,26 @@ function ensureSession() {
             sessionOn = false;
             sessionRec = null;
             recognition = null;
-            notify(sessionRef, "OnGuideHeard", "\u0000");
+            if (!sharingCall)
+                notify(sessionRef, "OnGuideHeard", "\u0000");
+            return;
+        }
+        if (sharingCall && (event.error === "audio-capture" || event.error === "aborted")) {
+            sessionOn = false;
+            sharingCall = false;
+            const failed = sessionRec;
+            sessionRec = null;
+            recognition = null;
+            if (failed) {
+                failed.onresult = null;
+                failed.onerror = null;
+                failed.onend = null;
+                try {
+                    failed.stop();
+                } catch {
+                    // The call keeps the microphone.
+                }
+            }
             return;
         }
         sessionQuiet += 1;
@@ -202,6 +224,7 @@ function stopSession() {
     sessionOn = false;
     acceptCommands = false;
     guideSpeaking = false;
+    sharingCall = false;
     window.clearTimeout(sessionTimer);
     const current = sessionRec;
     sessionRec = null;
@@ -218,12 +241,17 @@ function stopSession() {
     }
 }
 
-export function listenGuide(dotNetRef) {
+export function listenGuide(dotNetRef, duringCall) {
     stopWake();
     sessionRef = dotNetRef;
     acceptCommands = true;
+    sharingCall = duringCall === true;
     sessionQuiet = 0;
     ensureSession();
+}
+
+export function yieldGuideMic() {
+    stopSession();
 }
 
 export function speakGoodbye(dotNetRef) {

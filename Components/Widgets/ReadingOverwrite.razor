@@ -1,0 +1,156 @@
+<label class="form-label" for="@_noteId">Notes</label>
+@if (ShowLock)
+{
+    <div class="overwrite-note">
+        <p class="overwrite-note-lock" role="note">@_lock</p>
+        <textarea id="@_noteId" class="form-control" rows="3" maxlength="@ExtraRoom" placeholder="Add a note"
+                  @bind="_extra" @bind:event="oninput" @bind:after="PublishExtra"></textarea>
+    </div>
+    <p class="form-text">The overwrite line stays fixed. Add any other detail below it. Values outside the usual range can be saved.</p>
+}
+else
+{
+    <InputText id="@_noteId" class="form-control" Value="@_plain" ValueChanged="OnPlainNotes" ValueExpression="(() => _plain)" />
+}
+
+@if (_asking)
+{
+    <div class="overwrite-ask" role="group" aria-labelledby="overwrite-ask-title">
+        <p id="overwrite-ask-title" class="overwrite-ask-title">Who is overwriting this reading?</p>
+        <p class="form-text">Enter a name and a role. Out-of-range values stay blocked until both are filled in.</p>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="@_nameId">Name</label>
+                <input id="@_nameId" class="form-control" maxlength="60" autocomplete="name" @bind="_name" @bind:event="oninput" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="@_roleId">Role</label>
+                <input id="@_roleId" class="form-control" maxlength="40" placeholder="Nurse" @bind="_role" @bind:event="oninput" />
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <p class="text-danger mt-2 mb-0">@_error</p>
+        }
+        <div class="overwrite-ask-actions">
+            <button type="button" class="btn btn-danger" @onclick="Confirm">Continue</button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Cancel</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool OfferOverwrite { get; set; }
+    [Parameter] public bool AllowOutOfRange { get; set; }
+    [Parameter] public EventCallback<bool> AllowOutOfRangeChanged { get; set; }
+    [Parameter] public string? Notes { get; set; }
+    [Parameter] public EventCallback<string?> NotesChanged { get; set; }
+    [Parameter] public bool Pending { get; set; }
+    [Parameter] public EventCallback<bool> PendingChanged { get; set; }
+
+    private readonly string _noteId = "reading-note-" + Guid.NewGuid().ToString("N");
+    private readonly string _nameId = "overwrite-name-" + Guid.NewGuid().ToString("N");
+    private readonly string _roleId = "overwrite-role-" + Guid.NewGuid().ToString("N");
+    private bool _asking;
+    private bool _active;
+    private string _name = "";
+    private string _role = "";
+    private string? _error;
+    private string _lock = "";
+    private string _extra = "";
+    private string _plain = "";
+    private string? _published;
+
+    private bool ShowLock => _active && _lock.Length > 0;
+
+    private int ExtraRoom => Math.Max(0, OverwriteNote.MaxLength - _lock.Length - 1);
+
+    public bool IsActive => ShowLock;
+
+    protected override void OnParametersSet()
+    {
+        if (Notes == _published)
+            return;
+
+        _published = Notes;
+        _plain = Notes ?? "";
+        if (OverwriteNote.TrySplit(Notes, out var locked, out var extra))
+        {
+            _lock = locked;
+            _extra = extra;
+            _active = true;
+        }
+    }
+
+    public async Task BeginAsync()
+    {
+        if (!OfferOverwrite || ShowLock)
+            return;
+
+        _asking = true;
+        _error = null;
+        await SetPendingAsync(true);
+    }
+
+    private async Task Confirm()
+    {
+        var name = OverwriteNote.Person(_name, 60);
+        var role = OverwriteNote.Person(_role, 40);
+        if (name.Length == 0 || role.Length == 0)
+        {
+            _error = "Enter the name and the role before overwrite.";
+            return;
+        }
+
+        _name = name;
+        _role = role;
+        _lock = OverwriteNote.LockLine(name, role);
+        _extra = _active ? _extra : _plain;
+        _active = true;
+        _asking = false;
+        _error = null;
+        await PublishExtra();
+        await AllowOutOfRangeChanged.InvokeAsync(true);
+        await SetPendingAsync(false);
+    }
+
+    private async Task Cancel()
+    {
+        _asking = false;
+        _error = null;
+        await SetPendingAsync(false);
+    }
+
+    private async Task OnPlainNotes(string value)
+    {
+        _plain = value;
+        var notes = string.IsNullOrWhiteSpace(value) ? null : value;
+        _published = notes;
+        await NotesChanged.InvokeAsync(notes);
+    }
+
+    private async Task PublishExtra()
+    {
+        var notes = OverwriteNote.Compose(_lock, _extra);
+        if (OverwriteNote.TrySplit(notes, out var locked, out var extra))
+        {
+            _lock = locked;
+            if (extra != _extra && notes.Length >= OverwriteNote.MaxLength)
+                _extra = extra;
+        }
+
+        _published = notes;
+        await NotesChanged.InvokeAsync(notes);
+    }
+
+    private async Task SetPendingAsync(bool pending)
+    {
+        if (Pending == pending)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        await PendingChanged.InvokeAsync(pending);
+    }
+}

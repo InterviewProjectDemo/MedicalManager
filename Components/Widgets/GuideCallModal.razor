@@ -54,11 +54,11 @@
             </div>
             @if (_connected)
             {
-                <p class="guide-note">You're connected. Please go ahead whenever you're ready.</p>
+                <p class="guide-note">You're connected. Say end at any time and this window will close.</p>
             }
             else if (!_placing && !_ending)
             {
-                <p class="guide-note">You can say yes, no, or end. I'll wait a minute so you don't have to rush.</p>
+                <p class="guide-note">Say end at any time and this window will close. I'll wait a minute so you don't have to rush.</p>
             }
         </div>
     </FloatPanel>
@@ -296,7 +296,7 @@
         if (_disposed || _ending || _guideSession != _session || _guide is null)
             return Task.CompletedTask;
 
-        if (CallGuide.WantsToEnd(transcript))
+        if (WantsEndNow(transcript))
         {
             CancelPatience();
             return EndSessionAsync();
@@ -358,16 +358,7 @@
         _offerYesNo = false;
         await InvokeAsync(StateHasChanged);
         await StopSpeechAsync();
-        if (_speech is not null)
-        {
-            try
-            {
-                await _speech.InvokeVoidAsync("stopGuide");
-            }
-            catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
-            {
-            }
-        }
+        await ResumeListeningAsync();
 
         var state = await Auth.GetAuthenticationStateAsync();
         var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -380,10 +371,16 @@
         if (!setup.Ok || setup.Token is null || setup.Ticket is null)
         {
             _placing = false;
-                _callError = setup.Error ?? "I'm sorry, the call could not be placed.";
+            _callError = setup.Error ?? "I'm sorry, the call could not be placed.";
             await InvokeAsync(StateHasChanged);
+            await ResumeListeningAsync();
             return;
         }
+
+        if (_disposed || session != _session || !Visible || _ending)
+            return;
+
+        await YieldMicAsync();
 
         try
         {
@@ -401,21 +398,23 @@
                 _placing = false;
                 _callError = "Please allow the microphone so you can talk.";
                 await InvokeAsync(StateHasChanged);
+                await ResumeListeningAsync();
             }
         }
     }
 
     [JSInvokable]
-    public Task OnFamilyCallConnected()
+    public async Task OnFamilyCallConnected()
     {
         if (_disposed || _ending || _guideSession != _session)
-            return Task.CompletedTask;
+            return;
 
         _placing = false;
         _connected = true;
         _callError = null;
-        _prompt = "You're connected. Please go ahead whenever you're ready.";
-        return InvokeAsync(StateHasChanged);
+        _prompt = "You're connected. Say end at any time and this window will close.";
+        await InvokeAsync(StateHasChanged);
+        await ResumeListeningAsync(duringCall: true);
     }
 
     [JSInvokable]
@@ -435,6 +434,57 @@
     [JSInvokable]
     public Task OnGoodbyeSpoken() => FinishCloseAsync();
 
+    private bool WantsEndNow(string transcript)
+    {
+        if (!CallGuide.WantsToEnd(transcript))
+            return false;
+
+        if (!_connected)
+            return true;
+
+        var options = transcript.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return options.Any(option =>
+        {
+            if (!CallGuide.WantsToEnd(option))
+                return false;
+            var words = option.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return words.Length is > 0 and <= 8;
+        });
+    }
+
+    private async Task ResumeListeningAsync(bool duringCall = false)
+    {
+        if (_disposed || _ending)
+            return;
+
+        try
+        {
+            _speech ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            _guideSession = _session;
+            await _speech.InvokeVoidAsync("listenGuide", _self, duringCall);
+            if (!duringCall && !_placing && !_connected)
+                _listening = true;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task YieldMicAsync()
+    {
+        if (_speech is null)
+            return;
+
+        try
+        {
+            await _speech.InvokeVoidAsync("yieldGuideMic");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
     private async Task EndSessionAsync()
     {
         if (_disposed || _ending)
@@ -444,19 +494,7 @@
         _listening = false;
         _committing = true;
         CancelPatience();
-        _prompt = "Goodbye.";
-        await InvokeAsync(StateHasChanged);
-
-        try
-        {
-            _speech ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/GuideCallModal.razor.js");
-            _self ??= DotNetObjectReference.Create(this);
-            await _speech.InvokeVoidAsync("speakGoodbye", _self);
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
-        {
-            await FinishCloseAsync();
-        }
+        await FinishCloseAsync();
     }
 
     private async Task FinishCloseAsync()
@@ -473,19 +511,23 @@
     }
 
     [JSInvokable]
-    public Task OnFamilyCallError(string message)
+    public async Task OnFamilyCallError(string message)
     {
         if (_disposed || _ending || _guideSession != _session)
-            return Task.CompletedTask;
+            return;
         if (_connected && !string.IsNullOrWhiteSpace(message)
             && (message.Contains("hangup", StringComparison.OrdinalIgnoreCase) || message.Contains("31005", StringComparison.Ordinal)))
-            return EndSessionAsync();
+        {
+            await EndSessionAsync();
+            return;
+        }
 
         _familyAudio = false;
         _placing = false;
         _connected = false;
         _callError = string.IsNullOrWhiteSpace(message) ? "I'm sorry, the call could not be placed." : message.Trim();
-        return InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
+        await ResumeListeningAsync();
     }
 
     private void StopGuide()
