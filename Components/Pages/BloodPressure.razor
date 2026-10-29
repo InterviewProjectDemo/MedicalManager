@@ -151,7 +151,7 @@
             <tbody>
                 @foreach (var item in VisibleItems)
                 {
-                    var tag = VitalStatus.ForBloodPressure(item.Systolic, item.Diastolic);
+                    var tag = VitalStatus.ForBloodPressure(item);
                     var overwritten = OverwriteNote.IsOverwrite(item.Notes);
                     <tr class="@(overwritten ? "reading-overwrite-row" : null)">
                         <td data-label="When">
@@ -205,7 +205,7 @@
     private int _filterVersion;
     private int _appliedFilterVersion;
 
-    private static readonly string[] StatusOptions = ["Normal", "Watch", "Elevated", "High", "Crisis"];
+    private static readonly string[] StatusOptions = ["Normal", "Watch", "Elevated", "High", "Crisis", "Out of range"];
 
     private enum BpSort
     {
@@ -273,7 +273,7 @@
 
         if (!string.IsNullOrEmpty(_statusFilter))
         {
-            query = query.Where(x => VitalStatus.ForBloodPressure(x.Systolic, x.Diastolic).Label == _statusFilter);
+            query = query.Where(x => VitalStatus.ForBloodPressure(x).Label == _statusFilter);
         }
 
         return query;
@@ -353,13 +353,14 @@
 
     private static int StatusRank(BloodPressureReading item)
     {
-        var tag = VitalStatus.ForBloodPressure(item.Systolic, item.Diastolic);
+        var tag = VitalStatus.ForBloodPressure(item);
         return tag.Label switch
         {
             "Watch" => 1,
             "Elevated" => 2,
             "High" => 3,
             "Crisis" => 4,
+            "Out of range" => 5,
             _ => 0
         };
     }

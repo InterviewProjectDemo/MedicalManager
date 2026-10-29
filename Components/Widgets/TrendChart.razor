@@ -569,7 +569,9 @@
             {
                 var sys = Series[0].Points.ElementAtOrDefault(i);
                 var dia = Series.Count > 1 ? Series[1].Points.ElementAtOrDefault(i) : default;
-                var tag = VitalStatus.ForBloodPressure((int)Math.Round(sys.Value), (int)Math.Round(dia.Value));
+                var tag = sys.IsOverwrite || dia.IsOverwrite
+                    ? VitalStatus.Overwritten
+                    : VitalStatus.ForBloodPressure((int)Math.Round(sys.Value), (int)Math.Round(dia.Value));
                 rows.Add(new
                 {
                     cells = new[]
@@ -638,6 +640,9 @@
 
     private static StatusTag SugarStatusFromPoint(ChartPoint point)
     {
+        if (point.IsOverwrite)
+            return VitalStatus.Overwritten;
+
         var kindText = SugarKindFromDetail(point.Detail);
         if (Enum.TryParse<SugarKind>(kindText, out var kind))
             return VitalStatus.ForSugar((decimal)point.Value, kind);

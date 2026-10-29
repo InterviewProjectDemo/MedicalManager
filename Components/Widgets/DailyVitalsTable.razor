@@ -80,7 +80,7 @@
                             <tbody>
                                 @foreach (var bp in BpReadings.OrderByDescending(x => x.RecordedAt))
                                 {
-                                    var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
+                                    var tag = VitalStatus.ForBloodPressure(bp);
                                     var overwritten = OverwriteNote.IsOverwrite(bp.Notes);
                                     <tr class="@(overwritten ? "reading-overwrite-row" : null)">
                                         <td class="vitals-time">
@@ -121,7 +121,7 @@
                             <tbody>
                                 @foreach (var sugar in SugarReadings.OrderByDescending(x => x.RecordedAt))
                                 {
-                                    var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
+                                    var tag = VitalStatus.ForSugar(sugar);
                                     var overwritten = OverwriteNote.IsOverwrite(sugar.Notes);
                                     <tr class="@(overwritten ? "reading-overwrite-row" : null)">
                                         <td class="vitals-time">
@@ -304,7 +304,7 @@
                 .OrderByDescending(x => x.RecordedAt)
                 .Select(bp =>
                 {
-                    var tag = VitalStatus.ForBloodPressure(bp.Systolic, bp.Diastolic);
+                    var tag = VitalStatus.ForBloodPressure(bp);
                     return new
                     {
                         cells = new[]
@@ -332,7 +332,7 @@
                 .OrderByDescending(x => x.RecordedAt)
                 .Select(sugar =>
                 {
-                    var tag = VitalStatus.ForSugar(sugar.Value, sugar.Kind);
+                    var tag = VitalStatus.ForSugar(sugar);
                     return new
                     {
                         cells = new[]

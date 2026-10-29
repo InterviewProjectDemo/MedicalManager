@@ -127,7 +127,7 @@
             <tbody>
                 @foreach (var item in VisibleItems)
                 {
-                    var tag = VitalStatus.ForSugar(item.Value, item.Kind);
+                    var tag = VitalStatus.ForSugar(item);
                     var overwritten = OverwriteNote.IsOverwrite(item.Notes);
                     <tr class="@(overwritten ? "reading-overwrite-row" : null)">
                         <td data-label="When">
@@ -178,7 +178,7 @@
     private int _filterVersion;
     private int _appliedFilterVersion;
 
-    private static readonly string[] StatusOptions = ["Low", "Normal", "Elevated", "High"];
+    private static readonly string[] StatusOptions = ["Low", "Normal", "Elevated", "High", "Out of range"];
 
     private enum SugarSort
     {
@@ -228,7 +228,7 @@
 
         if (!string.IsNullOrEmpty(_statusFilter))
         {
-            query = query.Where(x => VitalStatus.ForSugar(x.Value, x.Kind).Label == _statusFilter);
+            query = query.Where(x => VitalStatus.ForSugar(x).Label == _statusFilter);
         }
 
         return query;
@@ -311,12 +311,13 @@
 
     private static int StatusRank(SugarReading item)
     {
-        var tag = VitalStatus.ForSugar(item.Value, item.Kind);
+        var tag = VitalStatus.ForSugar(item);
         return tag.Label switch
         {
             "Elevated" => 1,
             "High" => 2,
             "Low" => 3,
+            "Out of range" => 4,
             _ => 0
         };
     }

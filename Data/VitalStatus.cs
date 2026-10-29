@@ -4,6 +4,18 @@ public readonly record struct StatusTag(string Label, string CssClass);
 
 public static class VitalStatus
 {
+    public static StatusTag Overwritten { get; } = new("Out of range", "status-danger");
+
+    public static StatusTag ForBloodPressure(BloodPressureReading reading) =>
+        OverwriteNote.IsOverwrite(reading.Notes)
+            ? Overwritten
+            : ForBloodPressure(reading.Systolic, reading.Diastolic);
+
+    public static StatusTag ForSugar(SugarReading reading) =>
+        OverwriteNote.IsOverwrite(reading.Notes)
+            ? Overwritten
+            : ForSugar(reading.Value, reading.Kind);
+
     public static StatusTag ForBloodPressure(int systolic, int diastolic)
     {
         if (systolic >= 180 || diastolic >= 120)
