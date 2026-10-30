@@ -52,6 +52,10 @@
             <p class="monitor-code-label">Monitor Access Code</p>
             <p class="monitor-code">@Spaced(_code)</p>
             <button type="button" class="monitor-share-open" @onclick="OpenShare">Share</button>
+            @if (!_shareOpen && !string.IsNullOrWhiteSpace(_shareMessage))
+            {
+                <p class="monitor-share-alert @(_shareOk ? "ok" : null)" role="status">@_shareMessage</p>
+            }
             @if (_live)
             {
                 <button type="button" class="monitor-stop" @onclick="CloseAsync">Stop monitoring</button>
@@ -382,8 +386,8 @@
                 _shareOpen = false;
                 _sharePhone = "";
                 _shareEmail = "";
-                _shareMessage = null;
-                _shareOk = false;
+                _shareOk = true;
+                _shareMessage = outcome.Message;
             }
             else
             {

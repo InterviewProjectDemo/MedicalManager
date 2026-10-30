@@ -43,7 +43,7 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         }
 
         var (html, plainText) = EmailTemplates.MonitorShare(patientName, link, code);
-        await SendAsync(email, "A family monitor link for you", html, plainText, cancellationToken);
+        await SendAsync(email, "Medical Manager family monitor", html, plainText, cancellationToken);
         return true;
     }
 
