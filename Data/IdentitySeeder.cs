@@ -446,6 +446,15 @@ public static class IdentitySeeder
                 throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
             }
         }
+        else if (!await users.CheckPasswordAsync(user, password))
+        {
+            var token = await users.GeneratePasswordResetTokenAsync(user);
+            var reset = await users.ResetPasswordAsync(user, token, password);
+            if (!reset.Succeeded)
+            {
+                throw new InvalidOperationException(string.Join("; ", reset.Errors.Select(e => e.Description)));
+            }
+        }
 
         if (!await users.IsInRoleAsync(user, role))
         {
