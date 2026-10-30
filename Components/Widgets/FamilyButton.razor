@@ -1,0 +1,51 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div @ref="_root" class="@RootClass">
+    <NavLink class="family-face" href="@Href" title="@Hint" draggable="false">
+        <span class="bi bi-people-heart-nav-menu" aria-hidden="true"></span>
+        <span class="family-label">Family</span>
+    </NavLink>
+    @if (Floating)
+    {
+        <button type="button" class="family-dock" aria-label="Return Family button to the side menu">Menu</button>
+        <button type="button" class="family-resize" aria-label="Resize Family button">
+            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6" />
+            </svg>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter] public bool Floating { get; set; }
+
+    private ElementReference _root;
+    private IJSObjectReference? _module;
+
+    private string RootClass => Floating ? "family-float-host" : "family-nav-item nav-item px-3";
+
+    private string Hint => Floating
+        ? "Family. Drag to move this button. Drop it on the side menu to return it to its original place and size. Drag the corner handle to resize it."
+        : "Family. Drag this out of the menu and drop it anywhere on the page.";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/familyButton.js");
+        await _module.InvokeVoidAsync(Floating ? "bindFloat" : "bindDock", _root);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync(Floating ? "unbindFloat" : "unbindDock", _root);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

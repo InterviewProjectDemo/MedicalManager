@@ -1390,6 +1390,82 @@ th[aria-sort="descending"] .sort-indicator {
 
 .page-head.accent-dash { background: linear-gradient(135deg, #0f3d5c, #1783b8); }
 .page-head.accent-resource { background: linear-gradient(135deg, #0c4a6e, #0ea5e9); }
+.page-head.accent-family { background: linear-gradient(135deg, #9a3412, #ea580c); }
+
+.family-page {
+    background: #fff;
+    border-radius: 16px;
+    padding: 1.35rem 1.4rem 1.45rem;
+    box-shadow: 0 10px 30px rgba(15, 61, 92, 0.06);
+    border-top: 5px solid #ea580c;
+    max-width: 42rem;
+}
+
+.family-page p {
+    font-size: 1.2rem;
+    line-height: 1.45;
+    margin-bottom: 1.15rem;
+}
+
+.family-home-btn {
+    min-height: 3.25rem;
+    padding: 0.7rem 1.3rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #fff;
+    background: #0f3d5c;
+    border: none;
+    border-radius: 12px;
+}
+
+.family-home-btn:hover,
+.family-home-btn:focus-visible {
+    color: #fff;
+    background: #146b6b;
+}
+
+.family-float-host {
+    display: none;
+}
+
+html.family-btn-floating .family-nav-item {
+    display: none !important;
+}
+
+html.family-btn-floating .family-float-host {
+    display: block;
+    position: fixed;
+    z-index: 40;
+    left: var(--family-x, 24px);
+    top: var(--family-y, 88px);
+    width: var(--family-w, 240px);
+    height: var(--family-h, 96px);
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.family-drag-ghost {
+    position: fixed;
+    z-index: 41;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    border-radius: 18px;
+    color: #fff;
+    font-weight: 800;
+    background: linear-gradient(160deg, #c2410c 0%, #ea580c 55%, #fb923c 100%);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.32);
+}
+
+body.family-dragging,
+body.family-dragging * {
+    cursor: grabbing !important;
+    user-select: none !important;
+}
 
 .resource-search-card {
     background: #fff;
@@ -1681,6 +1757,8 @@ th[aria-sort="descending"] .sort-indicator {
 
 @media print {
     .sidebar,
+    .family-float-host,
+    .family-drag-ghost,
     .top-row,
     .card-print-btn,
     .card-share-dialog,
