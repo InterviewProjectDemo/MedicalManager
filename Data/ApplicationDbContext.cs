@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using MedicalManager.Data.Security;
 
 namespace MedicalManager.Data;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
 {
     private readonly IPhiProtector _phi;
 
@@ -23,6 +24,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -112,6 +114,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<LabReport>().HasIndex(x => new { x.UserId, x.ReportDate });
         builder.Entity<LabResult>().HasIndex(x => new { x.LabReportId, x.TestCode }).IsUnique();
+
+        builder.Entity<DataProtectionKey>(entity =>
+        {
+            entity.ToTable("DataProtectionKeys");
+            entity.Property(x => x.FriendlyName);
+            entity.Property(x => x.Xml);
+        });
 
         ApplyPhiEncryption(builder);
     }

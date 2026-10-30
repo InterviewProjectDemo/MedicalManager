@@ -25,10 +25,8 @@ if (string.IsNullOrWhiteSpace(dataDirectory))
 }
 
 Directory.CreateDirectory(dataDirectory);
-var keysDirectory = Path.Combine(dataDirectory, "keys");
-Directory.CreateDirectory(keysDirectory);
 builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(keysDirectory))
+    .PersistKeysToDbContext<ApplicationDbContext>()
     .SetApplicationName("MedicalManager");
 
 builder.Services.AddRazorComponents()
@@ -171,6 +169,7 @@ app.MapGet("/health/encryption", (IPhiProtector protector) =>
     });
 });
 
+app.UseMiddleware<StaleAntiforgeryMiddleware>();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
