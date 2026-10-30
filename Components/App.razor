@@ -11,26 +11,6 @@
     <link rel="stylesheet" href="@Assets["MedicalManager.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <script>
-        (function () {
-            try {
-                var raw = localStorage.getItem("mm-family-button");
-                if (!raw) return;
-                var saved = JSON.parse(raw);
-                if (!saved || saved.floating !== true) return;
-                var root = document.documentElement;
-                root.classList.add("family-btn-floating");
-                function px(name, value) {
-                    if (typeof value === "number" && isFinite(value))
-                        root.style.setProperty(name, value + "px");
-                }
-                px("--family-x", saved.x);
-                px("--family-y", saved.y);
-                px("--family-w", saved.w);
-                px("--family-h", saved.h);
-            } catch (e) { }
-        })();
-    </script>
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 

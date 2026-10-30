@@ -1,11 +1,10 @@
-using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using MedicalManager.Data.Security;
 
 namespace MedicalManager.Data;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
     private readonly IPhiProtector _phi;
 
@@ -24,7 +23,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
-    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -115,13 +113,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
         builder.Entity<LabReport>().HasIndex(x => new { x.UserId, x.ReportDate });
         builder.Entity<LabResult>().HasIndex(x => new { x.LabReportId, x.TestCode }).IsUnique();
 
-        builder.Entity<DataProtectionKey>(entity =>
-        {
-            entity.ToTable("DataProtectionKeys");
-            entity.Property(x => x.FriendlyName);
-            entity.Property(x => x.Xml);
-        });
-
         ApplyPhiEncryption(builder);
     }
 
@@ -145,14 +136,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
 
-        builder.Entity<BloodPressureReading>().Property(x => x.Systolic).HasConversion(PhiValueConverters.RequiredInt(_phi)).HasColumnType("text");
-        builder.Entity<BloodPressureReading>().Property(x => x.Diastolic).HasConversion(PhiValueConverters.RequiredInt(_phi)).HasColumnType("text");
-        builder.Entity<BloodPressureReading>().Property(x => x.Pulse).HasConversion(PhiValueConverters.OptionalInt(_phi)).HasColumnType("text");
         builder.Entity<BloodPressureReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
-        builder.Entity<SugarReading>().Property(x => x.Value).HasConversion(PhiValueConverters.RequiredDecimal(_phi)).HasColumnType("text");
-        builder.Entity<SugarReading>().Property(x => x.Kind).HasConversion(PhiValueConverters.SugarKindValue(_phi)).HasColumnType("text");
         builder.Entity<SugarReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
-        builder.Entity<LabResult>().Property(x => x.Value).HasConversion(PhiValueConverters.RequiredDecimal(_phi)).HasColumnType("text");
 
         builder.Entity<Medication>().Property(x => x.Name).HasConversion(required).HasColumnType("text");
         builder.Entity<Medication>().Property(x => x.Dosage).HasConversion(required).HasColumnType("text");
