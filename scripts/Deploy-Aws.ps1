@@ -50,7 +50,16 @@ if ($repoMissing) {
 $registry = "$account.dkr.ecr.$region.amazonaws.com"
 $imageUri = "${registry}/${repo}:latest"
 Write-Host "Logging in to ECR..."
-& $aws ecr get-login-password --region $region | docker login --username AWS --password-stdin $registry
+# PowerShell pipelines are UTF-16, which ECR rejects with HTTP 400.
+$password = (& $aws ecr get-login-password --region $region | Out-String).Trim()
+$passwordFile = Join-Path ([System.IO.Path]::GetTempPath()) "medicalmanager-ecr-login.txt"
+try {
+    [System.IO.File]::WriteAllText($passwordFile, $password)
+    cmd.exe /c "docker login --username AWS --password-stdin $registry < `"$passwordFile`""
+}
+finally {
+    if (Test-Path $passwordFile) { Remove-Item $passwordFile -Force }
+}
 if ($LASTEXITCODE -ne 0) { throw "ECR login failed. Is Docker Desktop running?" }
 
 Write-Host "Building and pushing $imageUri ..."
