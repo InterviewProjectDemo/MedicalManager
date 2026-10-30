@@ -21,6 +21,15 @@
 <div class="row">
     <div class="col-lg-6">
         <section class="form-card">
+            <p class="muted">Sign in to open the menu. Dashboard, Family, and the other buttons appear after this.</p>
+            <form method="post" @formname="demo-patient" @onsubmit="SignInPatient" class="mb-2">
+                <AntiforgeryToken />
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Sign in as patient</button>
+            </form>
+            <form method="post" @formname="demo-doctor" @onsubmit="SignInDoctor" class="mb-3">
+                <AntiforgeryToken />
+                <button type="submit" class="w-100 btn btn-lg btn-outline-primary">Sign in as doctor</button>
+            </form>
             <StatusMessage Message="@errorMessage" />
             <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
                 <DataAnnotationsValidator />
@@ -89,7 +98,7 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    [SupplyParameterFromForm]
+    [SupplyParameterFromForm(FormName = "login")]
     private InputModel Input { get; set; } = default!;
 
     [SupplyParameterFromQuery]
@@ -132,7 +141,20 @@
 
             // This doesn't count login failures towards account lockout
             // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-            result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+            var email = Input.Email.Trim();
+            var password = Input.Password;
+            var user = await UserManager.FindByEmailAsync(email)
+                ?? await UserManager.FindByNameAsync(email);
+            if (user is null || !await UserManager.CheckPasswordAsync(user, password))
+            {
+                errorMessage = "Error: Invalid login attempt.";
+                return;
+            }
+
+            await SignInManager.SignInAsync(user, Input.RememberMe);
+            Logger.LogInformation("User logged in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+            return;
         }
 
         if (result.Succeeded)
@@ -155,6 +177,26 @@
         {
             errorMessage = "Error: Invalid login attempt.";
         }
+    }
+
+    private Task SignInPatient() =>
+        SignInDemoAsync(IdentitySeeder.DemoPatientEmail, IdentitySeeder.DemoPatientPassword);
+
+    private Task SignInDoctor() =>
+        SignInDemoAsync(IdentitySeeder.DemoDoctorEmail, IdentitySeeder.DemoDoctorPassword);
+
+    private async Task SignInDemoAsync(string email, string password)
+    {
+        var user = await UserManager.FindByEmailAsync(email);
+        if (user is null || !await UserManager.CheckPasswordAsync(user, password))
+        {
+            errorMessage = "Error: Invalid login attempt.";
+            return;
+        }
+
+        await SignInManager.SignInAsync(user, isPersistent: true);
+        Logger.LogInformation("User logged in.");
+        RedirectManager.RedirectTo(ReturnUrl);
     }
 
     private sealed class InputModel
