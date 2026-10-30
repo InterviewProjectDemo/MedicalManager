@@ -61,7 +61,6 @@ export async function startFamilyCall(token, ticket, dotNetRef) {
     device.on("error", (error) => {
         notify(dotNetRef, "OnFamilyCallError", friendlyDeviceError(error));
     });
-    await device.register();
     try {
         const outputs = await navigator.mediaDevices.enumerateDevices();
         const speaker = outputs.find((item) => item.kind === "audiooutput" && /speaker/i.test(item.label));
