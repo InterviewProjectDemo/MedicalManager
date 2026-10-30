@@ -46,11 +46,19 @@ public static class IdentitySeeder
         await EnsureCareReminderSchemaAsync(db);
 
         var protector = scope.ServiceProvider.GetRequiredService<IPhiProtector>();
-        var encryptedFields = await PhiAtRestMigrator.ApplyAsync(db, protector);
-        if (encryptedFields > 0)
+        try
+        {
+            var encryptedFields = await PhiAtRestMigrator.ApplyAsync(db, protector);
+            if (encryptedFields > 0)
+            {
+                var phiLog = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("PhiAtRest");
+                phiLog.LogInformation("Encrypted {Count} stored values that were still plaintext.", encryptedFields);
+            }
+        }
+        catch (Exception ex)
         {
             var phiLog = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("PhiAtRest");
-            phiLog.LogInformation("Encrypted {Count} stored values that were still plaintext.", encryptedFields);
+            phiLog.LogError(ex, "Stored PHI encryption did not finish. The app will keep running.");
         }
 
         try

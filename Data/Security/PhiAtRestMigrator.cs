@@ -159,6 +159,9 @@ public static class PhiAtRestMigrator
                 && normalizedUserName == row.NormalizedUserName)
                 continue;
 
+            if (!await PrepareIdentitySlotAsync(connection, row.Id, normalizedUserName))
+                continue;
+
             await using var update = connection.CreateCommand();
             update.CommandText = """
                 UPDATE "AspNetUsers"
@@ -173,7 +176,14 @@ public static class PhiAtRestMigrator
             Add(update, "@userName", userName);
             Add(update, "@normalizedUserName", normalizedUserName);
             Add(update, "@id", row.Id);
-            updated += await update.ExecuteNonQueryAsync();
+            try
+            {
+                updated += await update.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex) when (IsUniqueViolation(ex))
+            {
+                // Another account already owns this sealed sign-in. Leave both rows and keep starting.
+            }
         }
 
         return updated;
@@ -272,6 +282,134 @@ public static class PhiAtRestMigrator
         return updated;
     }
 
+    /// <summary>
+    /// A plaintext account and its already sealed copy cannot share one username.
+    /// Keep the copy that owns readings and remove the empty duplicate.
+    /// </summary>
+    private static async Task<bool> PrepareIdentitySlotAsync(
+        System.Data.Common.DbConnection connection,
+        string id,
+        string? normalizedUserName)
+    {
+        if (string.IsNullOrEmpty(normalizedUserName))
+            return true;
+
+        var otherId = await FindOtherUserAsync(connection, id, normalizedUserName);
+        if (otherId is null)
+            return true;
+
+        var keptRecords = await CountClinicalRowsAsync(connection, id);
+        var otherRecords = await CountClinicalRowsAsync(connection, otherId);
+        if (otherRecords == 0)
+            return await RemoveEmptyAccountAsync(connection, otherId);
+
+        if (keptRecords == 0)
+        {
+            await RemoveEmptyAccountAsync(connection, id);
+            return false;
+        }
+
+        return false;
+    }
+
+    private static async Task<string?> FindOtherUserAsync(
+        System.Data.Common.DbConnection connection,
+        string id,
+        string normalizedUserName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "Id"
+            FROM "AspNetUsers"
+            WHERE "NormalizedUserName" = @name AND "Id" <> @id
+            LIMIT 1
+            """;
+        Add(command, "@name", normalizedUserName);
+        Add(command, "@id", id);
+        var found = await command.ExecuteScalarAsync();
+        return found as string;
+    }
+
+    private static async Task<int> CountClinicalRowsAsync(System.Data.Common.DbConnection connection, string userId)
+    {
+        string[] tables =
+        [
+            "BloodPressureReadings",
+            "SugarReadings",
+            "Medications",
+            "Appointments",
+            "ToDoItems",
+            "LabReports",
+            "Doctors"
+        ];
+
+        var total = 0;
+        foreach (var table in tables)
+        {
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"""SELECT COUNT(*) FROM "{table}" WHERE "UserId" = @id""";
+                Add(command, "@id", userId);
+                var count = await command.ExecuteScalarAsync();
+                total += Convert.ToInt32(count, CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                // That table is not present in this database.
+            }
+        }
+
+        return total;
+    }
+
+    private static async Task<bool> RemoveEmptyAccountAsync(System.Data.Common.DbConnection connection, string userId)
+    {
+        string[] statements =
+        [
+            """DELETE FROM "AspNetUserTokens" WHERE "UserId" = @id""",
+            """DELETE FROM "AspNetUserLogins" WHERE "UserId" = @id""",
+            """DELETE FROM "AspNetUserClaims" WHERE "UserId" = @id""",
+            """DELETE FROM "AspNetUserRoles" WHERE "UserId" = @id""",
+            """DELETE FROM "AspNetUserPasskeys" WHERE "UserId" = @id""",
+            """DELETE FROM "PatientProfiles" WHERE "UserId" = @id""",
+            """DELETE FROM "UserDashboardLayouts" WHERE "UserId" = @id""",
+            """DELETE FROM "AspNetUsers" WHERE "Id" = @id"""
+        ];
+
+        foreach (var statement in statements)
+        {
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = statement;
+                Add(command, "@id", userId);
+                await command.ExecuteNonQueryAsync();
+            }
+            catch (Exception)
+            {
+                // A missing link table should not keep the account row behind.
+            }
+        }
+
+        await using var check = connection.CreateCommand();
+        check.CommandText = """SELECT COUNT(*) FROM "AspNetUsers" WHERE "Id" = @id""";
+        Add(check, "@id", userId);
+        var remaining = Convert.ToInt32(await check.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        return remaining == 0;
+    }
+
+    private static bool IsUniqueViolation(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is Npgsql.PostgresException postgres && postgres.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
+                return true;
+        }
+
+        return false;
+    }
+
     private static string? SealLookup(IPhiProtector protector, string? value)
     {
         if (string.IsNullOrEmpty(value) || IsCiphertext(value))
@@ -290,7 +428,8 @@ public static class PhiAtRestMigrator
     }
 
     private static bool IsCiphertext(string value) =>
-        value.StartsWith(PhiProtector.StringPrefix, StringComparison.Ordinal);
+        value.StartsWith(PhiProtector.DeterministicPrefix, StringComparison.Ordinal)
+        || value.StartsWith(PhiProtector.StringPrefix, StringComparison.Ordinal);
 
     private static string? ReadText(IDataRecord reader, int ordinal)
     {
