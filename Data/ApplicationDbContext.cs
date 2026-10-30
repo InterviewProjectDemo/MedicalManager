@@ -136,8 +136,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<PatientProfile>().Property(x => x.DateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.ProfilePhotoData).HasConversion(bytes);
 
+        builder.Entity<BloodPressureReading>().Property(x => x.Systolic).HasConversion(PhiValueConverters.RequiredInt(_phi)).HasColumnType("text");
+        builder.Entity<BloodPressureReading>().Property(x => x.Diastolic).HasConversion(PhiValueConverters.RequiredInt(_phi)).HasColumnType("text");
+        builder.Entity<BloodPressureReading>().Property(x => x.Pulse).HasConversion(PhiValueConverters.OptionalInt(_phi)).HasColumnType("text");
         builder.Entity<BloodPressureReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Value).HasConversion(PhiValueConverters.RequiredDecimal(_phi)).HasColumnType("text");
+        builder.Entity<SugarReading>().Property(x => x.Kind).HasConversion(PhiValueConverters.SugarKindValue(_phi)).HasColumnType("text");
         builder.Entity<SugarReading>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<LabResult>().Property(x => x.Value).HasConversion(PhiValueConverters.RequiredDecimal(_phi)).HasColumnType("text");
 
         builder.Entity<Medication>().Property(x => x.Name).HasConversion(required).HasColumnType("text");
         builder.Entity<Medication>().Property(x => x.Dosage).HasConversion(required).HasColumnType("text");
