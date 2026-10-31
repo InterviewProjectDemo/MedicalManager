@@ -553,6 +553,7 @@
         _callOpen = true;
         _navOpen = false;
         _ = StopWakeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OnCallVisibleChanged(bool visible)

@@ -10,6 +10,7 @@ const MAX_H = 420;
 let mode = null;
 let moved = false;
 let suppressClick = false;
+let startedOnFloatFace = false;
 let activePointer = null;
 let startX = 0;
 let startY = 0;
@@ -17,8 +18,11 @@ let originX = 0;
 let originY = 0;
 let originW = 0;
 let originH = 0;
+let opener = null;
 
-export function bind() {
+export function bind(dotnetRef) {
+    if (dotnetRef)
+        opener = dotnetRef;
     if (window.__mmFamilyBound)
         return;
     window.__mmFamilyBound = true;
@@ -46,6 +50,7 @@ function onPointerDown(event) {
 
     mode = resize ? "resize" : "move";
     moved = false;
+    startedOnFloatFace = !!floatFace;
     activePointer = event.pointerId;
     startX = event.clientX;
     startY = event.clientY;
@@ -54,7 +59,6 @@ function onPointerDown(event) {
     originW = floating ? readPx("--family-w", rect.width) : rect.width;
     originH = floating ? readPx("--family-h", rect.height) : rect.height;
 
-    try { event.target.setPointerCapture(event.pointerId); } catch { /* synthetic events */ }
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
@@ -71,6 +75,7 @@ function onPointerMove(event) {
 
     if (!moved) {
         moved = true;
+        try { event.target.setPointerCapture(event.pointerId); } catch { /* synthetic events */ }
         if (mode === "move" && !isFloating()) {
             originW = DEFAULT_W;
             originH = DEFAULT_H;
@@ -119,6 +124,9 @@ function onPointerUp(event) {
             park();
         else
             persist();
+    } else if (startedOnFloatFace && opener) {
+        suppressClick = true;
+        opener.invokeMethodAsync("OpenFromFace");
     }
 
     mode = null;

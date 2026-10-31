@@ -1,5 +1,6 @@
 @inject FamilyCallCoordinator FamilyCalls
 @inject IJSRuntime JS
+@implements IDisposable
 
 <div class="family-float-host" data-family-float>
     <button type="button" class="family-face" @onclick="OpenFamily">Family</button>
@@ -8,6 +9,9 @@
 </div>
 
 @code {
+    private DotNetObjectReference<FamilyFloatHost>? _self;
+    private IJSObjectReference? _module;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
@@ -15,13 +19,22 @@
 
         try
         {
-            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/familyButton.js");
-            await module.InvokeVoidAsync("bind");
+            _self = DotNetObjectReference.Create(this);
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/familyButton.js");
+            await _module.InvokeVoidAsync("bind", _self);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
     }
 
+    [JSInvokable]
+    public Task OpenFromFace() => OpenFamily();
+
     private Task OpenFamily() => FamilyCalls.RequestOpenAsync();
+
+    public void Dispose()
+    {
+        _self?.Dispose();
+    }
 }
