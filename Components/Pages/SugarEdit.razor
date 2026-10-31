@@ -45,7 +45,7 @@
                 <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
             </div>
             <div class="col-12">
-                <ReadingOverwrite @ref="_overwrite" OfferOverwrite="true" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
+                <ReadingOverwrite @ref="_overwrite" OfferOverwrite="true" Suggestions="_noteSuggestions" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
             </div>
         </div>
         <div class="form-actions">
@@ -66,6 +66,7 @@
     private SugarReading? model;
     private ReadingOverwrite? _overwrite;
     private bool _overwritePending;
+    private IReadOnlyList<string> _noteSuggestions = [];
     private string Back => CareLinks.To("sugar", PatientUserId);
     private bool CanOverwrite => model is not null && !OverwriteNote.IsOverwrite(model.Notes);
 
@@ -73,7 +74,11 @@
     {
         var state = await Auth.GetAuthenticationStateAsync();
         scope = await Access.ResolveAsync(state.User, PatientUserId);
-        if (scope.PatientId is not string patientId) return;
+        if (scope.PatientId is not string patientId)
+        {
+            _noteSuggestions = [];
+            return;
+        }
         if (Id is int id)
         {
             model = await Records.GetSugarByIdAsync(id, patientId);
@@ -81,6 +86,7 @@
         model ??= new SugarReading { UserId = patientId, RecordedAt = DateTime.Now, Value = 100, Kind = SugarKind.Fasting };
         if (OverwriteNote.IsOverwrite(model.Notes))
             model.AllowOutOfRange = true;
+        _noteSuggestions = await Records.GetSugarNoteSuggestionsAsync(patientId, Id);
     }
 
     private async Task BeginOverwrite()

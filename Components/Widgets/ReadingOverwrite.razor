@@ -1,16 +1,78 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
 <label class="form-label" for="@_noteId">Notes</label>
 @if (ShowLock)
 {
-    <div class="overwrite-note">
+    <div class="overwrite-note mb-2">
         <p class="overwrite-note-lock" role="note">@_lock</p>
-        <textarea id="@_noteId" class="form-control" rows="3" maxlength="@ExtraRoom" placeholder="Add a note"
-                  @bind="_extra" @bind:event="oninput" @bind:after="PublishExtra"></textarea>
     </div>
-    <p class="form-text">The overwrite line stays fixed. Add any other detail below it. Values outside the usual range can be saved.</p>
 }
-else
+<div class="note-choices">
+    @if (_open)
+    {
+        <div class="note-suggest-backdrop" @onclick="CloseMenu" aria-hidden="true"></div>
+    }
+    <div class="input-group note-suggest-group note-suggest-field">
+        @if (ShowLock)
+        {
+            <textarea @ref="_editor" id="@_noteId" class="form-control" rows="2" maxlength="@ExtraRoom"
+                      placeholder="Type a note" autocomplete="off" aria-label="Your note"
+                      aria-autocomplete="list"
+                      @bind="_extra" @bind:event="oninput" @bind:after="PublishExtra"
+                      @onkeydown="OnEditorKey"></textarea>
+        }
+        else
+        {
+            <input @ref="_editor" id="@_noteId" class="form-control" maxlength="@OverwriteNote.MaxLength"
+                   placeholder="Type a note" autocomplete="off" aria-autocomplete="list"
+                   @bind="_plain" @bind:event="oninput" @bind:after="PublishPlain"
+                   @onkeydown="OnEditorKey" />
+        }
+        <button @ref="_toggle" type="button"
+                class="btn note-suggest-btn @(_open ? "is-open" : null)"
+                aria-label="Recent notes"
+                aria-haspopup="listbox"
+                aria-expanded="@(_open ? "true" : "false")"
+                aria-controls="@(_open && Items.Count > 0 ? _listId : null)"
+                aria-describedby="@(_open && Items.Count == 0 ? _emptyId : null)"
+                @onclick="ToggleMenu"
+                @onkeydown="OnToggleKey">
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M5.5 7.5 10 12.5 14.5 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+        </button>
+    </div>
+    @if (_open && Items.Count == 0)
+    {
+        <p id="@_emptyId" class="note-suggest-menu note-suggest-empty" role="status">No recent notes</p>
+    }
+    else if (_open)
+    {
+        <ul @ref="_list" id="@_listId" class="note-suggest-menu" role="listbox" aria-label="Recent notes">
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var index = i;
+                var option = Items[index];
+                <li role="presentation">
+                    <button type="button"
+                            class="note-suggest-option @(index == _active ? "is-active" : null)"
+                            role="option"
+                            id="@OptionId(index)"
+                            aria-selected="@(index == _active ? "true" : "false")"
+                            data-note-option="@index"
+                            @onclick="() => ChooseAsync(option)"
+                            @onkeydown="e => OnOptionKey(e, index)">
+                        @option
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+</div>
+@if (ShowLock)
 {
-    <InputText id="@_noteId" class="form-control" Value="@_plain" ValueChanged="OnPlainNotes" ValueExpression="(() => _plain)" />
+    <p class="form-text">The overwrite line stays fixed. Type below it, or start from a recent note. Values outside the usual range can be saved.</p>
 }
 
 @if (_asking)
@@ -47,12 +109,16 @@ else
     [Parameter] public EventCallback<string?> NotesChanged { get; set; }
     [Parameter] public bool Pending { get; set; }
     [Parameter] public EventCallback<bool> PendingChanged { get; set; }
+    [Parameter] public IReadOnlyList<string>? Suggestions { get; set; }
 
     private readonly string _noteId = "reading-note-" + Guid.NewGuid().ToString("N");
+    private readonly string _listId = "reading-note-list-" + Guid.NewGuid().ToString("N");
+    private readonly string _emptyId = "reading-note-empty-" + Guid.NewGuid().ToString("N");
     private readonly string _nameId = "overwrite-name-" + Guid.NewGuid().ToString("N");
     private readonly string _roleId = "overwrite-role-" + Guid.NewGuid().ToString("N");
     private bool _asking;
-    private bool _active;
+    private bool _locked;
+    private bool _open;
     private string _name = "";
     private string _role = "";
     private string? _error;
@@ -60,10 +126,25 @@ else
     private string _extra = "";
     private string _plain = "";
     private string? _published;
+    private int _activeIndex;
+    private int? _focusOption;
+    private bool _focusEditor;
+    private ElementReference _editor;
+    private ElementReference _toggle;
+    private ElementReference _list;
+    private IJSObjectReference? _js;
 
-    private bool ShowLock => _active && _lock.Length > 0;
+    private bool ShowLock => _locked && _lock.Length > 0;
 
     private int ExtraRoom => Math.Max(0, OverwriteNote.MaxLength - _lock.Length - 1);
+
+    private IReadOnlyList<string> Items => Suggestions ?? [];
+
+    private int _active
+    {
+        get => _activeIndex;
+        set => _activeIndex = value;
+    }
 
     public bool IsActive => ShowLock;
 
@@ -78,7 +159,13 @@ else
         {
             _lock = locked;
             _extra = extra;
-            _active = true;
+            _locked = true;
+        }
+        else
+        {
+            _lock = "";
+            _extra = "";
+            _locked = false;
         }
     }
 
@@ -89,6 +176,7 @@ else
 
         _asking = true;
         _error = null;
+        _open = false;
         await SetPendingAsync(true);
     }
 
@@ -105,10 +193,11 @@ else
         _name = name;
         _role = role;
         _lock = OverwriteNote.LockLine(name, role);
-        _extra = _active ? _extra : _plain;
-        _active = true;
+        _extra = _locked ? _extra : _plain;
+        _locked = true;
         _asking = false;
         _error = null;
+        _open = false;
         await PublishExtra();
         await AllowOutOfRangeChanged.InvokeAsync(true);
         await SetPendingAsync(false);
@@ -121,10 +210,156 @@ else
         await SetPendingAsync(false);
     }
 
-    private async Task OnPlainNotes(string value)
+    private void ToggleMenu()
     {
-        _plain = value;
-        var notes = string.IsNullOrWhiteSpace(value) ? null : value;
+        _open = !_open;
+        if (_open && Items.Count > 0)
+            _active = 0;
+    }
+
+    private void CloseMenu() => _open = false;
+
+    private void OnToggleKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+            return;
+        }
+
+        if (e.Key == "ArrowDown")
+        {
+            if (!_open)
+            {
+                _open = true;
+                _active = 0;
+            }
+            else if (Items.Count > 0)
+            {
+                _active = Math.Min(Items.Count - 1, _active + 1);
+            }
+
+            if (Items.Count > 0)
+                _focusOption = _active;
+            return;
+        }
+
+        if (e.Key == "ArrowUp" && Items.Count > 0)
+        {
+            if (!_open)
+            {
+                _open = true;
+                _active = Items.Count - 1;
+            }
+            else
+            {
+                _active = Math.Max(0, _active - 1);
+            }
+
+            _focusOption = _active;
+        }
+    }
+
+    private void OnEditorKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _open)
+        {
+            _open = false;
+            return;
+        }
+
+        if (e.Key == "ArrowDown" && e.AltKey)
+        {
+            _open = true;
+            _active = 0;
+            if (Items.Count > 0)
+                _focusOption = 0;
+        }
+    }
+
+    private void OnOptionKey(KeyboardEventArgs e, int index)
+    {
+        if (Items.Count == 0)
+            return;
+
+        if (e.Key == "Escape")
+        {
+            _open = false;
+            _focusEditor = true;
+            return;
+        }
+
+        if (e.Key == "ArrowDown")
+        {
+            _active = Math.Min(Items.Count - 1, index + 1);
+            _focusOption = _active;
+            return;
+        }
+
+        if (e.Key == "ArrowUp")
+        {
+            if (index == 0)
+            {
+                _focusOption = null;
+                _ = _toggle.FocusAsync();
+                return;
+            }
+
+            _active = index - 1;
+            _focusOption = _active;
+            return;
+        }
+
+        if (e.Key == "Home")
+        {
+            _active = 0;
+            _focusOption = 0;
+            return;
+        }
+
+        if (e.Key == "End")
+        {
+            _active = Items.Count - 1;
+            _focusOption = _active;
+            return;
+        }
+
+        if (e.Key == "Tab" && !e.ShiftKey && index == Items.Count - 1)
+            _open = false;
+    }
+
+    private async Task ChooseAsync(string suggestion)
+    {
+        _open = false;
+        _focusOption = null;
+        var text = Fit(suggestion);
+        if (ShowLock)
+        {
+            _extra = text;
+            await PublishExtra();
+        }
+        else
+        {
+            _plain = text;
+            await PublishPlain();
+        }
+
+        _focusEditor = true;
+    }
+
+    private string Fit(string suggestion)
+    {
+        var room = ShowLock ? ExtraRoom : OverwriteNote.MaxLength;
+        if (room <= 0 || suggestion.Length == 0)
+            return "";
+        return suggestion.Length <= room ? suggestion : suggestion[..room];
+    }
+
+    private string OptionId(int index) => _listId + "-opt-" + index;
+
+    private async Task PublishPlain()
+    {
+        var notes = string.IsNullOrWhiteSpace(_plain) ? null : _plain;
         _published = notes;
         await NotesChanged.InvokeAsync(notes);
     }
@@ -152,5 +387,68 @@ else
         }
 
         await PendingChanged.InvokeAsync(pending);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusEditor)
+        {
+            _focusEditor = false;
+            _focusOption = null;
+            await FocusEditorAsync();
+            return;
+        }
+
+        if (_focusOption is not int index)
+            return;
+
+        _focusOption = null;
+        if (!_open || Items.Count == 0)
+            return;
+
+        try
+        {
+            var module = await JsAsync();
+            await module.InvokeVoidAsync("focusIndex", _list, index);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task FocusEditorAsync()
+    {
+        try
+        {
+            var module = await JsAsync();
+            await module.InvokeVoidAsync("focusEnd", _editor);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            try
+            {
+                await _editor.FocusAsync();
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+    }
+
+    private async Task<IJSObjectReference> JsAsync() =>
+        _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/ReadingOverwrite.razor.js");
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_js is null)
+            return;
+
+        try
+        {
+            await _js.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
     }
 }

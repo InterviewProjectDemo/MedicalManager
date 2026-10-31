@@ -59,6 +59,38 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<string>> GetBloodPressureNoteSuggestionsAsync(
+        string userId, int? excludeReadingId = null)
+    {
+        var now = DateTime.Now;
+        var start = now - ReadingNotes.HistoryWindow;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var rows = await db.BloodPressureReadings
+            .Where(x => x.UserId == userId && x.RecordedAt >= start && x.RecordedAt <= now)
+            .ToListAsync();
+        return ReadingNotes.Suggest(
+            rows.Select(row => new ReadingNotes.NoteSample(row.Id, row.UserId, row.RecordedAt, row.Notes)),
+            userId,
+            now,
+            excludeReadingId);
+    }
+
+    public async Task<IReadOnlyList<string>> GetSugarNoteSuggestionsAsync(
+        string userId, int? excludeReadingId = null)
+    {
+        var now = DateTime.Now;
+        var start = now - ReadingNotes.HistoryWindow;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var rows = await db.SugarReadings
+            .Where(x => x.UserId == userId && x.RecordedAt >= start && x.RecordedAt <= now)
+            .ToListAsync();
+        return ReadingNotes.Suggest(
+            rows.Select(row => new ReadingNotes.NoteSample(row.Id, row.UserId, row.RecordedAt, row.Notes)),
+            userId,
+            now,
+            excludeReadingId);
+    }
+
     public async Task<DateTime?> GetEarliestBloodPressureDateAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

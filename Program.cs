@@ -230,6 +230,7 @@ if (app.Environment.IsDevelopment())
     VoicemailSilence.SelfCheck();
     CallGuide.SelfCheck();
     OverwriteNote.SelfCheck();
+    ReadingNotes.SelfCheck();
     _ = Task.Run(async () =>
     {
         var voice = app.Services.GetRequiredService<OnboardingVoiceService>();
