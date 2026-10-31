@@ -226,6 +226,7 @@ if (app.Environment.IsDevelopment())
     MedicationReminderCopy.SelfCheck();
     ToDoReminderCopy.SelfCheck();
     QuickCallCopy.SelfCheck();
+    FamilyCallSignals.SelfCheck();
     CallGuide.SelfCheck();
     OverwriteNote.SelfCheck();
     _ = Task.Run(async () =>
@@ -339,6 +340,21 @@ app.MapPost("/voice/family", async (HttpRequest request, FamilyVoiceCallService 
         ? (await request.ReadFormAsync())["ticket"].ToString()
         : "";
     return Results.Text(voice.ClaimTwiml(ticket), "text/xml");
+}).DisableAntiforgery();
+
+app.MapPost("/voice/family/result", async (HttpRequest request, FamilyVoiceCallService voice) =>
+{
+    var ticket = request.Query["ticket"].ToString();
+    var dialStatus = "";
+    if (request.HasFormContentType)
+    {
+        var form = await request.ReadFormAsync();
+        if (string.IsNullOrWhiteSpace(ticket))
+            ticket = form["ticket"].ToString();
+        dialStatus = form["DialCallStatus"].ToString();
+    }
+
+    return Results.Text(voice.CompleteDial(ticket, dialStatus), "text/xml");
 }).DisableAntiforgery();
 
 app.MapGet("/health", () => Results.Ok("ok"));

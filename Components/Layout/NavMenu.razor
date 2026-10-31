@@ -298,7 +298,8 @@
         <ProfilePhotoModal Visible="_photoModalOpen"
                            VisibleChanged="OnPhotoModalVisibleChanged"
                            PhotoSaved="OnPhotoSaved" />
-        <QuickCallModal Visible="_callOpen"
+        <QuickCallModal @key="_callSerial"
+                        Visible="_callOpen"
                         VisibleChanged="OnCallVisibleChanged"
                         Kind="@_callKind"
                         ContactName="@_familyName"
@@ -319,6 +320,7 @@
     private bool _photoModalOpen;
     private bool _navOpen;
     private bool _callOpen;
+    private int _callSerial;
     private bool _guideOpen;
     private bool _monitorOpen;
     private bool _monitorLive;
@@ -550,6 +552,7 @@
         await LoadFamilyContactAsync();
         await LoadCallerAsync();
         _callKind = "family";
+        _callSerial++;
         _callOpen = true;
         _navOpen = false;
         _ = StopWakeAsync();
@@ -561,6 +564,7 @@
         _callOpen = visible;
         if (!visible)
             await EnsureWakeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleNav() => _navOpen = !_navOpen;

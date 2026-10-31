@@ -102,14 +102,38 @@ public sealed class FamilyVoiceCallService(
                 """;
         }
 
+        var action = ResultUrl(ticket);
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <Response>
-              <Dial callerId="{Xml(call.CallerId)}" answerOnBridge="true">
+              <Dial callerId="{Xml(call.CallerId)}" answerOnBridge="true" action="{Xml(action)}" method="POST">
                 <Number>{Xml(call.To)}</Number>
               </Dial>
             </Response>
             """;
+    }
+
+    public string CompleteDial(string? ticket, string? dialCallStatus)
+    {
+        if (!string.IsNullOrWhiteSpace(ticket) && IsFinishedDialStatus(dialCallStatus))
+            cache.Set(DoneKey(ticket), true, TimeSpan.FromMinutes(10));
+
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Response><Hangup/></Response>
+            """;
+    }
+
+    public bool IsDialFinished(string? ticket) =>
+        !string.IsNullOrWhiteSpace(ticket) && cache.TryGetValue(DoneKey(ticket), out bool finished) && finished;
+
+    private static bool IsFinishedDialStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return true;
+
+        return status.Trim().ToLowerInvariant() is
+            "completed" or "answered" or "busy" or "no-answer" or "failed" or "canceled" or "cancelled";
     }
 
     private string VoiceUrl()
@@ -119,6 +143,9 @@ public sealed class FamilyVoiceCallService(
             baseUrl = "https://www.medicalmgr.com";
         return baseUrl.Trim().TrimEnd('/') + "/voice/family";
     }
+
+    private string ResultUrl(string ticket) =>
+        VoiceUrl() + "/result?ticket=" + Uri.EscapeDataString(ticket);
 
     private async Task<string?> EnsureAppAsync(
         string accountSid,
@@ -288,6 +315,8 @@ public sealed class FamilyVoiceCallService(
     }
 
     private static string TicketKey(string ticket) => "family-call:" + ticket;
+
+    private static string DoneKey(string ticket) => "family-call-done:" + ticket;
 
     private static string Xml(string value) =>
         value.Replace("&", "&amp;", StringComparison.Ordinal)

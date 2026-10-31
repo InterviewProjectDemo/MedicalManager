@@ -299,7 +299,10 @@
             _gpsRef ??= DotNetObjectReference.Create(this);
             _familyAudio = true;
             _familySession = session;
+            _callSid = null;
             await _module.InvokeVoidAsync("startFamilyCall", setup.Token, setup.Ticket, _gpsRef);
+            if (!_disposed && session == _session && Visible)
+                _ = WatchFamilyCallAsync(session, setup.Ticket);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
@@ -327,15 +330,25 @@
     }
 
     [JSInvokable]
+    public Task OnFamilyCallSid(string callSid)
+    {
+        if (_disposed || _ending || _familySession != _session || string.IsNullOrWhiteSpace(callSid))
+            return Task.CompletedTask;
+
+        _callSid = callSid.Trim();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
     public Task OnFamilyCallEnded()
     {
         if (_disposed || _ending || _familySession != _session)
             return Task.CompletedTask;
 
-        if (!_connected && !string.IsNullOrWhiteSpace(_callError))
+        if (FamilyCallSignals.IsSetupFailure(_callError))
             return Task.CompletedTask;
 
-        return CloseFromRemoteAsync();
+        return InvokeAsync(CloseFromRemoteAsync);
     }
 
     [JSInvokable]
@@ -344,19 +357,47 @@
         if (_disposed || _ending || _familySession != _session)
             return Task.CompletedTask;
 
-        if (_connected && IsRemoteHangup(message))
-            return CloseFromRemoteAsync();
+        if (FamilyCallSignals.IsTerminal(message))
+            return InvokeAsync(CloseFromRemoteAsync);
 
         _familyAudio = false;
         _connected = false;
-        _callError = string.IsNullOrWhiteSpace(message) ? "The call could not be placed." : message.Trim();
+        _callError = !string.IsNullOrWhiteSpace(message) && message.Contains("microphone", StringComparison.OrdinalIgnoreCase)
+            ? "Allow the microphone so you can talk."
+            : "The call could not be placed.";
         return InvokeAsync(StateHasChanged);
     }
 
-    private static bool IsRemoteHangup(string? message) =>
-        !string.IsNullOrWhiteSpace(message)
-        && (message.Contains("hangup", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("31005", StringComparison.Ordinal));
+    private async Task WatchFamilyCallAsync(int session, string ticket)
+    {
+        try
+        {
+            while (!_disposed && !_ending && session == _session && Visible)
+            {
+                await Task.Delay(2000);
+                if (_disposed || _ending || session != _session || !Visible)
+                    return;
+
+                if (FamilyCallSignals.IsSetupFailure(_callError)
+                    && string.IsNullOrWhiteSpace(_callSid)
+                    && !FamilyCalls.IsDialFinished(ticket))
+                    return;
+
+                var finished = FamilyCalls.IsDialFinished(ticket);
+                if (!finished && !string.IsNullOrWhiteSpace(_callSid))
+                    finished = await Calls.IsCallFinishedAsync(_callSid, CancellationToken.None);
+
+                if (finished)
+                {
+                    await InvokeAsync(CloseFromRemoteAsync);
+                    return;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ObjectDisposedException)
+        {
+        }
+    }
 
     private static string FriendlyCallError(string? detail) => detail switch
     {
@@ -452,10 +493,17 @@
 
     private async Task CloseAsync()
     {
+        if (_disposed)
+            return;
+
         _ending = true;
         CancelCalling();
         _connected = false;
         _armed = false;
+        _callError = null;
+        if (_disposed)
+            return;
+
         await VisibleChanged.InvokeAsync(false);
     }
 
