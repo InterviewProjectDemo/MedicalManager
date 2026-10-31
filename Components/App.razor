@@ -20,6 +20,21 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" href="icons/icon-192.png" />
     <link rel="apple-touch-icon" href="icons/icon-180.png" />
+    <script>
+        try {
+            var savedFamily = localStorage.getItem("mm-family-button");
+            if (savedFamily) {
+                var familyState = JSON.parse(savedFamily);
+                if (familyState && familyState.floating) {
+                    document.documentElement.classList.add("family-btn-floating");
+                    document.documentElement.style.setProperty("--family-x", familyState.x + "px");
+                    document.documentElement.style.setProperty("--family-y", familyState.y + "px");
+                    document.documentElement.style.setProperty("--family-w", familyState.w + "px");
+                    document.documentElement.style.setProperty("--family-h", familyState.h + "px");
+                }
+            }
+        } catch (e) { }
+    </script>
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 

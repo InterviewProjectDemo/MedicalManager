@@ -1,0 +1,27 @@
+@inject FamilyCallCoordinator FamilyCalls
+@inject IJSRuntime JS
+
+<div class="family-float-host" data-family-float>
+    <button type="button" class="family-face" @onclick="OpenFamily">Family</button>
+    <button type="button" class="family-menu" aria-label="Return Family button to the side menu">Menu</button>
+    <button type="button" class="family-resize" aria-label="Resize Family button"></button>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/familyButton.js");
+            await module.InvokeVoidAsync("bind");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private Task OpenFamily() => FamilyCalls.RequestOpenAsync();
+}

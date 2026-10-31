@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using MedicalManager.Components;
 using MedicalManager.Components.Account;
+using MedicalManager.Components.Widgets;
 using MedicalManager.Data;
 using MedicalManager.Data.Notifications;
 using MedicalManager.Data.Security;
@@ -137,6 +138,7 @@ builder.Services.PostConfigure<EmailOptions>(email =>
 builder.Services.AddSingleton<SmtpEmailSender>();
 builder.Services.AddSingleton<IAppEmailSender>(sp => sp.GetRequiredService<SmtpEmailSender>());
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>>(sp => sp.GetRequiredService<SmtpEmailSender>());
+builder.Services.AddScoped<FamilyCallCoordinator>();
 builder.Services.AddScoped<HealthRecordService>();
 builder.Services.AddScoped<DoctorService>();
 builder.Services.AddScoped<MedicationScheduleService>();

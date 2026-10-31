@@ -6,6 +6,7 @@
 @inject ProfilePhotoService PhotoService
 @inject PatientAccessService Access
 @inject IJSRuntime JS
+@inject FamilyCallCoordinator FamilyCalls
 
 <div class="top-row nav-header navbar navbar-dark">
     <div class="nav-brand-block">
@@ -78,9 +79,11 @@
                     <button type="button" class="nav-call-btn nav-call-emergency" @onclick="OpenEmergencyCall">
                         Emergency
                     </button>
-                    <button type="button" class="nav-call-btn nav-call-family" @onclick="OpenFamilyCall">
-                        Family
-                    </button>
+                    <div class="family-slot">
+                        <button type="button" class="nav-call-btn nav-call-family" data-family-dock @onclick="OpenFamilyCall">
+                            Family
+                        </button>
+                    </div>
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-dash" href="@Href("")" Match="NavLinkMatch.All">
@@ -352,6 +355,7 @@
     {
         UpdateFromUri();
         NavigationManager.LocationChanged += OnLocationChanged;
+        FamilyCalls.OpenFamilyCallRequested += OpenFamilyCall;
         await LoadPhotoAsync();
         await LoadFamilyContactAsync();
     }
@@ -632,6 +636,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        FamilyCalls.OpenFamilyCallRequested -= OpenFamilyCall;
         _ = StopWakeAsync();
         _wakeSelf?.Dispose();
     }
