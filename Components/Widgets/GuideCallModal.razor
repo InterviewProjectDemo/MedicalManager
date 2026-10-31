@@ -80,6 +80,7 @@
     private bool _offerKind;
     private bool _offerYesNo;
     private bool _familyAudio;
+    private bool _voicemailArmed;
     private string? _parentCallSid;
     private int _session;
     private int _guideSession;
@@ -389,6 +390,7 @@
             _calls ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/QuickCallModal.razor.js");
             _self ??= DotNetObjectReference.Create(this);
             _familyAudio = true;
+            _voicemailArmed = false;
             _guideSession = session;
             _parentCallSid = null;
             await _calls.InvokeVoidAsync("startFamilyCall", setup.Token, setup.Ticket, _self);
@@ -570,9 +572,40 @@
                     await InvokeAsync(EndSessionAsync);
                     return;
                 }
+
+                if (!_voicemailArmed && VoicemailSilence.ShouldArm(FamilyCalls.GetPhase(ticket)))
+                    await InvokeAsync(() => ArmVoicemailFallbackAsync(session, ticket));
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task ArmVoicemailFallbackAsync(int session, string ticket)
+    {
+        if (_voicemailArmed || _disposed || _ending || session != _session || !Visible || _calls is null)
+            return;
+        if (!VoicemailSilence.ShouldArm(FamilyCalls.GetPhase(ticket)))
+            return;
+
+        var sentence = FamilyCalls.LeaveVoicemailSentence(ticket);
+        if (string.IsNullOrWhiteSpace(sentence))
+            return;
+
+        try
+        {
+            var started = await _calls.InvokeAsync<bool>(
+                "beginVoicemailFallback",
+                VoicemailSilence.LeavePhase,
+                sentence,
+                VoicemailSilence.SilenceMilliseconds,
+                VoicemailSilence.SpeechRms,
+                VoicemailSilence.SpeechHoldMilliseconds);
+            if (!_disposed && session == _session && started)
+                _voicemailArmed = true;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
     }

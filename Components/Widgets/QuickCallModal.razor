@@ -136,6 +136,7 @@
     private string? _callSid;
     private string? _callError;
     private bool _familyAudio;
+    private bool _voicemailArmed;
     private bool _ending;
     private int _familySession;
     private bool _hasFix;
@@ -188,6 +189,7 @@
             _callError = null;
             _callSid = null;
             _ending = false;
+            _voicemailArmed = false;
             ResetGps();
             await StartCallingAsync();
         }
@@ -298,6 +300,7 @@
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/QuickCallModal.razor.js");
             _gpsRef ??= DotNetObjectReference.Create(this);
             _familyAudio = true;
+            _voicemailArmed = false;
             _familySession = session;
             _callSid = null;
             await _module.InvokeVoidAsync("startFamilyCall", setup.Token, setup.Ticket, _gpsRef);
@@ -392,9 +395,40 @@
                     await InvokeAsync(CloseFromRemoteAsync);
                     return;
                 }
+
+                if (!_voicemailArmed && VoicemailSilence.ShouldArm(FamilyCalls.GetPhase(ticket)))
+                    await InvokeAsync(() => ArmVoicemailFallbackAsync(session, ticket));
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task ArmVoicemailFallbackAsync(int session, string ticket)
+    {
+        if (_voicemailArmed || _disposed || _ending || session != _session || !Visible || _module is null)
+            return;
+        if (!VoicemailSilence.ShouldArm(FamilyCalls.GetPhase(ticket)))
+            return;
+
+        var sentence = FamilyCalls.LeaveVoicemailSentence(ticket);
+        if (string.IsNullOrWhiteSpace(sentence))
+            return;
+
+        try
+        {
+            var started = await _module.InvokeAsync<bool>(
+                "beginVoicemailFallback",
+                VoicemailSilence.LeavePhase,
+                sentence,
+                VoicemailSilence.SilenceMilliseconds,
+                VoicemailSilence.SpeechRms,
+                VoicemailSilence.SpeechHoldMilliseconds);
+            if (!_disposed && session == _session && started)
+                _voicemailArmed = true;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
     }

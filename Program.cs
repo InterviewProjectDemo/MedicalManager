@@ -227,6 +227,7 @@ if (app.Environment.IsDevelopment())
     ToDoReminderCopy.SelfCheck();
     QuickCallCopy.SelfCheck();
     FamilyCallSignals.SelfCheck();
+    VoicemailSilence.SelfCheck();
     CallGuide.SelfCheck();
     OverwriteNote.SelfCheck();
     _ = Task.Run(async () =>
@@ -340,6 +341,22 @@ app.MapPost("/voice/family", async (HttpRequest request, FamilyVoiceCallService 
         ? (await request.ReadFormAsync())["ticket"].ToString()
         : "";
     return Results.Text(voice.ClaimTwiml(ticket), "text/xml");
+}).DisableAntiforgery();
+
+app.MapPost("/voice/family/amd", async (HttpRequest request, FamilyVoiceCallService voice) =>
+{
+    var ticket = request.Query["ticket"].ToString();
+    var answeredBy = "";
+    if (request.HasFormContentType)
+    {
+        var form = await request.ReadFormAsync();
+        if (string.IsNullOrWhiteSpace(ticket))
+            ticket = form["ticket"].ToString();
+        answeredBy = form["AnsweredBy"].ToString();
+    }
+
+    voice.NoteAnsweringMachine(ticket, answeredBy);
+    return Results.Ok();
 }).DisableAntiforgery();
 
 app.MapPost("/voice/family/result", async (HttpRequest request, FamilyVoiceCallService voice) =>

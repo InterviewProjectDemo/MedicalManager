@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
@@ -84,10 +85,29 @@ public sealed class FamilyVoiceCallService(
         if (appSid is null)
             return new FamilyTalkSetup(false, null, null, "Calling is not available right now.");
 
+        var sentence = await CallerSentenceAsync(userId);
         var ticket = Guid.NewGuid().ToString("N");
         cache.Set(TicketKey(ticket), new FamilyCallTicket(destination, route.FromNumber), TimeSpan.FromMinutes(3));
+        if (!string.IsNullOrWhiteSpace(sentence))
+            cache.Set(SentenceKey(ticket), sentence, TimeSpan.FromMinutes(15));
         var token = CreateToken(route.AccountSid, twilio.ApiKeySid, twilio.ApiKeySecret, VoiceIdentity(userId), appSid);
         return new FamilyTalkSetup(true, token, ticket, null);
+    }
+
+    private async Task<string?> CallerSentenceAsync(string userId)
+    {
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.FindByIdAsync(userId);
+            return VoicemailSilence.Sentence(user?.FullName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "The voicemail fallback name could not be read.");
+            return null;
+        }
     }
 
     public string ClaimTwiml(string? ticket)
@@ -103,14 +123,57 @@ public sealed class FamilyVoiceCallService(
         }
 
         var action = ResultUrl(ticket);
+        var detection = VoicemailSilence.MachineDetectionAttributes(Xml(AmdUrl(ticket)));
         return $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <Response>
               <Dial callerId="{Xml(call.CallerId)}" answerOnBridge="true" action="{Xml(action)}" method="POST">
-                <Number>{Xml(call.To)}</Number>
+                <Number {detection}>{Xml(call.To)}</Number>
               </Dial>
             </Response>
             """;
+    }
+
+    public void NoteAnsweringMachine(string? ticket, string? answeredBy)
+    {
+        if (string.IsNullOrWhiteSpace(ticket)
+            || !cache.TryGetValue(TicketKey(ticket), out FamilyCallTicket? call)
+            || call is null
+            || IsDialFinished(ticket))
+            return;
+
+        var incoming = VoicemailSilence.PhaseFromAnsweredBy(answeredBy);
+        if (incoming == VoicemailSilence.DialingPhase)
+            return;
+
+        var current = cache.TryGetValue(PhaseKey(ticket), out string? stored) ? stored : null;
+        var resolved = VoicemailSilence.ResolvePhase(current, incoming);
+        if (string.Equals(resolved, current, StringComparison.Ordinal))
+            return;
+
+        cache.Set(PhaseKey(ticket), resolved, TimeSpan.FromMinutes(15));
+        var reported = answeredBy?.Trim() ?? "";
+        if (reported.Length > 40)
+            reported = reported[..40];
+        logger.LogInformation("Family call answering-machine result {AnsweredBy} is {Phase}.", reported, resolved);
+    }
+
+    public string GetPhase(string? ticket)
+    {
+        if (string.IsNullOrWhiteSpace(ticket))
+            return VoicemailSilence.DialingPhase;
+        if (IsDialFinished(ticket))
+            return VoicemailSilence.FinishedPhase;
+        if (cache.TryGetValue(PhaseKey(ticket), out string? phase) && !string.IsNullOrWhiteSpace(phase))
+            return phase;
+        return VoicemailSilence.DialingPhase;
+    }
+
+    public string? LeaveVoicemailSentence(string? ticket)
+    {
+        if (!VoicemailSilence.ShouldArm(GetPhase(ticket)) || string.IsNullOrWhiteSpace(ticket))
+            return null;
+        return cache.TryGetValue(SentenceKey(ticket), out string? sentence) ? sentence : null;
     }
 
     public string CompleteDial(string? ticket, string? dialCallStatus)
@@ -146,6 +209,9 @@ public sealed class FamilyVoiceCallService(
 
     private string ResultUrl(string ticket) =>
         VoiceUrl() + "/result?ticket=" + Uri.EscapeDataString(ticket);
+
+    private string AmdUrl(string ticket) =>
+        VoiceUrl() + "/amd?ticket=" + Uri.EscapeDataString(ticket);
 
     private async Task<string?> EnsureAppAsync(
         string accountSid,
@@ -317,6 +383,10 @@ public sealed class FamilyVoiceCallService(
     private static string TicketKey(string ticket) => "family-call:" + ticket;
 
     private static string DoneKey(string ticket) => "family-call-done:" + ticket;
+
+    private static string PhaseKey(string ticket) => "family-call-phase:" + ticket;
+
+    private static string SentenceKey(string ticket) => "family-call-sentence:" + ticket;
 
     private static string Xml(string value) =>
         value.Replace("&", "&amp;", StringComparison.Ordinal)
