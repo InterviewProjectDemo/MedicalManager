@@ -1,7 +1,9 @@
 @page "/patients"
 @attribute [Authorize(Roles = "Doctor")]
+@rendermode InteractiveServer
 @inject PatientAccessService Access
-@inject HealthRecordService Records
+@inject ChartAccessService ChartAccess
+@inject AuthenticationStateProvider Auth
 
 <PageTitle>Patients</PageTitle>
 
@@ -9,59 +11,206 @@
     <div>
         <p class="eyebrow">Doctor workspace</p>
         <h1>Patients</h1>
-        <p class="muted">Pick a patient to review the same dashboard, vitals, medications, and appointments they see.</p>
+        <p class="muted">Request access first. A patient approves with a code sent to the phone on their account. You never see that code.</p>
     </div>
+    <button type="button" class="btn btn-light" @onclick="OpenRequest">Request patient access</button>
 </div>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <div class="alert @(statusOk ? "alert-success" : "alert-danger")" role="status">@status</div>
+}
+
+@if (pending.Count > 0)
+{
+    <div class="table-card mb-3">
+        <h2 class="h5 px-3 pt-3">Waiting for patient approval</h2>
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Patient</th>
+                    <th>Requested</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in pending)
+                {
+                    <tr>
+                        <td data-label="Patient">
+                            <strong>@row.RequestedName</strong>
+                            <div class="muted">@row.DateOfBirth?.ToString("MMMM d, yyyy")</div>
+                        </td>
+                        <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</td>
+                        <td class="text-end">
+                            @if (row.WaitingForPhone)
+                            {
+                                <span class="muted">Waiting for a phone on the patient's account</span>
+                            }
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => Resend(row.Id)">Send a new code</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
 
 <div class="table-card">
     <table class="table align-middle">
         <thead>
             <tr>
                 <th>Patient</th>
-                <th>Latest BP</th>
-                <th>Latest sugar</th>
+                <th>Approved access</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var row in rows)
+            @foreach (var row in grants)
             {
                 <tr>
-                    <td data-label="Patient">
-                        <strong>@row.Name</strong>
-                        <div class="muted">@row.Email</div>
-                    </td>
-                    <td data-label="Latest BP">@(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}")</td>
-                    <td data-label="Latest sugar">@(row.Sugar is null ? "—" : $"{row.Sugar.Value:0} {row.Sugar.Unit}")</td>
+                    <td data-label="Patient"><strong>@row.PatientName</strong></td>
+                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</td>
                     <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
-                        <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.Id)">Dashboard</a>
-                        <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", row.Id)">BP</a>
-                        <a class="btn btn-sm btn-outline-warning" href="@CareLinks.To("sugar", row.Id)">Sugar</a>
-                        <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", row.Id)">Meds</a>
-                        <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("appointments", row.Id)">Appts</a>
+                        @if (row.BloodPressure != ChartAccessLevel.None || row.Sugar != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.PatientId)">Dashboard</a>
+                        }
+                        @if (row.BloodPressure != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", row.PatientId)">Blood pressure</a>
+                        }
+                        @if (row.Sugar != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-warning" href="@CareLinks.To("sugar", row.PatientId)">Sugar</a>
+                        }
+                        @if (row.Lab != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("labs", row.PatientId)">Labs</a>
+                        }
                     </td>
                 </tr>
             }
         </tbody>
     </table>
-    @if (rows.Count == 0)
+    @if (grants.Count == 0)
     {
-        <p class="muted p-3">No patients registered yet.</p>
+        <p class="muted p-3">No patient has approved access yet.</p>
     }
 </div>
 
+@if (dialogOpen)
+{
+    <div class="chart-modal-backdrop" @onclick="CloseRequest">
+        <div class="chart-modal access-request-modal" role="dialog" aria-modal="true" aria-labelledby="access-request-title" @onclick:stopPropagation="true">
+            <div class="chart-modal-head">
+                <div>
+                    <h3 id="access-request-title">Access request</h3>
+                    <p>The patient confirms this from their own signed-in account with a code sent to their phone.</p>
+                </div>
+                <button type="button" class="chart-modal-close" aria-label="Close" @onclick="CloseRequest">&times;</button>
+            </div>
+            <div class="access-request-body">
+                @if (!string.IsNullOrWhiteSpace(status))
+                {
+                    <div class="alert @(statusOk ? "alert-success" : "alert-danger")" role="status">@status</div>
+                }
+                <div class="mb-3">
+                    <label class="form-label" for="patient-name">Patient full name</label>
+                    <input id="patient-name" class="form-control" @bind="patientName" autocomplete="name" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="patient-dob">Date of birth</label>
+                    <input id="patient-dob" type="date" class="form-control" @bind="patientDob" />
+                </div>
+                <fieldset class="access-scope">
+                    <legend>Records and action</legend>
+                    <ScopeRow Title="Labs" @bind-Selected="labOn" @bind-Level="labLevel" />
+                    <ScopeRow Title="Blood pressure chart and list" @bind-Selected="bpOn" @bind-Level="bpLevel" />
+                    <ScopeRow Title="Sugar chart and list" @bind-Selected="sugarOn" @bind-Level="sugarLevel" />
+                </fieldset>
+                <p class="muted">You do not choose the phone number. The code goes only to the number the patient already saved.</p>
+                <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@busy">Send approval request</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
-    private List<PatientRow> rows = [];
+    private List<DoctorGrantItem> grants = [];
+    private List<DoctorAccessRequestItem> pending = [];
+    private string? status;
+    private bool statusOk;
+    private bool dialogOpen;
+    private bool busy;
+    private string patientName = "";
+    private DateOnly? patientDob;
+    private bool labOn;
+    private bool bpOn;
+    private bool sugarOn;
+    private ChartAccessLevel labLevel = ChartAccessLevel.View;
+    private ChartAccessLevel bpLevel = ChartAccessLevel.View;
+    private ChartAccessLevel sugarLevel = ChartAccessLevel.View;
+    private string? doctorId;
 
     protected override async Task OnInitializedAsync()
     {
-        foreach (var patient in await Access.ListPatientsAsync())
+        var state = await Auth.GetAuthenticationStateAsync();
+        doctorId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        if (string.IsNullOrWhiteSpace(doctorId))
+            return;
+
+        grants = (await Access.ListGrantedPatientsAsync(doctorId)).ToList();
+        pending = (await ChartAccess.ListRequestsForDoctorAsync(doctorId)).ToList();
+    }
+
+    private void OpenRequest()
+    {
+        status = null;
+        dialogOpen = true;
+    }
+
+    private void CloseRequest() => dialogOpen = false;
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(doctorId))
+            return;
+
+        busy = true;
+        var result = await ChartAccess.SubmitAsync(
+            doctorId,
+            patientName,
+            patientDob,
+            labOn ? labLevel : ChartAccessLevel.None,
+            bpOn ? bpLevel : ChartAccessLevel.None,
+            sugarOn ? sugarLevel : ChartAccessLevel.None);
+        status = result.Message;
+        statusOk = result.Accepted;
+        busy = false;
+        if (result.Accepted)
         {
-            var bp = (await Records.GetBloodPressureAsync(patient.Id, 1)).FirstOrDefault();
-            var sugar = (await Records.GetSugarAsync(patient.Id, 1)).FirstOrDefault();
-            rows.Add(new PatientRow(patient.Id, patient.DisplayName, patient.Email ?? "", bp, sugar));
+            dialogOpen = false;
+            patientName = "";
+            patientDob = null;
+            labOn = bpOn = sugarOn = false;
+            await Reload();
         }
     }
 
-    private sealed record PatientRow(string Id, string Name, string Email, BloodPressureReading? Bp, SugarReading? Sugar);
+    private async Task Resend(int requestId)
+    {
+        if (string.IsNullOrWhiteSpace(doctorId))
+            return;
+
+        var result = await ChartAccess.ResendAsync(doctorId, requestId);
+        status = result.Message;
+        statusOk = result.Accepted;
+        await Reload();
+    }
 }

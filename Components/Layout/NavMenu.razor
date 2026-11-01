@@ -152,6 +152,13 @@
                         </NavLink>
                     </div>
                 </AuthorizeView>
+                <AuthorizeView Roles="@AppRoles.Patient" Context="patientNav">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-doctor" href="access-requests">
+                            <span class="bi bi-shield-lock-nav-menu" aria-hidden="true"></span> Access requests
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Manage">
                         <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> @authContext.User.Identity?.Name
@@ -202,6 +209,11 @@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Register">
                         <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Register
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Account/Register?account=doctor">
+                        <span class="bi bi-stethoscope-nav-menu" aria-hidden="true"></span> Register as a doctor
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">

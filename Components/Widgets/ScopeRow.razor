@@ -1,0 +1,42 @@
+<div class="access-scope-row">
+    <label class="access-scope-check">
+        <input type="checkbox" checked="@Selected" @onchange="Toggle" />
+        <span>@Title</span>
+    </label>
+    <div class="access-scope-actions" role="radiogroup" aria-label="@($"{Title} action")">
+        <label>
+            <input type="radio" name="@Title" disabled="@(!Selected)" checked="@(Level == ChartAccessLevel.View)" @onchange="() => Set(ChartAccessLevel.View)" />
+            View
+        </label>
+        <label>
+            <input type="radio" name="@Title" disabled="@(!Selected)" checked="@(Level == ChartAccessLevel.Update)" @onchange="() => Set(ChartAccessLevel.Update)" />
+            Update
+        </label>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public EventCallback<bool> SelectedChanged { get; set; }
+    [Parameter] public ChartAccessLevel Level { get; set; } = ChartAccessLevel.View;
+    [Parameter] public EventCallback<ChartAccessLevel> LevelChanged { get; set; }
+
+    private async Task Toggle(ChangeEventArgs e)
+    {
+        var on = e.Value is bool value && value;
+        Selected = on;
+        await SelectedChanged.InvokeAsync(on);
+        if (on && Level == ChartAccessLevel.None)
+        {
+            Level = ChartAccessLevel.View;
+            await LevelChanged.InvokeAsync(Level);
+        }
+    }
+
+    private async Task Set(ChartAccessLevel level)
+    {
+        Level = level;
+        await LevelChanged.InvokeAsync(level);
+    }
+}

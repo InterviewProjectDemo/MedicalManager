@@ -58,7 +58,10 @@
                         <a href="Account/ForgotPassword">Forgot your password?</a>
                     </p>
                     <p>
-                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a new user</a>
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a patient</a>
+                    </p>
+                    <p>
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl, ["account"] = "doctor" }))">Register as a doctor</a>
                     </p>
                     <p>
                         <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>

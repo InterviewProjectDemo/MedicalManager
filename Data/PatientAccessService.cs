@@ -9,7 +9,8 @@ namespace MedicalManager.Data;
 
 public sealed class PatientAccessService(
     UserManager<ApplicationUser> users,
-    IDbContextFactory<ApplicationDbContext> dbFactory)
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ChartAccessService chartAccess)
 {
     public async Task<PatientScope> ResolveAsync(ClaimsPrincipal principal, string? patientUserId)
     {
@@ -32,12 +33,33 @@ public sealed class PatientAccessService(
             return new PatientScope(current, Patient: null, IsDoctor: true, IsDoctorViewingPatient: false, NeedsPatientSelection: true);
         }
 
+        var grant = await chartAccess.GetActiveGrantAsync(current.Id, patientUserId);
+        if (grant is null)
+        {
+            return new PatientScope(
+                current,
+                Patient: null,
+                IsDoctor: true,
+                IsDoctorViewingPatient: false,
+                NeedsPatientSelection: false,
+                SectionBlocked: true);
+        }
+
         await using var db = await dbFactory.CreateDbContextAsync();
         var target = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == patientUserId)
             ?? throw new InvalidOperationException("Patient not found.");
 
-        return new PatientScope(current, target, IsDoctor: true, IsDoctorViewingPatient: true, NeedsPatientSelection: false);
+        return new PatientScope(
+            current,
+            target,
+            IsDoctor: true,
+            IsDoctorViewingPatient: true,
+            NeedsPatientSelection: false,
+            Grant: grant);
     }
+
+    public async Task<IReadOnlyList<DoctorGrantItem>> ListGrantedPatientsAsync(string doctorUserId) =>
+        await chartAccess.ListGrantsForDoctorAsync(doctorUserId);
 
     public async Task<IReadOnlyList<ApplicationUser>> ListPatientsAsync()
     {
@@ -360,7 +382,28 @@ public sealed record PatientScope(
     ApplicationUser? Patient,
     bool IsDoctor,
     bool IsDoctorViewingPatient,
-    bool NeedsPatientSelection)
+    bool NeedsPatientSelection,
+    ChartAccessGrant? Grant = null,
+    bool SectionBlocked = false)
 {
     public string? PatientId => Patient?.Id;
+
+    public bool Allows(ChartSection section, bool update) =>
+        !IsDoctor || (Grant is not null && Grant.Allows(section, update));
+
+    public PatientScope ForSection(ChartSection section, bool update)
+    {
+        if (!IsDoctor || Patient is null || Allows(section, update))
+            return this;
+
+        return this with { Patient = null, IsDoctorViewingPatient = false, SectionBlocked = true };
+    }
+
+    public PatientScope BlockDoctorChart()
+    {
+        if (!IsDoctor || Patient is null)
+            return this;
+
+        return this with { Patient = null, IsDoctorViewingPatient = false, SectionBlocked = true };
+    }
 }

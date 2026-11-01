@@ -342,7 +342,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).BlockDoctorChart();
         if (scope.PatientId is string id)
         {
             items = await Records.GetToDosAsync(id);

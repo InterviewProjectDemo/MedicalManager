@@ -16,7 +16,10 @@
             <h1>Sugar readings</h1>
             <p class="muted">Track fasting, after-meal, and random glucose values.</p>
         </div>
-        <a class="btn btn-warning text-white" href="@Link("sugar/edit")">Add reading</a>
+        @if (scope.Allows(ChartSection.Sugar, update: true))
+        {
+            <a class="btn btn-warning text-white" href="@Link("sugar/edit")">Add reading</a>
+        }
     </div>
 
     <div class="table-card">
@@ -144,7 +147,10 @@
                         <td data-label="Type">@item.Kind</td>
                         <td data-label="Status"><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
                         <td class="text-end">
-                            <a class="btn btn-sm btn-outline-warning" href="@Link($"sugar/edit/{item.Id}")">Update</a>
+                            @if (scope.Allows(ChartSection.Sugar, update: true))
+                            {
+                                <a class="btn btn-sm btn-outline-warning" href="@Link($"sugar/edit/{item.Id}")">Update</a>
+                            }
                         </td>
                     </tr>
                 }
@@ -337,7 +343,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Sugar, update: false);
         if (scope.PatientId is string id)
         {
             items = await Records.GetSugarAsync(id);

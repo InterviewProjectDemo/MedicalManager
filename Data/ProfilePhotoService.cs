@@ -238,8 +238,7 @@ public class ProfilePhotoService
             ? currentUserId
             : targetUserId.Trim();
 
-        if (!string.Equals(resolved, currentUserId, StringComparison.Ordinal)
-            && !principal.IsInRole(AppRoles.Doctor))
+        if (!string.Equals(resolved, currentUserId, StringComparison.Ordinal))
         {
             return (null, $"You can only update your own {item}.");
         }

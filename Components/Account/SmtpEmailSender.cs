@@ -23,10 +23,11 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         _environment = environment;
     }
 
-    public Task SendWelcomeEmailAsync(ApplicationUser user, string email, CancellationToken cancellationToken = default)
+    public Task SendWelcomeEmailAsync(ApplicationUser user, string email, bool forDoctor = false, CancellationToken cancellationToken = default)
     {
-        var (html, plainText) = EmailTemplates.Welcome(user.DisplayName);
-        return SendAsync(email, "Welcome to Medical Manager", html, plainText, cancellationToken);
+        var (html, plainText) = EmailTemplates.Welcome(user.DisplayName, forDoctor);
+        var subject = forDoctor ? "Welcome to Medical Manager, doctor" : "Welcome to Medical Manager";
+        return SendAsync(email, subject, html, plainText, cancellationToken);
     }
 
     public async Task<bool> SendMonitorShareAsync(

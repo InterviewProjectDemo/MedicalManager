@@ -142,6 +142,7 @@ builder.Services.AddScoped<FamilyCallCoordinator>();
 builder.Services.AddScoped<HealthRecordService>();
 builder.Services.AddScoped<DoctorService>();
 builder.Services.AddScoped<MedicationScheduleService>();
+builder.Services.AddScoped<ChartAccessService>();
 builder.Services.AddScoped<PatientAccessService>();
 builder.Services.AddScoped<LabReportService>();
 builder.Services.AddScoped<LabEditAuthorizationService>();
@@ -399,7 +400,8 @@ app.MapAdditionalIdentityEndpoints();
 app.MapGet("/profile-photo/{userId}", async (
     string userId,
     HttpContext context,
-    ProfilePhotoService photos) =>
+    ProfilePhotoService photos,
+    ChartAccessService chartAccess) =>
 {
     var currentUserId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrWhiteSpace(currentUserId))
@@ -408,6 +410,8 @@ app.MapGet("/profile-photo/{userId}", async (
     var isSelf = string.Equals(currentUserId, userId, StringComparison.Ordinal);
     var isDoctor = context.User.IsInRole(AppRoles.Doctor);
     if (!isSelf && !isDoctor)
+        return Results.Forbid();
+    if (isDoctor && !isSelf && await chartAccess.GetActiveGrantAsync(currentUserId, userId) is null)
         return Results.Forbid();
 
     var photo = await photos.GetPhotoDataAsync(userId);
@@ -420,7 +424,8 @@ app.MapGet("/profile-photo/{userId}", async (
 app.MapGet("/family-photo/{userId}", async (
     string userId,
     HttpContext context,
-    ProfilePhotoService photos) =>
+    ProfilePhotoService photos,
+    ChartAccessService chartAccess) =>
 {
     var currentUserId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrWhiteSpace(currentUserId))
@@ -429,6 +434,8 @@ app.MapGet("/family-photo/{userId}", async (
     var isSelf = string.Equals(currentUserId, userId, StringComparison.Ordinal);
     var isDoctor = context.User.IsInRole(AppRoles.Doctor);
     if (!isSelf && !isDoctor)
+        return Results.Forbid();
+    if (isDoctor && !isSelf && await chartAccess.GetActiveGrantAsync(currentUserId, userId) is null)
         return Results.Forbid();
 
     var photo = await photos.GetFamilyPhotoDataAsync(userId);

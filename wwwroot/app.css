@@ -270,6 +270,41 @@ html, body {
 }
 .auth-hero h1 { color: #0f3d5c; }
 
+.account-type-choice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0 0 1.25rem;
+    max-width: 520px;
+}
+.account-type-choice a {
+    flex: 1 1 10rem;
+    text-align: center;
+    text-decoration: none;
+    border: 1px solid #d0d5dd;
+    border-radius: 12px;
+    padding: 0.7rem 0.6rem;
+    color: #0f3d5c;
+    background: #fff;
+    font-weight: 700;
+}
+.account-type-choice a small {
+    display: block;
+    margin-top: 0.15rem;
+    font-weight: 500;
+    color: #667085;
+}
+.account-type-choice a.selected {
+    border-color: #0f766e;
+    background: #f0fdfa;
+    box-shadow: inset 0 0 0 1px #0f766e;
+}
+.account-type-choice a.selected-doctor {
+    border-color: #b42318;
+    background: #fff6f6;
+    box-shadow: inset 0 0 0 1px #b42318;
+}
+
 .chart-grid { stroke: #e7eef5; stroke-width: 1; }
 .chart-axis { font-size: 9px; fill: #667085; }
 .chart-legend { display: flex; gap: 1rem; margin-top: 0.4rem; font-size: 0.8rem; color: #475467; }
@@ -688,6 +723,17 @@ html, body {
     background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
 }
 .chart-interactive-expanded .trend-svg { border-radius: 12px; }
+.access-request-modal { width: min(560px, 100%); }
+.access-request-body { padding: 0.35rem 1.1rem 1.1rem; overflow: auto; }
+.access-scope { border: 1px solid #e7eef5; border-radius: 12px; padding: 0.75rem 1rem; margin: 0 0 1rem; }
+.access-scope legend { font-size: 0.85rem; font-weight: 700; color: #0f3d5c; padding: 0 0.25rem; }
+.access-scope-row { display: flex; justify-content: space-between; gap: 0.75rem; align-items: center; padding: 0.4rem 0; }
+.access-scope-check { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0; }
+.access-scope-actions { display: flex; gap: 0.8rem; white-space: nowrap; }
+.access-request-card { padding: 0.9rem 1.1rem 1.1rem; border-top: 1px solid #e7eef5; }
+.access-request-card h3 { margin: 0 0 0.25rem; color: #0f3d5c; font-size: 1.05rem; }
+.access-code-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.access-code-row .form-control { max-width: 10rem; }
 .chart-modal-foot {
     display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
     padding: 0.55rem 1.1rem; font-size: 0.75rem; color: #667085;

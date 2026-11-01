@@ -31,7 +31,7 @@
     <h2>How we use it</h2>
     <ul>
         <li>To show the dashboard, charts, and records.</li>
-        <li>To let a patient open only that patient's own records, and to let a doctor account list patients and open a chart after selecting that patient.</li>
+        <li>To let a patient open only that patient's own records, and to let a doctor open a chart only after that patient approves the requested records with a code sent to the patient's phone.</li>
         <li>To send a welcome email and a password-reset email. Those messages do not include clinical readings.</li>
         <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call and sends a text. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls and texts include the name and the details needed for that reminder, such as the visit or the medication and dose.</li>
         <li>When drive-time lookup is enabled, to estimate travel from the home address to the visit location and include that estimate in the appointment reminder. Production leaves this lookup off unless <code>MEDICALMANAGER_TRAVEL_LOOKUP</code> is set to true.</li>
@@ -43,7 +43,7 @@
     <h2>Who receives information</h2>
     <ul>
         <li><strong>The account holder.</strong> A patient account can open only that patient's records. The application rejects a patient request for another person's chart.</li>
-        <li><strong>Doctor accounts.</strong> A signed-in doctor can list every patient account and open the chart after selecting that patient. Doctor accounts are issued by the clinic. They are not limited to a private panel of assigned patients.</li>
+        <li><strong>Doctor accounts.</strong> A doctor creates that account at registration. The doctor cannot open a chart until the patient, signed in, enters a one-time code sent to the phone already on the patient's profile. The doctor does not see the code or choose the phone number. Approval covers only the sections the patient allows, such as labs, blood pressure, or sugar, and only view or update as approved. The patient can deny or revoke that access.</li>
         <li><strong>Family monitor viewers.</strong> Someone with the monitor link and the four-digit code can see the camera picture and the first name used on that page. They do not receive the blood pressure, sugar, lab, medication, or appointment chart through that link.</li>
         <li><strong>Twilio.</strong> Phone numbers and the words of a reminder, emergency call, family call, or monitor text are sent to Twilio so the call or message can be delivered.</li>
         <li><strong>Email.</strong> Welcome, password-reset, and family-monitor messages go through the configured mail server. A family-monitor email includes the patient's name, the link, and the access code. The mail path used for this product is Gmail SMTP.</li>
@@ -81,7 +81,7 @@
         <p>
             <strong>What the software confirms.</strong>
             Medical Manager encrypts the health fields listed above at rest, protects the sign-in cookie in transit outside local development, and limits a patient account to that patient's own records.
-            A doctor account can open a chart after selecting the patient, and that doctor can select any patient in the system.
+            A doctor account can open a chart only after the patient approves that request by phone code, and only for the records the patient allowed.
             The U.S. Department of Health and Human Services does not certify software as HIPAA compliant.
             A covered organization still has to complete the duties below before a live deployment is HIPAA compliant.
             The same confirmation is kept on the <a href="hipaa">HIPAA compliance confirmation</a> page.
@@ -115,9 +115,9 @@
 
     <h2>Registration confirmation</h2>
     <p>
-        Creating a patient account requires confirmation that you have read this policy and the <a href="hipaa">HIPAA compliance confirmation</a>.
-        Medical Manager stores the UTC time of that confirmation on the patient profile.
-        Doctor accounts are issued by the clinic and are covered by the clinic's own policies.
+        Creating an account requires confirmation that you have read this policy and the <a href="hipaa">HIPAA compliance confirmation</a>.
+        Medical Manager stores the UTC time of that confirmation on the profile.
+        This applies to patient accounts and to doctor accounts. A doctor opens a chart only after the patient approves that request.
     </p>
 
     <h2>Children</h2>

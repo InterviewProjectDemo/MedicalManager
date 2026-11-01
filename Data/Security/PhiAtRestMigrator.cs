@@ -14,6 +14,13 @@ public static class PhiAtRestMigrator
     [
         ("AspNetUsers", "FullName", false),
         ("AspNetUsers", "PhoneNumber", false),
+        ("AspNetUsers", "Specialty", false),
+        ("AspNetUsers", "ClinicAddress", false),
+        ("AspNetUsers", "MedicalSchool", false),
+        ("AspNetUsers", "LicenseState", false),
+        ("AspNetUsers", "LicenseNumber", false),
+        ("ChartAccessRequests", "RequestedName", false),
+        ("ChartAccessRequests", "RequestedDateOfBirth", false),
         ("PatientProfiles", "Sex", false),
         ("PatientProfiles", "Phone", false),
         ("PatientProfiles", "HomeAddress", false),

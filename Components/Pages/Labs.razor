@@ -18,7 +18,10 @@
             <h1>Lab reports</h1>
             <p class="muted">Review lab panels by collection month. Green values are in range; red values need attention.</p>
         </div>
-        <a class="btn btn-teal" href="@Link("labs/add")">Add report</a>
+        @if (scope.Allows(ChartSection.Lab, update: true))
+        {
+            <a class="btn btn-teal" href="@Link("labs/add")">Add report</a>
+        }
     </div>
 
     @if (months.Count == 0)
@@ -90,11 +93,14 @@
                                     </td>
                                 }
                                 <td class="lab-actions-col text-end">
-                                    <button type="button"
-                                            class="btn btn-sm btn-outline-teal"
-                                            @onclick="() => OpenEdit(report.Id, report.ReportDate)">
-                                        Edit
-                                    </button>
+                                    @if (scope.Allows(ChartSection.Lab, update: true))
+                                    {
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-teal"
+                                                @onclick="() => OpenEdit(report.Id, report.ReportDate)">
+                                            Edit
+                                        </button>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -120,11 +126,14 @@
                                 <p class="muted lab-note-hint mb-0">@report.Notes</p>
                             }
                         </div>
-                        <button type="button"
-                                class="btn btn-sm btn-outline-teal"
-                                @onclick="() => OpenEdit(report.Id, report.ReportDate)">
-                            Edit
-                        </button>
+                        @if (scope.Allows(ChartSection.Lab, update: true))
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-teal"
+                                    @onclick="() => OpenEdit(report.Id, report.ReportDate)">
+                                Edit
+                            </button>
+                        }
                     </div>
                     <div class="lab-result-grid">
                         @foreach (var test in LabTestDefinitions.All)
@@ -209,7 +218,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Lab, update: false);
         if (scope.PatientId is string id)
         {
             months = await LabReports.GetReportsGroupedByMonthAsync(id);
@@ -224,6 +233,7 @@
 
     private void OpenEdit(int reportId, DateOnly reportDate)
     {
+        if (scope?.Allows(ChartSection.Lab, update: true) != true) return;
         _pendingEditId = reportId;
         _pendingEditDate = reportDate;
         _passwordError = null;

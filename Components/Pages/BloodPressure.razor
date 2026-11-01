@@ -16,7 +16,10 @@
             <h1>Blood pressure</h1>
             <p class="muted">Add or update readings. Green is in range, amber is elevated, red is high.</p>
         </div>
-        <a class="btn btn-primary" href="@Link("blood-pressure/edit")">Add reading</a>
+        @if (scope.Allows(ChartSection.BloodPressure, update: true))
+        {
+            <a class="btn btn-primary" href="@Link("blood-pressure/edit")">Add reading</a>
+        }
     </div>
 
     <div class="table-card">
@@ -168,7 +171,10 @@
                         <td data-label="Pulse">@(item.Pulse?.ToString() ?? "—")</td>
                         <td data-label="Status"><StatusPill Label="@tag.Label" CssClass="@tag.CssClass" /></td>
                         <td class="text-end">
-                            <a class="btn btn-sm btn-outline-primary" href="@Link($"blood-pressure/edit/{item.Id}")">Update</a>
+                            @if (scope.Allows(ChartSection.BloodPressure, update: true))
+                            {
+                                <a class="btn btn-sm btn-outline-primary" href="@Link($"blood-pressure/edit/{item.Id}")">Update</a>
+                            }
                         </td>
                     </tr>
                 }
@@ -380,7 +386,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = await Access.ResolveAsync(state.User, PatientUserId);
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.BloodPressure, update: false);
         if (scope.PatientId is string id)
         {
             items = await Records.GetBloodPressureAsync(id);

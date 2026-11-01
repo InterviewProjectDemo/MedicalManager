@@ -41,6 +41,8 @@ public static class IdentitySeeder
         await EnsureOnboardingColumnsAsync(db);
         await EnsureFamilyContactColumnsAsync(db);
         await EnsurePolicyAcceptanceColumnsAsync(db);
+        await EnsureDoctorCredentialColumnsAsync(db);
+        await EnsureChartAccessSchemaAsync(db);
         await EnsureMonitorColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
         await EnsureCareReminderSchemaAsync(db);
@@ -1200,6 +1202,143 @@ public static class IdentitySeeder
 
         await db.Database.ExecuteSqlRawAsync(
             """CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientProfiles_MonitorLinkToken" ON "PatientProfiles" ("MonitorLinkToken");""");
+    }
+
+    private static async Task EnsureDoctorCredentialColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var existing = await ReadSqliteColumnsAsync(connection, "AspNetUsers");
+                await TryAddColumnAsync(db, existing, "Specialty",
+                    """ALTER TABLE "AspNetUsers" ADD COLUMN "Specialty" TEXT NULL""");
+                await TryAddColumnAsync(db, existing, "ClinicAddress",
+                    """ALTER TABLE "AspNetUsers" ADD COLUMN "ClinicAddress" TEXT NULL""");
+                await TryAddColumnAsync(db, existing, "MedicalSchool",
+                    """ALTER TABLE "AspNetUsers" ADD COLUMN "MedicalSchool" TEXT NULL""");
+                await TryAddColumnAsync(db, existing, "LicenseState",
+                    """ALTER TABLE "AspNetUsers" ADD COLUMN "LicenseState" TEXT NULL""");
+                await TryAddColumnAsync(db, existing, "LicenseNumber",
+                    """ALTER TABLE "AspNetUsers" ADD COLUMN "LicenseNumber" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "AspNetUsers" ADD COLUMN IF NOT EXISTS "Specialty" text NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "AspNetUsers" ADD COLUMN IF NOT EXISTS "ClinicAddress" text NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "AspNetUsers" ADD COLUMN IF NOT EXISTS "MedicalSchool" text NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "AspNetUsers" ADD COLUMN IF NOT EXISTS "LicenseState" text NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "AspNetUsers" ADD COLUMN IF NOT EXISTS "LicenseNumber" text NULL;""");
+    }
+
+    private static async Task EnsureChartAccessSchemaAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "ChartAccessRequests" (
+                    "Id" INTEGER NOT NULL CONSTRAINT "PK_ChartAccessRequests" PRIMARY KEY AUTOINCREMENT,
+                    "DoctorUserId" TEXT NOT NULL,
+                    "PatientUserId" TEXT NULL,
+                    "RequestedName" TEXT NOT NULL,
+                    "RequestedDateOfBirth" TEXT NULL,
+                    "Lab" INTEGER NOT NULL,
+                    "BloodPressure" INTEGER NOT NULL,
+                    "Sugar" INTEGER NOT NULL,
+                    "Status" INTEGER NOT NULL,
+                    "CodeSalt" TEXT NULL,
+                    "CodeHash" TEXT NULL,
+                    "CodeExpiresAt" TEXT NULL,
+                    "CodeAttempts" INTEGER NOT NULL,
+                    "CreatedAt" TEXT NOT NULL,
+                    "ResolvedAt" TEXT NULL,
+                    CONSTRAINT "FK_ChartAccessRequests_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_ChartAccessRequests_AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "ChartAccessGrants" (
+                    "Id" INTEGER NOT NULL CONSTRAINT "PK_ChartAccessGrants" PRIMARY KEY AUTOINCREMENT,
+                    "DoctorUserId" TEXT NOT NULL,
+                    "PatientUserId" TEXT NOT NULL,
+                    "Lab" INTEGER NOT NULL,
+                    "BloodPressure" INTEGER NOT NULL,
+                    "Sugar" INTEGER NOT NULL,
+                    "ApprovedAt" TEXT NOT NULL,
+                    "RevokedAt" TEXT NULL,
+                    CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+        }
+        else
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "ChartAccessRequests" (
+                    "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    "DoctorUserId" text NOT NULL,
+                    "PatientUserId" text NULL,
+                    "RequestedName" text NOT NULL,
+                    "RequestedDateOfBirth" text NULL,
+                    "Lab" integer NOT NULL,
+                    "BloodPressure" integer NOT NULL,
+                    "Sugar" integer NOT NULL,
+                    "Status" integer NOT NULL,
+                    "CodeSalt" text NULL,
+                    "CodeHash" text NULL,
+                    "CodeExpiresAt" timestamp without time zone NULL,
+                    "CodeAttempts" integer NOT NULL,
+                    "CreatedAt" timestamp without time zone NOT NULL,
+                    "ResolvedAt" timestamp without time zone NULL,
+                    CONSTRAINT "FK_ChartAccessRequests_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_ChartAccessRequests_AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TABLE IF NOT EXISTS "ChartAccessGrants" (
+                    "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                    "DoctorUserId" text NOT NULL,
+                    "PatientUserId" text NOT NULL,
+                    "Lab" integer NOT NULL,
+                    "BloodPressure" integer NOT NULL,
+                    "Sugar" integer NOT NULL,
+                    "ApprovedAt" timestamp without time zone NOT NULL,
+                    "RevokedAt" timestamp without time zone NULL,
+                    CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+                );
+                """);
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ChartAccessRequests_DoctorUserId_Status" ON "ChartAccessRequests" ("DoctorUserId", "Status");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ChartAccessRequests_PatientUserId_Status" ON "ChartAccessRequests" ("PatientUserId", "Status");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ChartAccessGrants_DoctorUserId_PatientUserId" ON "ChartAccessGrants" ("DoctorUserId", "PatientUserId");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ChartAccessGrants_PatientUserId" ON "ChartAccessGrants" ("PatientUserId");""");
     }
 
     private static async Task TryAddColumnAsync(

@@ -8,12 +8,28 @@ internal static class EmailTemplates
     private const string TextColor = "#334155";
     private const string MutedColor = "#64748b";
 
-    public static (string Html, string PlainText) Welcome(string fullName)
+    public static (string Html, string PlainText) Welcome(string fullName, bool forDoctor = false)
     {
         var name = string.IsNullOrWhiteSpace(fullName) ? "there" : fullName.Trim();
         var encodedName = WebUtility.HtmlEncode(name);
+        var lead = forDoctor
+            ? "Your doctor account is ready. Open the patient list, choose a chart, and review the same dashboard, vitals, medications, labs, and appointments that patient uses."
+            : "We're glad you joined Medical Manager. Your account is ready — here's how we help you take better care of yourself and your loved ones.";
 
-        var plainText = $"""
+        var plainText = forDoctor
+            ? $"""
+            Hi {name},
+
+            Welcome to Medical Manager. Your doctor account is ready.
+
+            Open the patient list, choose a chart, and review the same dashboard, vitals, medications, labs, and appointments that patient uses.
+
+            Sign in anytime. If you have questions, reply to this email.
+
+            Warm regards,
+            The Medical Manager Team
+            """
+            : $"""
             Hi {name},
 
             Welcome to Medical Manager — we're glad you're here.
@@ -34,6 +50,17 @@ internal static class EmailTemplates
             The Medical Manager Team
             """;
 
+        var patientDetails = forDoctor
+            ? ""
+            : "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"margin:20px 0;\">"
+              + "<tr><td style=\"padding:8px 0;font-size:15px;line-height:1.5;\">&#8226; Track <strong>vitals</strong> like blood pressure and glucose over time</td></tr>"
+              + "<tr><td style=\"padding:8px 0;font-size:15px;line-height:1.5;\">&#8226; Manage <strong>medications</strong> with schedules and reminders</td></tr>"
+              + "<tr><td style=\"padding:8px 0;font-size:15px;line-height:1.5;\">&#8226; Keep <strong>appointments</strong> and care-team details organized</td></tr>"
+              + "<tr><td style=\"padding:8px 0;font-size:15px;line-height:1.5;\">&#8226; Stay on top of tasks with <strong>To Do</strong> reminders</td></tr>"
+              + "<tr><td style=\"padding:8px 0;font-size:15px;line-height:1.5;\">&#8226; View your <strong>dashboard at a glance</strong> — mobile-friendly, wherever you are</td></tr>"
+              + "</table>"
+              + "<p style=\"margin:0 0 16px;font-size:15px;line-height:1.6;\">Our goal is less stress, more clarity, and peace of mind. Sign in anytime to get started.</p>";
+
         var html = $"""
             <!DOCTYPE html>
             <html lang="en">
@@ -51,15 +78,8 @@ internal static class EmailTemplates
                       </tr>
                       <tr>
                         <td style="padding:32px;">
-                          <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">We're glad you joined Medical Manager. Your account is ready — here's how we help you take better care of yourself and your loved ones.</p>
-                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0;">
-                            <tr><td style="padding:8px 0;font-size:15px;line-height:1.5;">&#8226; Track <strong>vitals</strong> like blood pressure and glucose over time</td></tr>
-                            <tr><td style="padding:8px 0;font-size:15px;line-height:1.5;">&#8226; Manage <strong>medications</strong> with schedules and reminders</td></tr>
-                            <tr><td style="padding:8px 0;font-size:15px;line-height:1.5;">&#8226; Keep <strong>appointments</strong> and care-team details organized</td></tr>
-                            <tr><td style="padding:8px 0;font-size:15px;line-height:1.5;">&#8226; Stay on top of tasks with <strong>To Do</strong> reminders</td></tr>
-                            <tr><td style="padding:8px 0;font-size:15px;line-height:1.5;">&#8226; View your <strong>dashboard at a glance</strong> — mobile-friendly, wherever you are</td></tr>
-                          </table>
-                          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Our goal is less stress, more clarity, and peace of mind. Sign in anytime to get started.</p>
+                          <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">{WebUtility.HtmlEncode(lead)}</p>
+                          {patientDetails}
                           <p style="margin:0;font-size:15px;line-height:1.6;">Warm regards,<br><strong>The Medical Manager Team</strong></p>
                         </td>
                       </tr>

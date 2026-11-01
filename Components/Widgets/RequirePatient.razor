@@ -1,6 +1,11 @@
 @namespace MedicalManager.Components.Widgets
 @inject NavigationManager Nav
 
+@if (Scope?.SectionBlocked == true)
+{
+    <div class="alert alert-warning" role="status">This patient has not approved your access to this part of the chart.</div>
+}
+
 @code {
     [Parameter] public PatientScope? Scope { get; set; }
 

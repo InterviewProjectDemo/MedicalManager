@@ -25,6 +25,9 @@ namespace MedicalManager.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ClinicAddress")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
@@ -40,10 +43,19 @@ namespace MedicalManager.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LicenseNumber")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LicenseState")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MedicalSchool")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("NormalizedEmail")
@@ -65,6 +77,9 @@ namespace MedicalManager.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("SecurityStamp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Specialty")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("TwoFactorEnabled")

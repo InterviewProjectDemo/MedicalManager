@@ -1,0 +1,153 @@
+@page "/access-requests"
+@attribute [Authorize(Roles = "Patient")]
+@rendermode InteractiveServer
+@inject ChartAccessService ChartAccess
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Access requests</PageTitle>
+
+<div class="page-head accent-dash">
+    <div>
+        <p class="eyebrow">Your approval</p>
+        <h1>Access requests</h1>
+        <p class="muted">A doctor cannot open your records until you enter the code sent to the phone on your profile. The doctor does not see that code.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <div class="alert @(statusOk ? "alert-success" : "alert-danger")" role="status">@status</div>
+}
+
+<div class="table-card mb-3">
+    <h2 class="h5 px-3 pt-3">Waiting for your code</h2>
+    @if (pending.Count == 0)
+    {
+        <p class="muted px-3 pb-3">No access requests are waiting.</p>
+    }
+    else
+    {
+        @foreach (var row in pending)
+        {
+            <article class="access-request-card">
+                <h3>@row.DoctorName</h3>
+                @if (!string.IsNullOrWhiteSpace(row.Specialty))
+                {
+                    <p class="muted">@row.Specialty</p>
+                }
+                <p>@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</p>
+                @if (row.WaitingForPhone)
+                {
+                    <p class="muted">Add a phone number on your profile, then ask the doctor to send a new code.</p>
+                }
+                else if (row.CodeExpired)
+                {
+                    <p class="muted">That code expired. Ask the doctor to send a new one.</p>
+                }
+                else
+                {
+                    <label class="form-label" for="@($"code-{row.Id}")">Approval code</label>
+                    <div class="access-code-row">
+                        <input id="@($"code-{row.Id}")" class="form-control" inputmode="numeric" maxlength="6" autocomplete="one-time-code" @bind="codes[row.Id]" />
+                        <button type="button" class="btn btn-primary" @onclick="() => Approve(row.Id)">Approve</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="() => Deny(row.Id)">Deny</button>
+                    </div>
+                }
+            </article>
+        }
+    }
+</div>
+
+<div class="table-card">
+    <h2 class="h5 px-3 pt-3">Approved doctors</h2>
+    @if (grants.Count == 0)
+    {
+        <p class="muted px-3 pb-3">No doctor has access to your records.</p>
+    }
+    else
+    {
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Doctor</th>
+                    <th>Access</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var grant in grants)
+                {
+                    <tr>
+                        <td data-label="Doctor"><strong>@grant.DoctorName</strong></td>
+                        <td data-label="Access">@ChartAccessText.Describe(grant.Lab, grant.BloodPressure, grant.Sugar)</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Revoke(grant.Id)">Revoke</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<PatientAccessRequestItem> pending = [];
+    private List<PatientGrantItem> grants = [];
+    private Dictionary<int, string> codes = [];
+    private string? status;
+    private bool statusOk;
+    private string? patientId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        patientId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        if (string.IsNullOrWhiteSpace(patientId))
+            return;
+
+        pending = (await ChartAccess.ListPendingForPatientAsync(patientId)).ToList();
+        grants = (await ChartAccess.ListGrantsForPatientAsync(patientId)).ToList();
+        foreach (var row in pending)
+            codes.TryAdd(row.Id, "");
+    }
+
+    private async Task Approve(int requestId)
+    {
+        if (string.IsNullOrWhiteSpace(patientId))
+            return;
+
+        codes.TryGetValue(requestId, out var code);
+        var result = await ChartAccess.ApproveAsync(patientId, requestId, code ?? "");
+        status = result.Message;
+        statusOk = result.Accepted;
+        if (result.Accepted)
+            await Reload();
+    }
+
+    private async Task Deny(int requestId)
+    {
+        if (string.IsNullOrWhiteSpace(patientId))
+            return;
+
+        var result = await ChartAccess.DenyAsync(patientId, requestId);
+        status = result.Message;
+        statusOk = result.Accepted;
+        await Reload();
+    }
+
+    private async Task Revoke(int grantId)
+    {
+        if (string.IsNullOrWhiteSpace(patientId))
+            return;
+
+        var result = await ChartAccess.RevokeAsync(patientId, grantId);
+        status = result.Message;
+        statusOk = result.Accepted;
+        await Reload();
+    }
+}

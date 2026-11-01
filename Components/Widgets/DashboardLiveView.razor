@@ -27,7 +27,7 @@ else if (scope.NeedsPatientSelection)
             <div>
                 <p class="eyebrow">Doctor workspace</p>
                 <h1>Choose a patient to review</h1>
-                <p class="muted">Open a chart to see the same dashboard, vitals, medications, and appointments the patient uses.</p>
+                <p class="muted">Open a chart only after that patient approves the records you requested.</p>
             </div>
             <a class="btn btn-outline-light" href="patients">Patient list</a>
         </div>
@@ -42,7 +42,7 @@ else if (scope.NeedsPatientSelection)
             }
             @if (patientRows.Count == 0)
             {
-                <p class="muted">No patients have registered yet.</p>
+                <p class="muted">No patient has approved access yet.</p>
             }
         </div>
     }
@@ -71,7 +71,7 @@ else if (snapshot is not null && scope.Patient is not null)
         }
 
         @{
-            var visible = Layout.VisibleWidgets.ToList();
+            var visible = Layout.VisibleWidgets.Where(AllowsWidget).ToList();
         }
         @if (visible.Count == 0)
         {
@@ -338,12 +338,16 @@ else if (snapshot is not null && scope.Patient is not null)
                 patientRows.Clear();
                 if (!IsPreview)
                 {
-                    foreach (var patient in await Access.ListPatientsAsync())
-                    {
-                        var bp = (await Records.GetBloodPressureAsync(patient.Id, 1)).FirstOrDefault();
-                        var sugar = (await Records.GetSugarAsync(patient.Id, 1)).FirstOrDefault();
-                        patientRows.Add(new PatientRow(patient.Id, patient.DisplayName, patient.Email ?? "", bp, sugar));
-                    }
+                foreach (var patient in await Access.ListGrantedPatientsAsync(scope.CurrentUser.Id))
+                {
+                    var bp = patient.BloodPressure == ChartAccessLevel.None
+                        ? null
+                        : (await Records.GetBloodPressureAsync(patient.PatientId, 1)).FirstOrDefault();
+                    var sugar = patient.Sugar == ChartAccessLevel.None
+                        ? null
+                        : (await Records.GetSugarAsync(patient.PatientId, 1)).FirstOrDefault();
+                    patientRows.Add(new PatientRow(patient.PatientId, patient.PatientName, "", bp, sugar));
+                }
                 }
                 error = null;
                 return;
@@ -560,6 +564,19 @@ else if (snapshot is not null && scope.Patient is not null)
         {
             updatingAppt = false;
         }
+    }
+
+    private bool AllowsWidget(DashboardWidgetPlacement widget)
+    {
+        if (scope is not { IsDoctorViewingPatient: true })
+            return true;
+
+        return widget.Id switch
+        {
+            DashboardWidgetIds.DailyBp or DashboardWidgetIds.TrendBp => scope.Allows(ChartSection.BloodPressure, false),
+            DashboardWidgetIds.DailySugar or DashboardWidgetIds.TrendSugar => scope.Allows(ChartSection.Sugar, false),
+            _ => false
+        };
     }
 
     private string? PrintPatientName => printPatientName;

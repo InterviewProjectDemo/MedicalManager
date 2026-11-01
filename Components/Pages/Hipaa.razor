@@ -14,7 +14,7 @@
     <div class="legal-confirm" role="note">
         <p>
             <strong>Confirmation.</strong>
-            Medical Manager encrypts health information at rest, limits a patient account to that patient's own chart, lets any doctor account open a chart after selecting that patient, and protects sign-in with hashed passwords, lockout, and an HTTPS-only cookie outside local development.
+            Medical Manager encrypts health information at rest, limits a patient account to that patient's own chart, lets a doctor open a chart only after the patient approves that request with a phone code, and protects sign-in with hashed passwords, lockout, and an HTTPS-only cookie outside local development.
             The U.S. Department of Health and Human Services does not certify software as HIPAA compliant.
             A clinic or other covered organization is HIPAA compliant only after it also completes the operator duties listed below, including Business Associate Agreements with vendors that can see health information.
         </p>
@@ -22,7 +22,7 @@
 
     <h2>Safeguards confirmed in the application</h2>
     <ul>
-        <li><strong>Access control.</strong> Pages that hold health records require a signed-in account. A patient account can open only that patient's own blood pressure, sugar, labs, medications, appointments, to-dos, and profile. A doctor account can list every patient and open the chart after selecting that patient. The selected patient stays in the page address so the doctor does not lose context.</li>
+        <li><strong>Access control.</strong> Pages that hold health records require a signed-in account. A patient account can open only that patient's own blood pressure, sugar, labs, medications, appointments, to-dos, and profile. A doctor account can open labs, blood pressure, or sugar only after the patient approves that section for view or update. The patient confirms with a one-time code sent to the phone on the patient's profile, while signed in. The doctor does not receive the code.</li>
         <li><strong>Authentication.</strong> ASP.NET Core Identity stores passwords as hashes. Passwords need a mix of letters and a number. Optional two-factor authentication and passkeys are available from account settings. Repeated failed sign-ins lock the account.</li>
         <li><strong>Encryption at rest.</strong> Names, email addresses, phone numbers, home addresses, notes, photos, vitals, medication details, appointment details, lab values, family-contact details, and the monitor access code are stored as AES-256-GCM ciphertext. Production refuses to start if <code>MEDICALMANAGER_PHI_KEY</code> is missing.</li>
         <li><strong>Encryption in transit.</strong> Outside local development, the authentication cookie is sent only over HTTPS and HSTS is enabled for one year. Docker and AWS deployments require TLS between the application and PostgreSQL.</li>
@@ -33,9 +33,9 @@
 
     <h2>What you confirm at registration</h2>
     <p>
-        Creating a patient account requires a confirmation that you have read the <a href="privacy">Privacy Policy</a> and this notice.
+        Creating an account requires a confirmation that you have read the <a href="privacy">Privacy Policy</a> and this notice.
         Medical Manager stores the UTC time of that confirmation on your profile as <em>Privacy policy accepted</em> and <em>HIPAA notice accepted</em>.
-        Doctor accounts are issued by the clinic and are covered by the clinic's own policies.
+        This applies to patient accounts and to doctor accounts. A doctor opens a chart only after the patient approves that request.
     </p>
 
     <h2>Duties of the organization running Medical Manager</h2>

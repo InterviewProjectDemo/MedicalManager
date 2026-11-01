@@ -28,6 +28,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<LabResult> LabResults => Set<LabResult>();
     public DbSet<ToDoItem> ToDoItems => Set<ToDoItem>();
     public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
+    public DbSet<ChartAccessRequest> ChartAccessRequests => Set<ChartAccessRequest>();
+    public DbSet<ChartAccessGrant> ChartAccessGrants => Set<ChartAccessGrant>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -159,6 +161,31 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<UserDashboardLayout>().HasIndex(x => x.UserId).IsUnique();
 
+        builder.Entity<ChartAccessRequest>()
+            .HasOne(x => x.Doctor)
+            .WithMany()
+            .HasForeignKey(x => x.DoctorUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ChartAccessRequest>()
+            .HasOne(x => x.Patient)
+            .WithMany()
+            .HasForeignKey(x => x.PatientUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ChartAccessRequest>().HasIndex(x => new { x.DoctorUserId, x.Status });
+        builder.Entity<ChartAccessRequest>().HasIndex(x => new { x.PatientUserId, x.Status });
+
+        builder.Entity<ChartAccessGrant>()
+            .HasOne(x => x.Doctor)
+            .WithMany()
+            .HasForeignKey(x => x.DoctorUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ChartAccessGrant>()
+            .HasOne(x => x.Patient)
+            .WithMany()
+            .HasForeignKey(x => x.PatientUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ChartAccessGrant>().HasIndex(x => new { x.DoctorUserId, x.PatientUserId }).IsUnique();
+
         ApplyPhiEncryption(builder);
     }
 
@@ -177,6 +204,21 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<ApplicationUser>().Property(x => x.FullName)
             .HasConversion(required)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.Specialty)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.ClinicAddress)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.MedicalSchool)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.LicenseState)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<ApplicationUser>().Property(x => x.LicenseNumber)
+            .HasConversion(optional)
             .HasColumnType("text");
         builder.Entity<ApplicationUser>().Property(x => x.Email)
             .HasMaxLength(2048)
@@ -240,6 +282,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<LabResult>().Property(x => x.TestCode).HasConversion(lookup).HasColumnType("text");
         builder.Entity<LabResult>().Property(x => x.Value).HasConversion(number).HasColumnType("text");
         builder.Entity<LabResult>().Property(x => x.Unit).HasConversion(optional).HasColumnType("text");
+        builder.Entity<ChartAccessRequest>().Property(x => x.RequestedName).HasConversion(required).HasColumnType("text");
+        builder.Entity<ChartAccessRequest>().Property(x => x.RequestedDateOfBirth).HasConversion(date).HasColumnType("text");
         builder.Entity<ToDoItem>().Property(x => x.Description).HasConversion(required).HasColumnType("text");
         builder.Entity<ToDoItem>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<MedicationAdministration>().Property(x => x.RecordedByName)

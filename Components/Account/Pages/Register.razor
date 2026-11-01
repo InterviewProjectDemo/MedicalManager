@@ -12,28 +12,84 @@
 @inject IdentityRedirectManager RedirectManager
 @inject RoleManager<IdentityRole> RoleManager
 @inject PatientAccessService Access
+@inject NavigationManager NavigationManager
 
-<PageTitle>Register</PageTitle>
+<PageTitle>@(IsDoctor ? "Register as a doctor" : "Register")</PageTitle>
 
 <div class="auth-hero">
     <p class="eyebrow">MedicalManager</p>
-    <h1>Create a patient account</h1>
-    <p class="muted">Doctor accounts are issued by the clinic. New users register as patients.</p>
+    <h1>@(IsDoctor ? "Create a doctor account" : "Create a patient account")</h1>
+    <p class="muted">
+        @if (IsDoctor)
+        {
+            <text>Full credentials are required. A patient must approve each request before you can open the records they allow.</text>
+        }
+        else
+        {
+            <text>Track your own vitals, medications, and appointments. A doctor can register with the option below.</text>
+        }
+    </p>
 </div>
+
+<nav class="account-type-choice" aria-label="Account type">
+    <a class="@PatientChoiceClass" href="@PatientRegisterHref" aria-current="@(IsDoctor ? null : "page")">
+        Patient
+        <small>Your own records</small>
+    </a>
+    <a class="@DoctorChoiceClass" href="@DoctorRegisterHref" aria-current="@(IsDoctor ? "page" : null)">
+        Doctor
+        <small>Review patient charts</small>
+    </a>
+</nav>
 
 <div class="row">
     <div class="col-lg-6">
         <StatusMessage Message="@Message" />
         <EditForm Model="Input" method="post" OnValidSubmit="RegisterUser" FormName="register" class="form-card">
             <DataAnnotationsValidator />
-            <h2>Register</h2>
+            <h2>@(IsDoctor ? "Doctor registration" : "Register")</h2>
             <hr />
             <ValidationSummary class="text-danger" role="alert" />
+            <InputText @bind-Value="Input.AccountType" type="hidden" />
             <div class="form-floating mb-3">
-                <InputText @bind-Value="Input.FullName" id="Input.FullName" class="form-control" placeholder="Full name" />
-                <label for="Input.FullName">Full name</label>
+                <InputText @bind-Value="Input.FullName" id="Input.FullName" class="form-control" autocomplete="name" aria-required="true" placeholder="@(IsDoctor ? "First and last name" : "Full name")" />
+                <label for="Input.FullName">@(IsDoctor ? "Doctor full name" : "Full name")</label>
                 <ValidationMessage For="() => Input.FullName" class="text-danger" />
             </div>
+            @if (IsDoctor)
+            {
+                <div class="mb-3">
+                    <label for="Input.ClinicAddress" class="form-label">Clinic address</label>
+                    <InputTextArea @bind-Value="Input.ClinicAddress" id="Input.ClinicAddress" class="form-control" rows="2" autocomplete="street-address" aria-required="true" placeholder="123 Main Street, City, ST 00000" />
+                    <ValidationMessage For="() => Input.ClinicAddress" class="text-danger" />
+                </div>
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.MedicalSchool" id="Input.MedicalSchool" class="form-control" aria-required="true" placeholder="Medical school" />
+                    <label for="Input.MedicalSchool">Medical school</label>
+                    <ValidationMessage For="() => Input.MedicalSchool" class="text-danger" />
+                </div>
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.Specialty" id="Input.Specialty" class="form-control" aria-required="true" placeholder="Cardiology" />
+                    <label for="Input.Specialty">Specialty</label>
+                    <ValidationMessage For="() => Input.Specialty" class="text-danger" />
+                </div>
+                <div class="mb-3">
+                    <label for="Input.LicenseState" class="form-label">State licensed to practice</label>
+                    <InputSelect @bind-Value="Input.LicenseState" id="Input.LicenseState" class="form-select" aria-required="true">
+                        <option value="">Select a state</option>
+                        @foreach (var state in UsStates.All)
+                        {
+                            <option value="@state.Code">@state.Name</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => Input.LicenseState" class="text-danger" />
+                </div>
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.LicenseNumber" id="Input.LicenseNumber" class="form-control" aria-required="true" placeholder="License number" autocomplete="off" />
+                    <label for="Input.LicenseNumber">License number</label>
+                    <ValidationMessage For="() => Input.LicenseNumber" class="text-danger" />
+                </div>
+            }
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
                 <label for="Input.Email">Email</label>
@@ -59,7 +115,7 @@
                 </label>
                 <ValidationMessage For="() => Input.AcceptPolicies" class="text-danger" />
             </div>
-            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">@(IsDoctor ? "Register as a doctor" : "Register")</button>
         </EditForm>
     </div>
     <div class="col-lg-4 col-lg-offset-2">
@@ -80,15 +136,40 @@
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
+    [SupplyParameterFromQuery(Name = "account")]
+    private string? Account { get; set; }
+
+    private bool IsDoctor => string.Equals(Input.AccountType, AppRoles.Doctor, StringComparison.Ordinal);
+
+    private string PatientChoiceClass => IsDoctor ? "" : "selected";
+
+    private string DoctorChoiceClass => IsDoctor ? "selected selected-doctor" : "";
+
+    private string PatientRegisterHref =>
+        NavigationManager.GetUriWithQueryParameters(
+            "Account/Register",
+            new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl });
+
+    private string DoctorRegisterHref =>
+        NavigationManager.GetUriWithQueryParameters(
+            "Account/Register",
+            new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl, ["account"] = "doctor" });
+
     private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
 
     protected override void OnInitialized()
     {
-        Input ??= new();
+        if (Input is not null)
+            return;
+
+        Input = new();
+        if (string.Equals(Account, "doctor", StringComparison.OrdinalIgnoreCase))
+            Input.AccountType = AppRoles.Doctor;
     }
 
     public async Task RegisterUser(EditContext editContext)
     {
+        var registerAsDoctor = string.Equals(Input.AccountType, AppRoles.Doctor, StringComparison.Ordinal);
         var user = CreateUser();
 
         await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
@@ -102,20 +183,39 @@
             return;
         }
 
-        user.FullName = Input.FullName;
+        user.FullName = Input.FullName.Trim();
         user.EmailConfirmed = true;
-        await UserManager.UpdateAsync(user);
-        if (!await RoleManager.RoleExistsAsync(AppRoles.Patient))
+        if (registerAsDoctor)
         {
-            await RoleManager.CreateAsync(new IdentityRole(AppRoles.Patient));
+            user.ClinicAddress = Input.ClinicAddress.Trim();
+            user.MedicalSchool = Input.MedicalSchool.Trim();
+            user.Specialty = Input.Specialty.Trim();
+            user.LicenseState = Input.LicenseState.Trim().ToUpperInvariant();
+            user.LicenseNumber = Input.LicenseNumber.Trim();
         }
-        await UserManager.AddToRoleAsync(user, AppRoles.Patient);
+
+        var update = await UserManager.UpdateAsync(user);
+        if (!update.Succeeded)
+        {
+            identityErrors = update.Errors;
+            return;
+        }
+
+        var role = registerAsDoctor ? AppRoles.Doctor : AppRoles.Patient;
+        if (!await RoleManager.RoleExistsAsync(role))
+        {
+            await RoleManager.CreateAsync(new IdentityRole(role));
+        }
+
+        await UserManager.AddToRoleAsync(user, role);
         await Access.EnsureProfileAsync(user);
+        if (registerAsDoctor)
+            await Access.CompleteOnboardingAsync(user.Id);
         await Access.RecordPolicyAcceptanceAsync(user.Id);
 
-        Logger.LogInformation("User created a new account with password.");
+        Logger.LogInformation("User created a new {Role} account with password.", role);
 
-        await EmailSender.SendWelcomeEmailAsync(user, Input.Email);
+        await EmailSender.SendWelcomeEmailAsync(user, Input.Email, registerAsDoctor);
 
         if (UserManager.Options.SignIn.RequireConfirmedAccount)
         {
@@ -155,9 +255,27 @@
 
     private sealed class InputModel
     {
+        public string AccountType { get; set; } = AppRoles.Patient;
+
         [Required]
+        [DoctorCredential]
         [Display(Name = "Full name")]
         public string FullName { get; set; } = "";
+
+        [DoctorCredential]
+        public string ClinicAddress { get; set; } = "";
+
+        [DoctorCredential]
+        public string MedicalSchool { get; set; } = "";
+
+        [DoctorCredential]
+        public string Specialty { get; set; } = "";
+
+        [DoctorCredential]
+        public string LicenseState { get; set; } = "";
+
+        [DoctorCredential]
+        public string LicenseNumber { get; set; } = "";
 
         [Required]
         [EmailAddress]
@@ -177,5 +295,33 @@
 
         [Range(typeof(bool), "true", "true", ErrorMessage = "Accept the Privacy Policy and HIPAA compliance confirmation to create an account.")]
         public bool AcceptPolicies { get; set; }
+    }
+
+    private sealed class DoctorCredentialAttribute : ValidationAttribute
+    {
+        protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+        {
+            if (validationContext.ObjectInstance is not InputModel model
+                || !string.Equals(model.AccountType, AppRoles.Doctor, StringComparison.Ordinal))
+            {
+                return ValidationResult.Success;
+            }
+
+            var text = value as string;
+            var message = validationContext.MemberName switch
+            {
+                nameof(InputModel.FullName) => DoctorCredentialRules.ValidateFullName(text),
+                nameof(InputModel.ClinicAddress) => DoctorCredentialRules.ValidateClinicAddress(text),
+                nameof(InputModel.MedicalSchool) => DoctorCredentialRules.ValidateMedicalSchool(text),
+                nameof(InputModel.Specialty) => DoctorCredentialRules.ValidateSpecialty(text),
+                nameof(InputModel.LicenseState) => DoctorCredentialRules.ValidateLicenseState(text),
+                nameof(InputModel.LicenseNumber) => DoctorCredentialRules.ValidateLicenseNumber(text),
+                _ => null
+            };
+
+            return message is null
+                ? ValidationResult.Success
+                : new ValidationResult(message, [validationContext.MemberName ?? string.Empty]);
+        }
     }
 }
