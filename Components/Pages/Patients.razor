@@ -191,7 +191,7 @@
             bpOn ? bpLevel : ChartAccessLevel.None,
             sugarOn ? sugarLevel : ChartAccessLevel.None);
         status = result.Message;
-        statusOk = result.Accepted;
+        statusOk = result.Accepted && result.CodeSent;
         busy = false;
         if (result.Accepted)
         {
@@ -210,7 +210,7 @@
 
         var result = await ChartAccess.ResendAsync(doctorId, requestId);
         status = result.Message;
-        statusOk = result.Accepted;
+        statusOk = result.Accepted && result.CodeSent;
         await Reload();
     }
 }

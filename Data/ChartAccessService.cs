@@ -6,7 +6,7 @@ using MedicalManager.Data.Notifications;
 
 namespace MedicalManager.Data;
 
-public sealed record AccessRequestResult(bool Accepted, string Message);
+public sealed record AccessRequestResult(bool Accepted, string Message, bool CodeSent = true);
 
 public sealed record PatientAccessRequestItem(
     int Id,
@@ -231,19 +231,20 @@ public sealed class ChartAccessService(
 
         if (code is null)
         {
-            return new AccessRequestResult(true, "The request is waiting. A confirmation code can be sent only to the phone already saved on that patient's account.");
+            return new AccessRequestResult(true, "The request is waiting. A confirmation code can be sent only to the phone already saved on that patient's account.", false);
         }
 
         var body = BuildMessage(doctor, lab, bloodPressure, sugar, code);
-        var sent = await twilio.TextAsync(phone!, body, CancellationToken.None);
+        var sent = await twilio.TextAsync(phone!, body, CancellationToken.None, confirmDelivery: true);
         if (environment.IsDevelopment())
         {
             logger.LogInformation("Access approval code for request {RequestId} is {Code}.", request.Id, code);
         }
 
-        if (!sent.Ok && !environment.IsDevelopment())
+        if (!sent.Ok)
         {
-            logger.LogWarning("Access approval text for request {RequestId} was not sent.", request.Id);
+            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", request.Id, sent.Detail ?? "unknown");
+            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
         }
 
         return new AccessRequestResult(true, "A confirmation code was sent to the phone on the patient's account. You can open a chart after they enter that code.");
@@ -274,14 +275,16 @@ public sealed class ChartAccessService(
         await db.SaveChangesAsync();
 
         var body = BuildMessage(doctor, request.Lab, request.BloodPressure, request.Sugar, code);
-        var sent = await twilio.TextAsync(phone, body, CancellationToken.None);
+        var sent = await twilio.TextAsync(phone, body, CancellationToken.None, confirmDelivery: true);
         if (environment.IsDevelopment())
         {
             logger.LogInformation("Access approval code for request {RequestId} is {Code}.", request.Id, code);
         }
-        else if (!sent.Ok)
+
+        if (!sent.Ok)
         {
-            logger.LogWarning("Access approval text for request {RequestId} was not sent.", request.Id);
+            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", request.Id, sent.Detail ?? "unknown");
+            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
         }
 
         return new AccessRequestResult(true, "A new confirmation code was sent to the phone on the patient's account.");
@@ -400,6 +403,20 @@ public sealed class ChartAccessService(
             .FirstOrDefaultAsync();
         var phone = string.IsNullOrWhiteSpace(profilePhone) ? patient.PhoneNumber : profilePhone;
         return PhoneNumbers.ToE164(phone) is null ? null : phone?.Trim();
+    }
+
+    private static string DeliveryProblem(string? detail)
+    {
+        if (!string.IsNullOrWhiteSpace(detail)
+            && (detail.Contains("30034", StringComparison.Ordinal) || detail.Contains("30032", StringComparison.Ordinal)))
+        {
+            return "The request is saved, but the confirmation text was not delivered. This sending number is not registered for US text messages yet.";
+        }
+
+        if (string.Equals(detail, "waiting", StringComparison.OrdinalIgnoreCase))
+            return "The request is saved, but the confirmation text has not reached the phone yet. Use Send a new code if it does not arrive.";
+
+        return "The request is saved, but the confirmation text was not delivered. Use Send a new code to try again.";
     }
 
     private static string BuildMessage(

@@ -15,6 +15,7 @@ public sealed class TwilioNotificationSender(
     private bool _ready;
     private string? _fromNumber;
     private string? _accountSid;
+    private string? _messagingServiceSid;
     private int _notReadyLogged;
 
     public async Task<bool> EnsureReadyAsync(CancellationToken cancellationToken)
@@ -66,7 +67,8 @@ public sealed class TwilioNotificationSender(
                 return false;
             }
 
-            Remember(true, accountSid, from);
+            var messagingServiceSid = await MessagingServiceForSenderAsync(from, twilio, cancellationToken);
+            Remember(true, accountSid, from, messagingServiceSid);
             logger.LogInformation("Twilio is ready to send reminder texts and calls.");
             return true;
         }
@@ -171,9 +173,12 @@ public sealed class TwilioNotificationSender(
         var twilio = options.Value.Twilio;
         var fields = new Dictionary<string, string>
         {
-            ["To"] = destination,
-            ["From"] = _fromNumber
+            ["To"] = destination
         };
+        if (!voice && !string.IsNullOrWhiteSpace(_messagingServiceSid))
+            fields["MessagingServiceSid"] = _messagingServiceSid;
+        else
+            fields["From"] = _fromNumber;
 
         if (voice)
         {
@@ -353,11 +358,75 @@ public sealed class TwilioNotificationSender(
 
     private bool Fresh() => _checkedAt > DateTime.UtcNow.AddMinutes(-2);
 
-    private void Remember(bool ready, string? accountSid, string? fromNumber)
+    private async Task<string?> MessagingServiceForSenderAsync(
+        string fromE164,
+        TwilioOptions twilio,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://messaging.twilio.com/v1/Services?PageSize=20");
+            request.Headers.Authorization = Basic(twilio);
+            using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            if (!document.RootElement.TryGetProperty("services", out var services))
+                return null;
+
+            foreach (var service in services.EnumerateArray())
+            {
+                var sid = service.TryGetProperty("sid", out var sidValue) ? sidValue.GetString() : null;
+                if (string.IsNullOrWhiteSpace(sid))
+                    continue;
+
+                if (await ServiceSendsFromAsync(sid, fromE164, twilio, cancellationToken))
+                    return sid;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            logger.LogInformation("Twilio messaging service could not be listed, so texts use the configured sending number.");
+        }
+
+        return null;
+    }
+
+    private async Task<bool> ServiceSendsFromAsync(
+        string serviceSid,
+        string fromE164,
+        TwilioOptions twilio,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://messaging.twilio.com/v1/Services/{Uri.EscapeDataString(serviceSid)}/PhoneNumbers?PageSize=20");
+        request.Headers.Authorization = Basic(twilio);
+        using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return false;
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        if (!document.RootElement.TryGetProperty("phone_numbers", out var numbers))
+            return false;
+
+        foreach (var number in numbers.EnumerateArray())
+        {
+            var phone = number.TryGetProperty("phone_number", out var phoneValue) ? phoneValue.GetString() : null;
+            if (string.Equals(PhoneNumbers.ToE164(phone), fromE164, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private void Remember(bool ready, string? accountSid, string? fromNumber, string? messagingServiceSid = null)
     {
         _ready = ready;
         _accountSid = accountSid;
         _fromNumber = fromNumber;
+        _messagingServiceSid = messagingServiceSid;
         _checkedAt = DateTime.UtcNow;
     }
 
