@@ -74,4 +74,11 @@ public class PatientProfile
 
     /// <summary>When the account holder confirmed the HIPAA notice at registration.</summary>
     public DateTime? HipaaNoticeAcceptedAt { get; set; }
+
+    /// <summary>When the account holder checked the SMS consent box for <see cref="SmsConsentPhone"/>.</summary>
+    public DateTime? SmsConsentAcceptedAt { get; set; }
+
+    /// <summary>Mobile number covered by <see cref="SmsConsentAcceptedAt"/>. A different number has no consent.</summary>
+    [MaxLength(40)]
+    public string? SmsConsentPhone { get; set; }
 }

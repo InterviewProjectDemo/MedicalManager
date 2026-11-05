@@ -1,4 +1,5 @@
 @page "/terms"
+@attribute [AllowAnonymous]
 
 <PageTitle>Terms and Conditions</PageTitle>
 
@@ -6,7 +7,7 @@
     <div>
         <p class="eyebrow">Medical Manager</p>
         <h1>Terms and Conditions</h1>
-        <p class="muted">Effective November 1, 2026. These terms cover use of Medical Manager and the text messages it sends.</p>
+        <p class="muted">Effective November 4, 2026. These terms cover use of Medical Manager and the text messages it sends.</p>
     </div>
 </div>
 
@@ -16,7 +17,29 @@
         Medical Manager is a personal health record for blood pressure, blood sugar, lab results, medications, appointments, and to-dos.
         It is not a certified medical device and it does not replace a clinician.
         Product news and questions go through
-        <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+        <a href="@SmsCopy.HomeUrl">www.medicalmgr.com</a>.
+        Medical Manager is a service of @SmsCopy.BusinessName.
+        Support email: <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.
+    </p>
+
+    <h2>Text message program</h2>
+    <p>
+        <strong>Program name.</strong> Medical Manager.
+        This program is live at <a href="@SmsCopy.HomeUrl">@SmsCopy.HomeUrl</a>.
+        The public opt-in explanation is <a href="@SmsCopy.ConsentUrl">@SmsCopy.ConsentUrl</a>.
+    </p>
+    <p>
+        Message types are chart-access approval codes, appointment reminders, and a Monitor Share text when an account holder presses Send.
+        Message frequency varies.
+        Message and data rates may apply.
+        Reply STOP to opt out.
+        Reply HELP for help, or email <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.
+        Read this page and the <a href="@SmsCopy.PrivacyUrl">Privacy Policy</a>.
+    </p>
+    <p>
+        The Profile consent box is unchecked until the patient checks it. Its label is:
+        @SmsCopy.CheckboxLead
+        <a href="privacy">Privacy Policy</a> and <a href="terms">Terms and Conditions</a>.
     </p>
 
     <h2>Service description</h2>
@@ -36,6 +59,7 @@
         Medical Manager can also text the account holder's own phone with an appointment reminder.
         That text is sent one day before a visit when appointment reminders are left on, and it includes the name and the visit details needed for the reminder.
         One hour before the visit, Medical Manager places a call. Medication and to-do reminders are calls.
+        Application reminders can also speak that same reminder on this device while you are signed in, with or without the phone reminders.
         These messages are informational. Medical Manager does not send marketing or promotional texts.
     </p>
 
@@ -49,18 +73,19 @@
 
     <h2>Messaging</h2>
     <p>
-        <strong>Program name.</strong> Medical Manager Monitor Share.
+        <strong>Program name.</strong> Medical Manager.
     </p>
     <p>
-        By opting in, you consent to receive SMS messages from Medical Manager.
-        Opt-in for Monitor Share happens when a signed-in account holder opens Monitor, chooses Share, enters a mobile number, and presses Send.
-        No Monitor Share text is sent unless that person takes those steps.
-        Opt-in for an appointment reminder text happens when the account holder saves a phone number and leaves appointment reminders turned on.
+        By checking the Profile text-message consent box, you consent to receive SMS messages from Medical Manager at the mobile number you enter.
+        That box is unchecked until you check it. The same label is on the <a href="sms">text message consent</a> page.
+        No chart-access text or appointment reminder text is sent unless that consent is saved for that number.
         Appointment reminders can be turned off on the profile page.
+        Opt-in for Monitor Share is separate: a signed-in account holder opens Monitor, chooses Share, enters a mobile number, and presses Send.
+        No Monitor Share text is sent unless that person presses Send.
     </p>
     <p>
         A Monitor Share text looks like this:
-        "Medical Manager: Jordan Lee shared a family monitor. Code 2468. https://www.medicalmgr.com/watch/..."
+        "Medical Manager: Jordan Lee shared a family monitor. Code 2468. https://www.medicalmgr.com/watch/... Reply STOP to opt out. Reply HELP for help."
         The name, the four-digit passcode, and the link are the ones for that share.
         The link opens the family watch page. The passcode is entered on that page.
     </p>
@@ -71,7 +96,7 @@
         A chart-access text is sent to the mobile number already saved on the patient's profile when a doctor requests access to that patient's records.
         That text names the doctor, the records requested, and a six-digit approval code that expires in 15 minutes.
         The doctor does not see the code and does not choose the phone number.
-        No chart-access text is sent unless the patient has already saved a phone number.
+        No chart-access text or appointment text is sent unless the patient has saved a phone number and checked the text-message consent box.
     </p>
     <p>
         Message and data rates may apply.
@@ -81,8 +106,8 @@
         You can opt out at any time by replying STOP to the number that sent the text.
         After you reply STOP, you will receive one confirmation, and then no further texts from that number.
         Reply START to allow texts again.
-        Reply HELP for help, or contact Medical Manager through
-        <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+        Reply HELP for help, or email
+        <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.
     </p>
     <p>
         Carriers are not liable for delayed or undelivered messages.

@@ -202,7 +202,7 @@ public sealed class ChartAccessService(
             db.ChartAccessRequests.RemoveRange(pending);
         }
 
-        var phone = await PatientPhoneAsync(db, patient);
+        var (phone, smsConsent) = await PatientTextDestinationAsync(db, patient);
         var request = new ChartAccessRequest
         {
             DoctorUserId = doctorUserId,
@@ -217,7 +217,7 @@ public sealed class ChartAccessService(
         };
 
         string? code = null;
-        if (!string.IsNullOrWhiteSpace(phone))
+        if (!string.IsNullOrWhiteSpace(phone) && smsConsent)
         {
             code = NewCode();
             var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -231,7 +231,10 @@ public sealed class ChartAccessService(
 
         if (code is null)
         {
-            return new AccessRequestResult(true, "The request is waiting. A confirmation code can be sent only to the phone already saved on that patient's account.", false);
+            var waiting = string.IsNullOrWhiteSpace(phone)
+                ? "The request is waiting. A confirmation code can be sent only to the phone already saved on that patient's account."
+                : "The request is waiting. A confirmation code can be sent only after the patient checks the text-message consent box on their profile.";
+            return new AccessRequestResult(true, waiting, false);
         }
 
         var body = BuildMessage(doctor, lab, bloodPressure, sugar, code);
@@ -261,9 +264,11 @@ public sealed class ChartAccessService(
         if (patient is null)
             return new AccessRequestResult(false, "That request is no longer waiting.");
 
-        var phone = await PatientPhoneAsync(db, patient);
+        var (phone, smsConsent) = await PatientTextDestinationAsync(db, patient);
         if (string.IsNullOrWhiteSpace(phone))
             return new AccessRequestResult(false, "A code can be sent only to the phone already saved on that patient's account.");
+        if (!smsConsent)
+            return new AccessRequestResult(false, "A code can be sent only after the patient checks the text-message consent box on their profile.");
 
         var doctor = await users.FindByIdAsync(doctorUserId);
         var code = NewCode();
@@ -395,14 +400,15 @@ public sealed class ChartAccessService(
         return match;
     }
 
-    private static async Task<string?> PatientPhoneAsync(ApplicationDbContext db, ApplicationUser patient)
+    private static async Task<(string? Phone, bool SmsConsent)> PatientTextDestinationAsync(ApplicationDbContext db, ApplicationUser patient)
     {
-        var profilePhone = await db.PatientProfiles.AsNoTracking()
-            .Where(x => x.UserId == patient.Id)
-            .Select(x => x.Phone)
-            .FirstOrDefaultAsync();
-        var phone = string.IsNullOrWhiteSpace(profilePhone) ? patient.PhoneNumber : profilePhone;
-        return PhoneNumbers.ToE164(phone) is null ? null : phone?.Trim();
+        var profile = await db.PatientProfiles.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.UserId == patient.Id);
+        var phone = string.IsNullOrWhiteSpace(profile?.Phone) ? patient.PhoneNumber : profile.Phone;
+        if (PhoneNumbers.ToE164(phone) is null)
+            return (null, false);
+
+        return (phone!.Trim(), SmsConsent.IsGranted(profile, phone));
     }
 
     private static string DeliveryProblem(string? detail)
@@ -428,7 +434,7 @@ public sealed class ChartAccessService(
     {
         var who = string.IsNullOrWhiteSpace(doctor?.FullName) ? "A doctor" : doctor.FullName.Trim();
         var what = ChartAccessText.Describe(lab, bloodPressure, sugar);
-        return $"Medical Manager: {who} requests {what}. Approval code {code}. It expires in 15 minutes. Sign in and enter this code under Access requests. If you did not expect this, do not share the code.";
+        return SmsCopy.Finish($"Medical Manager: {who} requests {what}. Approval code {code}. It expires in 15 minutes. Sign in and enter this code under Access requests. If you did not expect this, do not share the code.");
     }
 
     private static string NewCode() =>

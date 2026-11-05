@@ -1,5 +1,5 @@
 @page "/"
-@attribute [Authorize]
+@attribute [AllowAnonymous]
 @inject DashboardLayoutService Layouts
 @inject AuthenticationStateProvider Auth
 @inject PatientAccessService Access
@@ -7,7 +7,28 @@
 
 <PageTitle>Dashboard</PageTitle>
 
-@if (layout is null)
+@if (!_signedIn)
+{
+    <div class="page-head">
+        <div>
+            <p class="eyebrow">Medical Manager</p>
+            <h1>Medical Manager</h1>
+            <p class="muted">A live personal health record from @SmsCopy.BusinessName.</p>
+        </div>
+    </div>
+    <article class="legal-page">
+        <p>
+            Medical Manager is live at <a href="@SmsCopy.HomeUrl">www.medicalmgr.com</a>.
+            Support: <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.
+        </p>
+        <p>
+            Patients track blood pressure, blood sugar, labs, medications, appointments, and to-dos.
+            A doctor opens a chart only after the patient approves that request with a code sent to the patient's own phone.
+        </p>
+        <p><a class="btn btn-purple" href="Account/Login">Log in</a> <a class="btn btn-outline-secondary" href="Account/Register">Register</a></p>
+    </article>
+}
+else if (layout is null)
 {
     <p>Loading dashboard...</p>
 }
@@ -21,10 +42,15 @@ else
     public string? PatientUserId { get; set; }
 
     private DashboardLayout? layout;
+    private bool _signedIn;
 
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
+        _signedIn = state.User.Identity?.IsAuthenticated == true;
+        if (!_signedIn)
+            return;
+
         if (await Access.NeedsOnboardingAsync(state.User))
         {
             Navigation.NavigateTo("/onboarding");

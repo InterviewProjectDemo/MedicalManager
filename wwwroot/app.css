@@ -4502,3 +4502,41 @@ html.family-btn-floating [data-family-dock] {
 [data-family-dock] {
     touch-action: none;
 }
+
+.site-footer {
+    margin: 2.5rem 0 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(15, 61, 92, 0.18);
+    color: #334155;
+}
+
+.site-footer p { margin: 0 0 0.6rem; }
+
+.site-footer nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+}
+
+.site-footer a { font-weight: 700; }
+
+.sms-consent {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+    margin-top: 0.75rem;
+}
+
+.sms-consent input { margin-top: 0.35rem; flex: 0 0 auto; }
+
+.sms-consent-quote {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+    margin: 0.5rem 0 1rem;
+    padding: 0.9rem 1rem;
+    border-left: 4px solid #0f3d5c;
+    background: #f4f8fb;
+}
+
+.legal-page .sms-consent-quote input { margin-top: 0.35rem; }

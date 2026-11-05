@@ -1,4 +1,5 @@
 @page "/hipaa"
+@attribute [AllowAnonymous]
 
 <PageTitle>HIPAA compliance confirmation</PageTitle>
 
@@ -28,7 +29,7 @@
         <li><strong>Encryption in transit.</strong> Outside local development, the authentication cookie is sent only over HTTPS and HSTS is enabled for one year. Docker and AWS deployments require TLS between the application and PostgreSQL.</li>
         <li><strong>Session cookie.</strong> The sign-in cookie is HttpOnly and uses SameSite Lax, so page scripts cannot read it.</li>
         <li><strong>Family monitor.</strong> The watch link shows the camera picture after the secret token and the four-digit code. It does not open the clinical chart.</li>
-        <li><strong>Patient choice.</strong> Appointment, medication, and to-do reminders can each be turned off. The account holder can permanently delete the account and the records the database deletes with that user. Medication reminder delivery logs are stored by user id without a foreign key, so those rows can remain.</li>
+        <li><strong>Patient choice.</strong> Appointment, medication, to-do, and application reminders can each be turned off. Phone reminders and spoken device reminders can both stay on. The account holder can permanently delete the account and the records the database deletes with that user. Medication and application reminder delivery logs are stored by user id without a foreign key, so those rows can remain. The spoken words are not stored in that log.</li>
     </ul>
 
     <h2>What you confirm at registration</h2>

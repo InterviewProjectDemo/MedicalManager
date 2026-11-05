@@ -41,6 +41,7 @@ public static class IdentitySeeder
         await EnsureOnboardingColumnsAsync(db);
         await EnsureFamilyContactColumnsAsync(db);
         await EnsurePolicyAcceptanceColumnsAsync(db);
+        await EnsureSmsConsentColumnsAsync(db);
         await EnsureDoctorCredentialColumnsAsync(db);
         await EnsureChartAccessSchemaAsync(db);
         await EnsureMonitorColumnsAsync(db);
@@ -1051,6 +1052,38 @@ public static class IdentitySeeder
             """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "PrivacyPolicyAcceptedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
         await db.Database.ExecuteSqlRawAsync(
             """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "HipaaNoticeAcceptedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
+    }
+
+    private static async Task EnsureSmsConsentColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = await ReadSqliteColumnsAsync(connection, "PatientProfiles");
+                await TryAddColumnAsync(db, columns, "SmsConsentAcceptedAt",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "SmsConsentAcceptedAt" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "SmsConsentPhone",
+                    """ALTER TABLE "PatientProfiles" ADD COLUMN "SmsConsentPhone" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "SmsConsentAcceptedAt" TIMESTAMP WITHOUT TIME ZONE NULL;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "PatientProfiles" ADD COLUMN IF NOT EXISTS "SmsConsentPhone" TEXT NULL;""");
     }
 
     private static async Task EnsureFamilyContactColumnsAsync(ApplicationDbContext db)

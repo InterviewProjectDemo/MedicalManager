@@ -602,6 +602,13 @@ namespace MedicalManager.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("SmsConsentAcceptedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SmsConsentPhone")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProfilePhotoContentType")
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");

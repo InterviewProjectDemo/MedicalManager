@@ -50,8 +50,12 @@ public static class AppointmentReminderCopy
             throw new InvalidOperationException("Hour-before call should not say the visit is tomorrow.");
 
         var sms = BuildSms(facts);
-        if (!sms.Contains("Alex Rivera", StringComparison.Ordinal) || !sms.Contains("Cardiology follow-up", StringComparison.Ordinal))
-            throw new InvalidOperationException("Day-before text is missing the name or purpose.");
+        if (!sms.StartsWith("Medical Manager:", StringComparison.Ordinal)
+            || !sms.Contains("Alex Rivera", StringComparison.Ordinal)
+            || !sms.Contains("Cardiology follow-up", StringComparison.Ordinal)
+            || !sms.Contains("Reply STOP to opt out", StringComparison.Ordinal)
+            || !sms.Contains("Reply HELP for help", StringComparison.Ordinal))
+            throw new InvalidOperationException("Day-before text is missing the name, purpose, or opt-out line.");
     }
 
     public static string BuildSms(ReminderFacts facts)
@@ -62,7 +66,7 @@ public static class AppointmentReminderCopy
         var provider = Clean(facts.ProviderName);
         var location = Clean(facts.Location);
         var builder = new StringBuilder();
-        builder.Append("Hello ").Append(name).Append(", this is Medical Manager. ");
+        builder.Append("Medical Manager: Hello ").Append(name).Append(", this is Medical Manager. ");
         builder.Append("A kind reminder: ").Append(when).Append(" you have an appointment");
         builder.Append(" for ").Append(purpose);
         if (!string.IsNullOrWhiteSpace(provider))
@@ -73,7 +77,7 @@ public static class AppointmentReminderCopy
         if (!string.IsNullOrWhiteSpace(facts.TravelSentence))
             builder.Append(' ').Append(facts.TravelSentence.Trim());
         builder.Append(" We hope your visit goes smoothly.");
-        return builder.ToString();
+        return SmsCopy.Finish(builder.ToString());
     }
 
     public static string BuildVoiceSsml(ReminderFacts facts)

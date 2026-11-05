@@ -67,7 +67,8 @@ public sealed class AppointmentReminderService(
             {
                 var facts = await BuildFactsAsync(appointment, person, AppointmentReminderKind.DayBefore, now, cancellationToken);
                 await SendAsync(db, appointment, facts, phone, AppointmentReminderChannel.Voice, cancellationToken);
-                await SendAsync(db, appointment, facts, phone, AppointmentReminderChannel.Sms, cancellationToken);
+                if (SmsConsent.IsGranted(profile, profile?.Phone ?? user?.PhoneNumber))
+                    await SendAsync(db, appointment, facts, phone, AppointmentReminderChannel.Sms, cancellationToken);
             }
 
             if (AppointmentReminderSchedule.IsHourBeforeDue(appointment.StartsAt, now))

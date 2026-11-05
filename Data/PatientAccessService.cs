@@ -146,7 +146,8 @@ public sealed class PatientAccessService(
         string? sex,
         string? homeAddress,
         DateOnly? dateOfBirth,
-        string? notes)
+        string? notes,
+        bool smsConsent)
     {
         var trimmedName = fullName.Trim();
         if (string.IsNullOrWhiteSpace(trimmedName))
@@ -166,6 +167,8 @@ public sealed class PatientAccessService(
         var sexValue = NormalizeOptional(sex, 40, "Sex");
         var addressValue = NormalizeOptional(homeAddress, 300, "Home address");
         var notesValue = NormalizeOptional(notes, 400, "Notes");
+        if (smsConsent && string.IsNullOrWhiteSpace(phoneValue))
+            throw new InvalidOperationException("Enter your mobile number before agreeing to text messages.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId)
@@ -181,6 +184,17 @@ public sealed class PatientAccessService(
         }
 
         profile.Phone = phoneValue;
+        if (!smsConsent || string.IsNullOrWhiteSpace(phoneValue))
+        {
+            profile.SmsConsentAcceptedAt = null;
+            profile.SmsConsentPhone = null;
+        }
+        else if (profile.SmsConsentAcceptedAt is null || !SmsConsent.IsGranted(profile, phoneValue))
+        {
+            profile.SmsConsentAcceptedAt = DateTime.UtcNow;
+            profile.SmsConsentPhone = phoneValue;
+        }
+
         profile.Sex = sexValue;
         profile.HomeAddress = addressValue;
         profile.DateOfBirth = dateOfBirth;
@@ -195,7 +209,14 @@ public sealed class PatientAccessService(
         if (profile is null)
             return;
 
-        profile.Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+        var phoneValue = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+        if (!SmsConsent.SamePhone(profile.SmsConsentPhone, phoneValue))
+        {
+            profile.SmsConsentAcceptedAt = null;
+            profile.SmsConsentPhone = null;
+        }
+
+        profile.Phone = phoneValue;
         await db.SaveChangesAsync();
     }
 

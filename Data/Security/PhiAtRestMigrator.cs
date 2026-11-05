@@ -23,6 +23,7 @@ public static class PhiAtRestMigrator
         ("ChartAccessRequests", "RequestedDateOfBirth", false),
         ("PatientProfiles", "Sex", false),
         ("PatientProfiles", "Phone", false),
+        ("PatientProfiles", "SmsConsentPhone", false),
         ("PatientProfiles", "HomeAddress", false),
         ("PatientProfiles", "NamePronunciation", false),
         ("PatientProfiles", "Notes", false),

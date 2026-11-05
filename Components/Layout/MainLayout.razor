@@ -8,18 +8,30 @@
     </div>
 
     <main>
-        <div class="top-row px-4">
-            <nav class="legend" aria-label="Quick navigation">
-                <a class="legend-item bp" href="@Href("blood-pressure")">Blood Pressure</a>
-                <a class="legend-item sugar" href="@Href("sugar")">Blood Sugar</a>
-                <a class="legend-item meds" href="@Href("medications")">Medications</a>
-                <a class="legend-item appt" href="@Href("appointments")">Appointments</a>
-                <a class="legend-item todo" href="@Href("todos")">To Do</a>
-            </nav>
-        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="top-row px-4">
+                    <nav class="legend" aria-label="Quick navigation">
+                        <a class="legend-item bp" href="@Href("blood-pressure")">Blood Pressure</a>
+                        <a class="legend-item sugar" href="@Href("sugar")">Blood Sugar</a>
+                        <a class="legend-item meds" href="@Href("medications")">Medications</a>
+                        <a class="legend-item appt" href="@Href("appointments")">Appointments</a>
+                        <a class="legend-item todo" href="@Href("todos")">To Do</a>
+                    </nav>
+                </div>
+            </Authorized>
+        </AuthorizeView>
 
         <article class="content px-4">
             @Body
+            <footer class="site-footer">
+                <p><strong>Medical Manager</strong>, a service of @SmsCopy.BusinessName. Support: <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.</p>
+                <nav aria-label="Policies">
+                    <a href="privacy">Privacy Policy</a>
+                    <a href="terms">Terms and Conditions</a>
+                    <a href="sms">Text message consent</a>
+                </nav>
+            </footer>
         </article>
     </main>
 </div>

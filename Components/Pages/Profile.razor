@@ -80,9 +80,13 @@ else
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="profile-phone">Phone</label>
-                        <InputText id="profile-phone" class="form-control" @bind-Value="_profileForm.Phone" placeholder="555-0100" />
+                        <InputText id="profile-phone" class="form-control" @bind-Value="_profileForm.Phone" @bind-Value:after="OnPhoneChanged" placeholder="555-0100" />
                         <ValidationMessage For="() => _profileForm.Phone" class="text-danger" />
-                        <div class="form-text">Used for appointment, medication, and to-do texts, and for appointment calls.</div>
+                        <div class="form-text">Calls use this number. Text messages are sent only if you check the box below. The box is unchecked until you check it.</div>
+                        <div class="sms-consent">
+                            <InputCheckbox id="profile-sms-consent" @bind-Value="_smsConsent" />
+                            <label for="profile-sms-consent"><SmsConsentLabel /></label>
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="profile-sex">Sex</label>
@@ -143,6 +147,10 @@ else
                 <div>
                     <dt>Phone</dt>
                     <dd>@(DisplayPhone)</dd>
+                </div>
+                <div>
+                    <dt>Text messages</dt>
+                    <dd>@(SmsConsent.IsGranted(_profile, DisplayPhone) ? "On" : "Off")</dd>
                 </div>
                 <div>
                     <dt>Home address</dt>
@@ -326,13 +334,16 @@ else
     <div class="profile-page-card">
         <h2 class="reminder-settings-title">Notification services</h2>
         <p class="muted">
-            Calls come from Medical Manager at (320) 350-3177. Appointment reminders also send a text. Medication and to-do reminders are phone calls.
-            One day before a visit or a to-do, you get a reminder. One hour before, you get another.
-            Medicine calls arrive when that dose window opens.
+            Phone reminders call you when you are away from Medical Manager. Calls come from (320) 350-3177. Appointment reminders also send a text, and only after you check the text-message consent box above.
+            One day before a visit or a to-do, you get a reminder. One hour before, you get another. Medicine calls arrive when that dose window opens.
         </p>
         @if (string.IsNullOrWhiteSpace(DisplayPhone) || DisplayPhone == "—")
         {
-            <div class="alert alert-warning">Add a phone number in your profile details so the reminders can reach you.</div>
+            <div class="alert alert-warning">There is no phone number yet, so calls and texts wait.</div>
+        }
+        else if (!SmsConsent.IsGranted(_profile, DisplayPhone))
+        {
+            <div class="alert alert-warning">Texts wait until you check the text-message consent box and save. Calls can still be placed.</div>
         }
         <EditForm Model="_reminderForm" OnValidSubmit="SaveReminders" class="mt-3">
             <div class="mb-3">
@@ -356,7 +367,7 @@ else
                 <InputCheckbox id="medication-reminders" class="form-check-input" @bind-Value="_reminderForm.MedicationRemindersEnabled" />
                 <label class="form-check-label" for="medication-reminders">Medication reminders. A call when a morning, lunch, evening, or bedtime dose is due.</label>
             </div>
-            <div class="form-check mb-3">
+            <div class="form-check mb-2">
                 <InputCheckbox id="todo-reminders" class="form-check-input" @bind-Value="_reminderForm.ToDoRemindersEnabled" />
                 <label class="form-check-label" for="todo-reminders">To-do reminders. A call one day before and one hour before the finish time.</label>
             </div>
@@ -378,6 +389,7 @@ else
 
     private bool _loading = true;
     private bool _editingDetails;
+    private bool _smsConsent;
     private bool _savingDetails;
     private string? _userId;
     private string? _photoUrl;
@@ -489,6 +501,12 @@ else
         _profileError = null;
         try
         {
+            if (_smsConsent && string.IsNullOrWhiteSpace(_profileForm.Phone))
+            {
+                _profileError = "Enter your mobile number before agreeing to text messages.";
+                return;
+            }
+
             await Access.SaveProfileDetailsAsync(
                 _userId,
                 _profileForm.FullName,
@@ -496,7 +514,8 @@ else
                 _profileForm.Sex,
                 _profileForm.HomeAddress,
                 _profileForm.DateOfBirth,
-                _profileForm.Notes);
+                _profileForm.Notes,
+                _smsConsent);
 
             if (_user is not null)
             {
@@ -534,6 +553,13 @@ else
         _profileForm.HomeAddress = _profile?.HomeAddress;
         _profileForm.DateOfBirth = _profile?.DateOfBirth;
         _profileForm.Notes = _profile?.Notes;
+        _smsConsent = SmsConsent.IsGranted(_profile, _profileForm.Phone);
+    }
+
+    private void OnPhoneChanged()
+    {
+        if (_profile?.SmsConsentAcceptedAt is null || !SmsConsent.SamePhone(_profileForm.Phone, _profile.SmsConsentPhone))
+            _smsConsent = false;
     }
 
     private void StartEditFamily()

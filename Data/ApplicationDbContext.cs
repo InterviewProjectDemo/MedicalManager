@@ -242,6 +242,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<PatientProfile>().Property(x => x.Sex).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.Phone).HasConversion(optional).HasColumnType("text");
+        builder.Entity<PatientProfile>().Property(x => x.SmsConsentPhone).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.HomeAddress).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.NamePronunciation).HasConversion(optional).HasColumnType("text");
         builder.Entity<PatientProfile>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");

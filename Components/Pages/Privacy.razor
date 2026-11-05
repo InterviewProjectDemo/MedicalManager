@@ -1,4 +1,5 @@
 @page "/privacy"
+@attribute [AllowAnonymous]
 
 <PageTitle>Privacy Policy</PageTitle>
 
@@ -6,7 +7,7 @@
     <div>
         <p class="eyebrow">Medical Manager</p>
         <h1>Privacy Policy</h1>
-        <p class="muted">Effective October 28, 2026. This policy describes how Medical Manager handles account and health information, and what the software confirms under United States health-privacy rules.</p>
+        <p class="muted">Effective November 4, 2026. This policy describes how Medical Manager handles account and health information, and what the software confirms under United States health-privacy rules.</p>
     </div>
 </div>
 
@@ -15,7 +16,23 @@
         Medical Manager is a personal health record for blood pressure, blood sugar, lab results, medications, appointments, and to-dos.
         It is not a certified medical device and it does not replace a clinician.
         Medical Manager operates this service. Product news and questions go through
-        <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+        <a href="@SmsCopy.HomeUrl">www.medicalmgr.com</a>.
+        Medical Manager is a service of @SmsCopy.BusinessName.
+        Support email: <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.
+    </p>
+
+    <h2>Text messages</h2>
+    <p>
+        Medical Manager sends text messages only after the recipient path described on the
+        <a href="@SmsCopy.ConsentUrl">text message consent</a> page.
+        A signed-in patient enters their own mobile number on Profile and checks an unchecked text-message consent box.
+        The phone number is used to deliver those messages through Twilio.
+        The texts are a chart-access approval code and, when appointment reminders stay on, one appointment reminder the day before a visit.
+        Medication and to-do reminders are phone calls, not texts.
+        A Monitor Share text is sent only when a signed-in account holder types a mobile number and presses Send.
+        Medical Manager does not sell personal information, health information, or message data.
+        No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.
+        Text messaging originator opt-in data and consent will not be shared with any third parties.
     </p>
 
     <h2>Information we collect</h2>
@@ -23,7 +40,7 @@
         <li><strong>Account.</strong> Full name, email address, and a password. You can add a phone number, turn on two-factor authentication, or register a passkey. If an external sign-in provider is configured, that provider handles the sign-in request.</li>
         <li><strong>Profile.</strong> Date of birth, sex, phone, home address, name pronunciation, notes, and a profile photo. You can save a family contact name, phone, and photo, plus a four-digit code for the family monitor link.</li>
         <li><strong>Health records.</strong> Blood pressure, pulse, blood sugar, lab reports and results, medications, doses, and dose times, appointments, doctors you save, and to-dos, including notes on those records.</li>
-        <li><strong>Reminders and calls.</strong> Whether appointment, medication, and to-do reminders are on. The phone number comes from the profile, then from the account. An emergency call can include your name, phone number, and GPS location if the browser shares it. A family call includes your name and the family contact name.</li>
+        <li><strong>Reminders and calls.</strong> Whether appointment, medication, to-do, and application reminders are on. The phone number comes from the profile, then from the account. Application reminders speak on this device and do not need a phone. An emergency call can include your name, phone number, and GPS location if the browser shares it. A family call includes your name and the family contact name.</li>
         <li><strong>Family monitor.</strong> A secret link and a four-digit code. While Monitor is on, camera frames are shown to someone who has both. Sharing the monitor can send your name, the link, and the code by text or email.</li>
         <li><strong>Technical data.</strong> An authentication cookie that keeps you signed in, and an antiforgery cookie used for form posts such as logout. Medical Manager does not set advertising cookies.</li>
     </ul>
@@ -33,10 +50,10 @@
         <li>To show the dashboard, charts, and records.</li>
         <li>To let a patient open only that patient's own records, and to let a doctor open a chart only after that patient approves the requested records with a code sent to the patient's phone.</li>
         <li>To send a welcome email and a password-reset email. Those messages do not include clinical readings.</li>
-        <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call and sends a text. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls and texts include the name and the details needed for that reminder, such as the visit or the medication and dose.</li>
+        <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call and sends a text. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls and texts include the name and the details needed for that reminder, such as the visit or the medication and dose. When application reminders are on, this device speaks those same reminders while you are signed in. You can keep the phone reminders, the spoken reminders, or both. The spoken audio is not stored.</li>
         <li>When drive-time lookup is enabled, to estimate travel from the home address to the visit location and include that estimate in the appointment reminder. Production leaves this lookup off unless <code>MEDICALMANAGER_TRAVEL_LOOKUP</code> is set to true.</li>
         <li>To look up a medication name for side-effect information, and to answer a Resource question with public health references.</li>
-        <li>To speak onboarding and walkthrough lines, and to place emergency and family calls when you start them.</li>
+        <li>To speak onboarding, walkthrough, and application reminder lines, and to place emergency and family calls when you start them.</li>
         <li>To show a live camera picture on a family monitor link after the four-digit code is entered.</li>
     </ul>
 
@@ -58,7 +75,7 @@
         No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.
         Text messaging originator opt-in data and consent will not be shared with any third parties.
         The phone number and the words of a text are sent to Twilio so the message can be delivered.
-        Monitor Share texts and appointment reminder texts are described in the <a href="terms">Terms and Conditions</a>.
+        Monitor Share texts, appointment reminder texts, and chart-access approval codes are described on the <a href="sms">text message consent</a> page and in the <a href="terms">Terms and Conditions</a>.
     </p>
 
     <h2>Encryption, transport, and access control</h2>
@@ -107,7 +124,7 @@
     <h2>Your choices</h2>
     <ul>
         <li>Update the profile, phone, password, and reminder switches at any time.</li>
-        <li>Turn appointment, medication, and to-do reminders off from the profile page. Each switch is on until you turn it off.</li>
+        <li>Turn appointment, medication, to-do, and application reminders off from the profile page. Each switch is on until you turn it off. Application reminders speak on this device and can stay on together with the phone reminders.</li>
         <li>Replace the family monitor code with a new four-digit code. The monitor page still requires the current code. The product does not offer a way to clear the code entirely.</li>
         <li>Start or skip emergency calls, family calls, and Monitor. GPS is included in an emergency call only when the browser provides it.</li>
         <li>Medical Manager does not offer a separate download of the chart. You can review records in the app and delete the account when you are finished.</li>
@@ -134,6 +151,7 @@
 
     <h2>Contact</h2>
     <p>
-        Questions about this policy can be sent through <a href="https://www.medicalmgr.com" target="_blank" rel="noopener noreferrer">medicalmgr.com</a>.
+        Questions about this policy can be sent to <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>
+        or through <a href="@SmsCopy.HomeUrl">www.medicalmgr.com</a>.
     </p>
 </article>

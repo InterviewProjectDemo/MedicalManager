@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using MedicalManager.Components.Account;
+using MedicalManager.Data;
 
 namespace MedicalManager.Data.Notifications;
 
@@ -51,7 +52,7 @@ public sealed class MonitorShareService(
             return new MonitorShareOutcome(false, false, "Wait a few minutes before sharing again.");
 
         var name = string.IsNullOrWhiteSpace(patientName) ? "Your family" : patientName.Trim().ReplaceLineEndings(" ");
-        var text = $"Medical Manager: {name} shared a family monitor. Code {code}. {link}";
+        var text = SmsCopy.Finish($"Medical Manager: {name} shared a family monitor. Code {code}. {link}");
         var phoneSent = false;
         var emailSent = false;
         string? phoneDetail = null;
