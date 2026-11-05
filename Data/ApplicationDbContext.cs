@@ -23,6 +23,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<AppointmentReminder> AppointmentReminders => Set<AppointmentReminder>();
     public DbSet<MedicationReminder> MedicationReminders => Set<MedicationReminder>();
     public DbSet<ToDoReminder> ToDoReminders => Set<ToDoReminder>();
+    public DbSet<ApplicationVoiceReminder> ApplicationVoiceReminders => Set<ApplicationVoiceReminder>();
     public DbSet<Doctor> Doctors => Set<Doctor>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
     public DbSet<LabResult> LabResults => Set<LabResult>();
@@ -120,6 +121,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<ToDoReminder>()
             .HasIndex(x => new { x.ToDoItemId, x.Kind, x.FinishBySnapshot })
+            .IsUnique();
+
+        builder.Entity<ApplicationVoiceReminder>()
+            .HasIndex(x => new { x.UserId, x.ReminderKey })
             .IsUnique();
 
         builder.Entity<Doctor>()

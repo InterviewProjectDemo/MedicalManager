@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.PinpointSMSVoiceV2" Version="4.0.102.2" />
+    <PackageReference Include="AWSSDK.Polly" Version="4.0.101.1" />
     <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.6" />

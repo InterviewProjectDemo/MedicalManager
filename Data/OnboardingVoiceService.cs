@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
+using Amazon;
+using Amazon.Polly;
+using Amazon.Polly.Model;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace MedicalManager.Data;
@@ -10,37 +13,71 @@ namespace MedicalManager.Data;
 /// Speaks onboarding and walkthrough lines with a neural human voice
 /// (Microsoft Jenny, friendly style) instead of the browser's robotic reader.
 /// </summary>
-public sealed record OnboardingSpeechRequest(string? Text);
+public sealed record OnboardingSpeechRequest(string? Text, bool Conversation = false);
 
 public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<OnboardingVoiceService> logger)
 {
     public const int MaxCharacters = 800;
 
+    public const int ConversationMaxCharacters = 1400;
+
     private const string TrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
     private const string ChromiumVersion = "1-143.0.3650.96";
     private const string VoiceName = "en-US-JennyNeural";
 
-    public async Task<byte[]?> SynthesizeAsync(string? text, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Same Ruth voice the phone reminders already use. The task role calls Polly directly
+    /// because the consumer neural socket is not reachable from the production network.
+    /// </summary>
+    private static readonly AmazonPollyClient Polly = new(new AmazonPollyConfig
     {
-        var spoken = Sanitize(text);
+        RegionEndpoint = RegionEndpoint.USEast1,
+        Timeout = TimeSpan.FromSeconds(20)
+    });
+
+    public Task<byte[]?> SynthesizeAsync(string? text, CancellationToken cancellationToken = default) =>
+        SynthesizeCoreAsync(text, conversation: false, cancellationToken);
+
+    /// <summary>
+    /// Speaks a reminder the way a person would, in a chat voice at a natural pace.
+    /// The browser's built-in reader is not used.
+    /// </summary>
+    public Task<byte[]?> SynthesizeConversationAsync(string? text, CancellationToken cancellationToken = default) =>
+        SynthesizeCoreAsync(text, conversation: true, cancellationToken);
+
+    private async Task<byte[]?> SynthesizeCoreAsync(string? text, bool conversation, CancellationToken cancellationToken)
+    {
+        var spoken = Sanitize(text, conversation ? ConversationMaxCharacters : MaxCharacters);
         if (spoken is null)
             return null;
 
-        var key = "onboarding-voice:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(spoken)));
+        var prefix = conversation ? "conversation-voice:" : "onboarding-voice:";
+        var key = prefix + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(spoken)));
         if (cache.TryGetValue(key, out byte[]? cached) && cached is { Length: > 0 })
             return cached;
 
         byte[]? audio = null;
-        foreach (var styled in new[] { true, false })
+        if (conversation)
+            audio = await TryPollyAsync(spoken, cancellationToken);
+
+        if (audio is not { Length: > 200 })
         {
-            audio = await TrySynthesizeAsync(spoken, styled, cancellationToken);
-            if (audio is { Length: > 200 })
-                break;
+            var styles = conversation
+                ? new[] { SpeechStyle.Chat, SpeechStyle.ConversationPlain }
+                : new[] { SpeechStyle.Friendly, SpeechStyle.Plain };
+            foreach (var style in styles)
+            {
+                audio = await TrySynthesizeAsync(spoken, style, cancellationToken);
+                if (audio is { Length: > 200 })
+                    break;
+            }
         }
 
         if (audio is not { Length: > 200 })
         {
-            logger.LogWarning("Human onboarding voice could not be synthesized.");
+            logger.LogWarning(conversation
+                ? "Human reminder voice could not be synthesized."
+                : "Human onboarding voice could not be synthesized.");
             return null;
         }
 
@@ -48,7 +85,40 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         return audio;
     }
 
-    private async Task<byte[]?> TrySynthesizeAsync(string text, bool friendlyStyle, CancellationToken cancellationToken)
+    private async Task<byte[]?> TryPollyAsync(string text, CancellationToken cancellationToken)
+    {
+        foreach (var engine in new[] { Engine.Generative, Engine.Neural })
+        {
+            try
+            {
+                using var response = await Polly.SynthesizeSpeechAsync(new SynthesizeSpeechRequest
+                {
+                    Engine = engine,
+                    LanguageCode = LanguageCode.EnUS,
+                    OutputFormat = OutputFormat.Mp3,
+                    Text = text,
+                    TextType = TextType.Text,
+                    VoiceId = VoiceId.Ruth
+                }, cancellationToken);
+
+                using var copy = new MemoryStream();
+                await response.AudioStream.CopyToAsync(copy, cancellationToken);
+                if (copy.Length > 200)
+                {
+                    logger.LogInformation("Reminder voice synthesized with Polly {Engine}.", engine.Value);
+                    return copy.ToArray();
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Polly reminder voice could not be synthesized with {Engine}.", engine.Value);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<byte[]?> TrySynthesizeAsync(string text, SpeechStyle style, CancellationToken cancellationToken)
     {
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Pragma", "no-cache");
@@ -74,7 +144,7 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         {
             await socket.ConnectAsync(new Uri(url), timeout.Token);
             await SendTextAsync(socket, SpeechConfig(), timeout.Token);
-            await SendTextAsync(socket, SsmlRequest(text, friendlyStyle), timeout.Token);
+            await SendTextAsync(socket, SsmlRequest(text, style), timeout.Token);
             return await ReadAudioAsync(socket, timeout.Token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -84,7 +154,7 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         }
     }
 
-    private static string? Sanitize(string? text)
+    private static string? Sanitize(string? text, int maxCharacters)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;
@@ -105,7 +175,7 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         }
 
         var spoken = string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        if (spoken.Length is 0 or > MaxCharacters)
+        if (spoken.Length == 0 || spoken.Length > maxCharacters)
             return null;
 
         return spoken;
@@ -118,10 +188,24 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         "\r\n" +
         """{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}""";
 
-    private static string SsmlRequest(string text, bool friendlyStyle)
+    private enum SpeechStyle
+    {
+        Friendly,
+        Plain,
+        Chat,
+        ConversationPlain
+    }
+
+    private static string SsmlRequest(string text, SpeechStyle style)
     {
         var requestId = Guid.NewGuid().ToString("N");
-        var body = friendlyStyle ? StyledSsml(text) : PlainSsml(text);
+        var body = style switch
+        {
+            SpeechStyle.Friendly => StyledSsml(text),
+            SpeechStyle.Chat => ChatSsml(text),
+            SpeechStyle.ConversationPlain => ConversationPlainSsml(text),
+            _ => PlainSsml(text)
+        };
         return
             "X-RequestId:" + requestId + "\r\n" +
             "Content-Type:application/ssml+xml\r\n" +
@@ -147,6 +231,26 @@ public sealed class OnboardingVoiceService(IMemoryCache cache, ILogger<Onboardin
         <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
           <voice name="{VoiceName}">
             <prosody rate="-6%">{Xml(text)}</prosody>
+          </voice>
+        </speak>
+        """;
+
+    private static string ChatSsml(string text) =>
+        $"""
+        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+          <voice name="{VoiceName}">
+            <mstts:express-as style="chat">
+              <prosody rate="-1%" pitch="+1Hz">{Xml(text)}</prosody>
+            </mstts:express-as>
+          </voice>
+        </speak>
+        """;
+
+    private static string ConversationPlainSsml(string text) =>
+        $"""
+        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+          <voice name="{VoiceName}">
+            <prosody rate="-1%" pitch="+1Hz">{Xml(text)}</prosody>
           </voice>
         </speak>
         """;

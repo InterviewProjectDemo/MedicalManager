@@ -286,7 +286,8 @@ public sealed class PatientAccessService(
         string? namePronunciation,
         bool appointmentRemindersEnabled,
         bool medicationRemindersEnabled,
-        bool toDoRemindersEnabled)
+        bool toDoRemindersEnabled,
+        bool applicationRemindersEnabled)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var profile = await db.PatientProfiles.FirstOrDefaultAsync(p => p.UserId == userId)
@@ -297,6 +298,7 @@ public sealed class PatientAccessService(
         profile.AppointmentRemindersEnabled = appointmentRemindersEnabled;
         profile.MedicationRemindersEnabled = medicationRemindersEnabled;
         profile.ToDoRemindersEnabled = toDoRemindersEnabled;
+        profile.ApplicationRemindersEnabled = applicationRemindersEnabled;
         await db.SaveChangesAsync();
     }
 

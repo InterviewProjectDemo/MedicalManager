@@ -196,6 +196,41 @@ namespace MedicalManager.Migrations
                     b.ToTable("AppointmentReminders");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.ApplicationVoiceReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReminderKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SpokenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ReminderKey")
+                        .IsUnique();
+
+                    b.ToTable("ApplicationVoiceReminders");
+                });
+
             modelBuilder.Entity("MedicalManager.Data.MedicationReminder", b =>
                 {
                     b.Property<int>("Id")
@@ -554,6 +589,9 @@ namespace MedicalManager.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("ToDoRemindersEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ApplicationRemindersEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("HasCompletedOnboarding")

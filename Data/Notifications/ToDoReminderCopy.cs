@@ -33,6 +33,17 @@ public static class ToDoReminderCopy
         {
             throw new InvalidOperationException("To-do reminder call is wrong.");
         }
+
+        var daySpoken = BuildSpoken("Alex Rivera", null, "Pick up the lab form", when, AppointmentReminderKind.DayBefore);
+        var hourSpoken = BuildSpoken("Alex Rivera", null, "Pick up the lab form", when, AppointmentReminderKind.HourBefore);
+        if (daySpoken.Contains('<')
+            || !daySpoken.Contains("tomorrow", StringComparison.OrdinalIgnoreCase)
+            || !daySpoken.Contains("Pick up the lab form", StringComparison.Ordinal)
+            || !hourSpoken.Contains("one hour", StringComparison.OrdinalIgnoreCase)
+            || hourSpoken.Contains("tomorrow", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("To-do reminder spoken by the app is wrong.");
+        }
     }
 
     public static string BuildSms(string fullName, string description, DateTime finishBy, AppointmentReminderKind kind)
@@ -78,6 +89,26 @@ public static class ToDoReminderCopy
               <prosody rate="92%">{body}</prosody>
             </speak>
             """;
+    }
+
+    public static string BuildSpoken(
+        string fullName,
+        string? pronunciation,
+        string description,
+        DateTime finishBy,
+        AppointmentReminderKind kind)
+    {
+        var name = NameSpeaker.Preview(fullName, pronunciation);
+        if (string.IsNullOrWhiteSpace(name))
+            name = "there";
+
+        var task = string.IsNullOrWhiteSpace(description) ? "a to-do on your list" : description.Trim();
+        var date = finishBy.ToString("dddd, MMMM d", CultureInfo.InvariantCulture);
+        var time = finishBy.ToString("h:mm tt", CultureInfo.InvariantCulture);
+        var detail = kind == AppointmentReminderKind.HourBefore
+            ? $"Your to-do is due in about one hour, at {time}: {task}."
+            : $"I wanted to kindly remind you about a to-do for tomorrow, {date}, by {time}: {task}.";
+        return $"Hi, {name}. It's Medical Manager. {detail} Take care.";
     }
 
     private static string TimeSsml(DateTime value)

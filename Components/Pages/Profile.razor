@@ -336,14 +336,15 @@ else
         <p class="muted">
             Phone reminders call you when you are away from Medical Manager. Calls come from (320) 350-3177. Appointment reminders also send a text, and only after you check the text-message consent box above.
             One day before a visit or a to-do, you get a reminder. One hour before, you get another. Medicine calls arrive when that dose window opens.
+            Application reminders speak medication, appointment, and to-do reminders on this device while you are signed in, including when the phone switches below are off.
         </p>
         @if (string.IsNullOrWhiteSpace(DisplayPhone) || DisplayPhone == "—")
         {
-            <div class="alert alert-warning">There is no phone number yet, so calls and texts wait.</div>
+            <div class="alert alert-warning">There is no phone number yet, so calls and texts wait. Application reminders can still speak on this device.</div>
         }
         else if (!SmsConsent.IsGranted(_profile, DisplayPhone))
         {
-            <div class="alert alert-warning">Texts wait until you check the text-message consent box and save. Calls can still be placed.</div>
+            <div class="alert alert-warning">Texts wait until you check the text-message consent box and save. Calls can still be placed. Application reminders can still speak on this device.</div>
         }
         <EditForm Model="_reminderForm" OnValidSubmit="SaveReminders" class="mt-3">
             <div class="mb-3">
@@ -370,6 +371,10 @@ else
             <div class="form-check mb-2">
                 <InputCheckbox id="todo-reminders" class="form-check-input" @bind-Value="_reminderForm.ToDoRemindersEnabled" />
                 <label class="form-check-label" for="todo-reminders">To-do reminders. A call one day before and one hour before the finish time.</label>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox id="application-reminders" class="form-check-input" @bind-Value="_reminderForm.ApplicationRemindersEnabled" />
+                <label class="form-check-label" for="application-reminders">Application reminders. This device speaks medication, appointment, and to-do reminders while Medical Manager is open, even when the phone reminders above are off.</label>
             </div>
             <button type="submit" class="btn btn-purple">Save reminder settings</button>
             @if (!string.IsNullOrWhiteSpace(_reminderMessage))
@@ -463,6 +468,7 @@ else
         _reminderForm.AppointmentRemindersEnabled = _profile?.AppointmentRemindersEnabled ?? true;
         _reminderForm.MedicationRemindersEnabled = _profile?.MedicationRemindersEnabled ?? true;
         _reminderForm.ToDoRemindersEnabled = _profile?.ToDoRemindersEnabled ?? true;
+        _reminderForm.ApplicationRemindersEnabled = _profile?.ApplicationRemindersEnabled ?? true;
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
         _familyPhotoUrl = PhotoService.GetFamilyPhotoUrl(_userId, _profile?.FamilyContactPhotoUpdatedAt);
         _monitorForm.Code = _profile?.MonitorAccessCode ?? "";
@@ -711,7 +717,8 @@ else
             _reminderForm.NamePronunciation,
             _reminderForm.AppointmentRemindersEnabled,
             _reminderForm.MedicationRemindersEnabled,
-            _reminderForm.ToDoRemindersEnabled);
+            _reminderForm.ToDoRemindersEnabled,
+            _reminderForm.ApplicationRemindersEnabled);
         _profile = await Access.GetProfileAsync(_userId);
         if (_editingDetails)
             _profileForm.HomeAddress = _profile?.HomeAddress;
@@ -858,5 +865,6 @@ else
         public bool AppointmentRemindersEnabled { get; set; } = true;
         public bool MedicationRemindersEnabled { get; set; } = true;
         public bool ToDoRemindersEnabled { get; set; } = true;
+        public bool ApplicationRemindersEnabled { get; set; } = true;
     }
 }

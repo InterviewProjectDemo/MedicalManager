@@ -195,6 +195,7 @@ Resources:
                   - sms-voice:SendTextMessage
                   - sms-voice:SendVoiceMessage
                   - sms-voice:DescribePhoneNumbers
+                  - polly:SynthesizeSpeech
                 Resource: "*"
 
   Cluster:

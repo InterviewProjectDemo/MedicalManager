@@ -109,6 +109,23 @@ public static class NameSpeaker
         return parts.Full;
     }
 
+    public static string FirstWords(string? fullName, string? pronunciation)
+    {
+        var parts = Split(fullName);
+        if (string.IsNullOrWhiteSpace(pronunciation))
+            return parts.First;
+
+        var hint = pronunciation.Trim();
+        if (hint.StartsWith('/') && hint.EndsWith('/') && hint.Length > 2)
+            return parts.First;
+
+        var hints = hint.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (hints.Length == parts.Tokens.Count && hints.Length > 0)
+            return SpokenAlias(hints[0]);
+
+        return parts.First;
+    }
+
     public static void SelfCheck()
     {
         EnglishNamePhoneticizer.SelfCheck();

@@ -216,6 +216,7 @@ builder.Services.AddSingleton<MonitorSessionService>();
 builder.Services.AddScoped<AppointmentReminderService>();
 builder.Services.AddScoped<MedicationReminderService>();
 builder.Services.AddScoped<ToDoReminderService>();
+builder.Services.AddScoped<ApplicationVoiceReminderService>();
 builder.Services.AddHostedService<AppointmentReminderWorker>();
 
 var app = builder.Build();

@@ -1,0 +1,182 @@
+@using System.Security.Claims
+@using MedicalManager.Data.Notifications
+@implements IDisposable
+@inject AuthenticationStateProvider Auth
+@inject ApplicationVoiceReminderService Reminders
+@inject OnboardingVoiceService Voice
+@inject IJSRuntime JS
+@inject ILogger<ApplicationVoiceHost> Log
+
+@if (_needsTap)
+{
+    <div class="application-voice-banner" role="status">
+        <p>Medical Manager has a reminder to speak on this device.</p>
+        <button type="button" class="btn btn-purple" @onclick="HearAsync">Hear it</button>
+    </div>
+}
+
+@code {
+    private CancellationTokenSource? _cts;
+    private IJSObjectReference? _module;
+    private ApplicationVoiceLine? _pending;
+    private byte[]? _audio;
+    private string? _userId;
+    private bool _busy;
+    private bool _needsTap;
+    private bool _started;
+    private bool _listeningLogged;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _started)
+            return;
+
+        _started = true;
+        _cts = new CancellationTokenSource();
+        _ = LoopAsync(_cts.Token);
+    }
+
+    private async Task LoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (_module is null)
+                {
+                    try
+                    {
+                        _module = await JS.InvokeAsync<IJSObjectReference>(
+                            "import", "./Components/Widgets/ApplicationVoiceHost.razor.js");
+                    }
+                    catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or ObjectDisposedException)
+                    {
+                        Log.LogWarning(ex, "Application voice player is not ready.");
+                        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+                        continue;
+                    }
+                }
+
+                var state = await Auth.GetAuthenticationStateAsync();
+                _userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrWhiteSpace(_userId))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                    continue;
+                }
+
+                if (!_listeningLogged)
+                {
+                    _listeningLogged = true;
+                    Log.LogInformation("Application voice is listening.");
+                }
+
+                await InvokeAsync(TrySpeakAsync);
+                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Application voice loop stopped.");
+        }
+    }
+
+    private async Task TrySpeakAsync()
+    {
+        if (_busy || _pending is not null || _module is null || string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        _busy = true;
+        try
+        {
+            var line = await Reminders.TakeNextAsync(_userId);
+            if (line is null)
+                return;
+
+            Log.LogInformation("Application voice is speaking a reminder.");
+            var audio = await Voice.SynthesizeConversationAsync(line.Text);
+            if (audio is null)
+            {
+                Log.LogWarning("Application voice had no audio for a due reminder.");
+                await Reminders.CompleteAsync(_userId, line.Key, heard: false);
+                return;
+            }
+
+            _pending = line;
+            _audio = audio;
+            var status = await _module.InvokeAsync<string>("play", audio);
+            await FinishAsync(status);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            Log.LogWarning(ex, "Application voice could not play.");
+            if (_audio is not null)
+            {
+                _needsTap = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Application voice could not prepare a reminder.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task HearAsync()
+    {
+        if (_busy || _pending is null || _audio is null || _module is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            var status = await _module.InvokeAsync<string>("play", _audio);
+            await FinishAsync(status);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task FinishAsync(string status)
+    {
+        if (status == "blocked")
+        {
+            _needsTap = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _needsTap = false;
+        if (_userId is not null && _pending is not null)
+            await Reminders.CompleteAsync(_userId, _pending.Key, status == "ok");
+
+        _pending = null;
+        _audio = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        try
+        {
+            _ = _module?.InvokeVoidAsync("stop");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+}

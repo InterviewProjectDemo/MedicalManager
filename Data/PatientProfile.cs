@@ -35,6 +35,12 @@ public class PatientProfile
 
     public bool ToDoRemindersEnabled { get; set; } = true;
 
+    /// <summary>
+    /// When on, this device speaks medication, appointment, and to-do reminders
+    /// while the account holder is signed in.
+    /// </summary>
+    public bool ApplicationRemindersEnabled { get; set; } = true;
+
     [MaxLength(400)]
     public string? Notes { get; set; }
 

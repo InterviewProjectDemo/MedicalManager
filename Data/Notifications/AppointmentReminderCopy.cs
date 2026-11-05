@@ -49,6 +49,20 @@ public static class AppointmentReminderCopy
         if (hourSpeech.Contains("tomorrow", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Hour-before call should not say the visit is tomorrow.");
 
+        var spoken = BuildSpoken(facts);
+        var hourSpoken = BuildSpoken(hour);
+        if (spoken.Contains('<')
+            || !spoken.Contains("Alex Rivera", StringComparison.Ordinal)
+            || !spoken.Contains("tomorrow", StringComparison.OrdinalIgnoreCase)
+            || !spoken.Contains("Cardiology follow-up", StringComparison.Ordinal)
+            || !spoken.Contains("Main Clinic", StringComparison.Ordinal)
+            || !spoken.Contains("15 minutes", StringComparison.Ordinal)
+            || !hourSpoken.Contains("one hour", StringComparison.OrdinalIgnoreCase)
+            || hourSpoken.Contains("tomorrow", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Appointment reminder spoken by the app is wrong.");
+        }
+
         var sms = BuildSms(facts);
         if (!sms.StartsWith("Medical Manager:", StringComparison.Ordinal)
             || !sms.Contains("Alex Rivera", StringComparison.Ordinal)
@@ -94,6 +108,60 @@ public static class AppointmentReminderCopy
             </speak>
             """;
     }
+
+    public static string BuildSpoken(ReminderFacts facts)
+    {
+        var name = NameSpeaker.Preview(facts.FullName, facts.NamePronunciation);
+        if (string.IsNullOrWhiteSpace(name))
+            name = "there";
+
+        var first = NameSpeaker.FirstWords(facts.FullName, facts.NamePronunciation);
+        var body = facts.Kind == AppointmentReminderKind.HourBefore
+            ? HourBeforeSpoken(facts, name, first)
+            : DayBeforeSpoken(facts, name, first);
+        return string.Join(' ', body.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static string DayBeforeSpoken(ReminderFacts facts, string name, string first)
+    {
+        var date = SpokenDate(facts.StartsAt);
+        var time = facts.StartsAt.ToString("h:mm tt", CultureInfo.InvariantCulture);
+        var lead = RelativeDay(facts);
+        var when = lead is "tomorrow" or "today"
+            ? $"I just wanted to kindly remind you about your visit {lead}. It's {date}, at {time}."
+            : $"I just wanted to kindly remind you about your visit {lead}, at {time}.";
+        var closing = string.IsNullOrWhiteSpace(first) ? "Take care." : $"Take care, {first}.";
+        return $"Hi, {name}. It's Medical Manager. {when} {DetailSpoken(facts)} {PlainTravel(facts.TravelSentence)} Please leave yourself a little extra time, so you can arrive feeling calm. I'm wishing you a smooth and easy visit. {closing}";
+    }
+
+    private static string HourBeforeSpoken(ReminderFacts facts, string name, string first)
+    {
+        var time = facts.StartsAt.ToString("h:mm tt", CultureInfo.InvariantCulture);
+        var closing = string.IsNullOrWhiteSpace(first) ? "Take care." : $"Take care, {first}.";
+        return $"Hi, {name}. It's Medical Manager. I wanted to give you a gentle reminder. Your appointment is in about one hour, at {time} today. {DetailSpoken(facts)} {PlainTravel(facts.TravelSentence)} This is just a kind nudge to start getting ready. I hope the trip there feels easy. {closing}";
+    }
+
+    private static string DetailSpoken(ReminderFacts facts)
+    {
+        var purpose = PurposeText(facts);
+        var provider = Clean(facts.ProviderName);
+        var location = Clean(facts.Location);
+        var builder = new StringBuilder();
+        builder.Append("It's for ").Append(purpose).Append('.');
+        if (!string.IsNullOrWhiteSpace(provider))
+            builder.Append(" You'll be seeing ").Append(provider).Append('.');
+
+        builder.Append(' ');
+        if (string.IsNullOrWhiteSpace(location))
+            builder.Append("The place for the visit is listed with your appointment.");
+        else
+            builder.Append("The visit is at ").Append(location).Append('.');
+
+        return builder.ToString();
+    }
+
+    private static string PlainTravel(string? travel) =>
+        string.IsNullOrWhiteSpace(travel) ? "" : travel.Trim();
 
     private static string DayBeforeBody(ReminderFacts facts, string name, string first)
     {
