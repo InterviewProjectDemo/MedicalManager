@@ -434,7 +434,7 @@ public sealed class ChartAccessService(
     {
         var who = string.IsNullOrWhiteSpace(doctor?.FullName) ? "A doctor" : doctor.FullName.Trim();
         var what = ChartAccessText.Describe(lab, bloodPressure, sugar);
-        return SmsCopy.Finish($"Medical Manager: {who} requests {what}. Approval code {code}. It expires in 15 minutes. Sign in and enter this code under Access requests. If you did not expect this, do not share the code.");
+        return SmsCopy.Finish($"Medical Manager: Your one-time approval code is {code}. It expires in 15 minutes. {who} requests {what}. Sign in and enter this code under Access requests. If you did not expect this, do not share the code.");
     }
 
     private static string NewCode() =>
