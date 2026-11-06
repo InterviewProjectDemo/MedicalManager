@@ -52,7 +52,7 @@ public sealed class MonitorShareService(
             return new MonitorShareOutcome(false, false, "Wait a few minutes before sharing again.");
 
         var name = string.IsNullOrWhiteSpace(patientName) ? "Your family" : patientName.Trim().ReplaceLineEndings(" ");
-        var text = SmsCopy.Finish($"Medical Manager: {name} shared a family monitor. Passcode {code}. {link}");
+        var text = SmsCopy.MonitorCode(code);
         var phoneSent = false;
         var emailSent = false;
         string? phoneDetail = null;
@@ -110,17 +110,17 @@ public sealed class MonitorShareService(
         if (wantsPhone && wantsEmail)
         {
             if (phoneSent && emailSent)
-                return "Sent the link and code by text and email.";
+                return "Sent the one-time monitor code by text, and the link and code by email.";
             if (phoneSent)
-                return "The text was sent. The email could not be sent.";
+                return "The one-time monitor code was sent by text. The email could not be sent.";
             if (emailSent)
-                return "The email was sent. " + phoneProblem;
+                return "The email was sent with the link and code. " + phoneProblem;
             return phoneProblem + " The email could not be sent.";
         }
 
         if (wantsPhone)
             return phoneSent
-                ? "Sent the link and code by text."
+                ? "Sent the one-time monitor code by text. The text does not include a link."
                 : phoneProblem;
 
         return emailSent

@@ -7,7 +7,7 @@
     <div>
         <p class="eyebrow">Medical Manager</p>
         <h1>Privacy Policy</h1>
-        <p class="muted">Effective November 4, 2026. This policy describes how Medical Manager handles account and health information, and what the software confirms under United States health-privacy rules.</p>
+        <p class="muted">Effective November 6, 2026. This policy describes how Medical Manager handles account and health information, and what the software confirms under United States health-privacy rules.</p>
     </div>
 </div>
 
@@ -27,9 +27,10 @@
         <a href="@SmsCopy.ConsentUrl">text message consent</a> page.
         A signed-in patient enters their own mobile number on Profile and checks an unchecked text-message consent box.
         The phone number is used to deliver those messages through Twilio.
-        The texts are a chart-access approval code and, when appointment reminders stay on, one appointment reminder the day before a visit.
-        Medication and to-do reminders are phone calls, not texts.
-        A Monitor Share text is sent only when a signed-in account holder types a mobile number and presses Send.
+        This number sends only one-time codes: a one-time approval code when a doctor requests chart access, and a one-time monitor code when a signed-in account holder presses Send.
+        Each code expires in 15 minutes. The texts do not include links, appointment reminders, or clinic visits.
+        Appointment, medication, and to-do reminders are phone calls, not texts.
+        A monitor text is sent only when a signed-in account holder types a mobile number and presses Send. That text is the one-time monitor code only. The monitor link goes by email when an email address is entered.
         Medical Manager does not sell personal information, health information, or message data.
         No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.
         Text messaging originator opt-in data and consent will not be shared with any third parties.
@@ -41,7 +42,7 @@
         <li><strong>Profile.</strong> Date of birth, sex, phone, home address, name pronunciation, notes, and a profile photo. You can save a family contact name, phone, and photo, plus a four-digit code for the family monitor link.</li>
         <li><strong>Health records.</strong> Blood pressure, pulse, blood sugar, lab reports and results, medications, doses, and dose times, appointments, doctors you save, and to-dos, including notes on those records.</li>
         <li><strong>Reminders and calls.</strong> Whether appointment, medication, to-do, and application reminders are on. The phone number comes from the profile, then from the account. Application reminders speak on this device and do not need a phone. An emergency call can include your name, phone number, and GPS location if the browser shares it. A family call includes your name and the family contact name.</li>
-        <li><strong>Family monitor.</strong> A secret link and a four-digit code. While Monitor is on, camera frames are shown to someone who has both. Sharing the monitor can send your name, the link, and the code by text or email.</li>
+        <li><strong>Family monitor.</strong> A secret link and a four-digit code. While Monitor is on, camera frames are shown to someone who has both. Sharing the monitor can send the name, the link, and the code by email. A text contains only a one-time monitor code and no link.</li>
         <li><strong>Technical data.</strong> An authentication cookie that keeps you signed in, and an antiforgery cookie used for form posts such as logout. Medical Manager does not set advertising cookies.</li>
     </ul>
 
@@ -50,7 +51,7 @@
         <li>To show the dashboard, charts, and records.</li>
         <li>To let a patient open only that patient's own records, and to let a doctor open a chart only after that patient approves the requested records with a code sent to the patient's phone.</li>
         <li>To send a welcome email and a password-reset email. Those messages do not include clinical readings.</li>
-        <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call and sends a text. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls and texts include the name and the details needed for that reminder, such as the visit or the medication and dose. When application reminders are on, this device speaks those same reminders while you are signed in. You can keep the phone reminders, the spoken reminders, or both. The spoken audio is not stored.</li>
+        <li>To place reminders you have left turned on. One day before an appointment, Medical Manager places a call. One hour before, it places a call. Medication reminders are calls when a dose window is open and doses are still due. To-do reminders are calls one day before and one hour before the finish time. Calls include the name and the details needed for that reminder, such as the visit or the medication and dose. Texts from this number are only the one-time codes described on the text message consent page. When application reminders are on, this device speaks those same reminders while you are signed in. You can keep the phone reminders, the spoken reminders, or both. The spoken audio is not stored.</li>
         <li>When drive-time lookup is enabled, to estimate travel from the home address to the visit location and include that estimate in the appointment reminder. Production leaves this lookup off unless <code>MEDICALMANAGER_TRAVEL_LOOKUP</code> is set to true.</li>
         <li>To look up a medication name for side-effect information, and to answer a Resource question with public health references.</li>
         <li>To speak onboarding, walkthrough, and application reminder lines, and to place emergency and family calls when you start them.</li>
@@ -62,7 +63,7 @@
         <li><strong>The account holder.</strong> A patient account can open only that patient's records. The application rejects a patient request for another person's chart.</li>
         <li><strong>Doctor accounts.</strong> A doctor creates that account at registration. The doctor cannot open a chart until the patient, signed in, enters a one-time code sent to the phone already on the patient's profile. The doctor does not see the code or choose the phone number. Approval covers only the sections the patient allows, such as labs, blood pressure, or sugar, and only view or update as approved. The patient can deny or revoke that access.</li>
         <li><strong>Family monitor viewers.</strong> Someone with the monitor link and the four-digit code can see the camera picture and the first name used on that page. They do not receive the blood pressure, sugar, lab, medication, or appointment chart through that link.</li>
-        <li><strong>Twilio.</strong> Phone numbers and the words of a reminder, emergency call, family call, or monitor text are sent to Twilio so the call or message can be delivered.</li>
+        <li><strong>Twilio.</strong> Phone numbers and the words of a reminder call, emergency call, family call, or one-time code text are sent to Twilio so the call or message can be delivered.</li>
         <li><strong>Email.</strong> Welcome, password-reset, and family-monitor messages go through the configured mail server. A family-monitor email includes the patient's name, the link, and the access code. The mail path used for this product is Gmail SMTP.</li>
         <li><strong>Maps, when enabled.</strong> The home address and the visit location are sent to OpenStreetMap Nominatim. The resulting coordinates are sent to the OSRM routing service.</li>
         <li><strong>openFDA.</strong> A medication name may be sent to <code>api.fda.gov</code> for labeling. The patient's name is not included in that request.</li>
@@ -75,7 +76,7 @@
         No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.
         Text messaging originator opt-in data and consent will not be shared with any third parties.
         The phone number and the words of a text are sent to Twilio so the message can be delivered.
-        Monitor Share texts, appointment reminder texts, and one-time chart-access approval codes are described on the <a href="sms">text message consent</a> page and in the <a href="terms">Terms and Conditions</a>.
+        One-time approval codes and one-time monitor codes are described on the <a href="sms">text message consent</a> page and in the <a href="terms">Terms and Conditions</a>.
     </p>
 
     <h2>Encryption, transport, and access control</h2>

@@ -63,35 +63,6 @@ public static class AppointmentReminderCopy
             throw new InvalidOperationException("Appointment reminder spoken by the app is wrong.");
         }
 
-        var sms = BuildSms(facts);
-        if (!sms.StartsWith("Medical Manager:", StringComparison.Ordinal)
-            || !sms.Contains("Alex Rivera", StringComparison.Ordinal)
-            || !sms.Contains("Cardiology follow-up", StringComparison.Ordinal)
-            || !sms.Contains("Reply STOP to opt out", StringComparison.Ordinal)
-            || !sms.Contains("Reply HELP for help", StringComparison.Ordinal))
-            throw new InvalidOperationException("Day-before text is missing the name, purpose, or opt-out line.");
-    }
-
-    public static string BuildSms(ReminderFacts facts)
-    {
-        var name = string.IsNullOrWhiteSpace(facts.FullName) ? "there" : facts.FullName.Trim();
-        var when = WhenClause(facts);
-        var purpose = PurposeText(facts);
-        var provider = Clean(facts.ProviderName);
-        var location = Clean(facts.Location);
-        var builder = new StringBuilder();
-        builder.Append("Medical Manager: Hello ").Append(name).Append(", this is Medical Manager. ");
-        builder.Append("A kind reminder: ").Append(when).Append(" you have an appointment");
-        builder.Append(" for ").Append(purpose);
-        if (!string.IsNullOrWhiteSpace(provider))
-            builder.Append(" with ").Append(provider);
-        if (!string.IsNullOrWhiteSpace(location))
-            builder.Append(" at ").Append(location);
-        builder.Append('.');
-        if (!string.IsNullOrWhiteSpace(facts.TravelSentence))
-            builder.Append(' ').Append(facts.TravelSentence.Trim());
-        builder.Append(" We hope your visit goes smoothly.");
-        return SmsCopy.Finish(builder.ToString());
     }
 
     public static string BuildVoiceSsml(ReminderFacts facts)
@@ -249,17 +220,6 @@ public static class AppointmentReminderCopy
             return "";
 
         return $""" <break time="140ms"/>{Xml(travel.Trim())}""";
-    }
-
-    private static string WhenClause(ReminderFacts facts)
-    {
-        var relative = RelativeDay(facts);
-        var date = SpokenDate(facts.StartsAt);
-        var time = facts.StartsAt.ToString("h:mm tt", CultureInfo.InvariantCulture);
-        if (facts.Kind == AppointmentReminderKind.HourBefore)
-            return $"today, {date}, at {time}, in about one hour,";
-
-        return $"{relative}, {date}, at {time},";
     }
 
     private static string RelativeDay(ReminderFacts facts)

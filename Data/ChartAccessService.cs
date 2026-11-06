@@ -237,7 +237,7 @@ public sealed class ChartAccessService(
             return new AccessRequestResult(true, waiting, false);
         }
 
-        var body = BuildMessage(doctor, lab, bloodPressure, sugar, code);
+        var body = SmsCopy.ApprovalCode(code);
         var sent = await twilio.TextAsync(phone!, body, CancellationToken.None, confirmDelivery: true);
         if (environment.IsDevelopment())
         {
@@ -270,7 +270,6 @@ public sealed class ChartAccessService(
         if (!smsConsent)
             return new AccessRequestResult(false, "A code can be sent only after the patient checks the text-message consent box on their profile.");
 
-        var doctor = await users.FindByIdAsync(doctorUserId);
         var code = NewCode();
         var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
         request.CodeSalt = salt;
@@ -279,7 +278,7 @@ public sealed class ChartAccessService(
         request.CodeAttempts = 0;
         await db.SaveChangesAsync();
 
-        var body = BuildMessage(doctor, request.Lab, request.BloodPressure, request.Sugar, code);
+        var body = SmsCopy.ApprovalCode(code);
         var sent = await twilio.TextAsync(phone, body, CancellationToken.None, confirmDelivery: true);
         if (environment.IsDevelopment())
         {
@@ -423,18 +422,6 @@ public sealed class ChartAccessService(
             return "The request is saved, but the confirmation text has not reached the phone yet. Use Send a new code if it does not arrive.";
 
         return "The request is saved, but the confirmation text was not delivered. Use Send a new code to try again.";
-    }
-
-    private static string BuildMessage(
-        ApplicationUser? doctor,
-        ChartAccessLevel lab,
-        ChartAccessLevel bloodPressure,
-        ChartAccessLevel sugar,
-        string code)
-    {
-        var who = string.IsNullOrWhiteSpace(doctor?.FullName) ? "A doctor" : doctor.FullName.Trim();
-        var what = ChartAccessText.Describe(lab, bloodPressure, sugar);
-        return SmsCopy.Finish($"Medical Manager: Your one-time approval code is {code}. It expires in 15 minutes. {who} requests {what}. Sign in and enter this code under Access requests. If you did not expect this, do not share the code.");
     }
 
     private static string NewCode() =>

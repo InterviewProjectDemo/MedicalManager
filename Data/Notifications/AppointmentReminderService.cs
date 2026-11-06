@@ -67,8 +67,6 @@ public sealed class AppointmentReminderService(
             {
                 var facts = await BuildFactsAsync(appointment, person, AppointmentReminderKind.DayBefore, now, cancellationToken);
                 await SendAsync(db, appointment, facts, phone, AppointmentReminderChannel.Voice, cancellationToken);
-                if (SmsConsent.IsGranted(profile, profile?.Phone ?? user?.PhoneNumber))
-                    await SendAsync(db, appointment, facts, phone, AppointmentReminderChannel.Sms, cancellationToken);
             }
 
             if (AppointmentReminderSchedule.IsHourBeforeDue(appointment.StartsAt, now))
@@ -162,13 +160,19 @@ public sealed class AppointmentReminderService(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        if (channel == AppointmentReminderChannel.Sms)
+        {
+            existing.Status = AppointmentReminderStatus.Skipped;
+            existing.Detail = "Appointment texts are not sent from this number.";
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         var voice = options.Value.Voice;
         OutboundResult result;
         try
         {
-            result = channel == AppointmentReminderChannel.Sms
-                ? await sender.TextAsync(phone, AppointmentReminderCopy.BuildSms(facts), cancellationToken)
-                : await sender.CallAsync(phone, AppointmentReminderCopy.BuildVoiceSsml(facts), voice.PollyVoice, cancellationToken);
+            result = await sender.CallAsync(phone, AppointmentReminderCopy.BuildVoiceSsml(facts), voice.PollyVoice, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
