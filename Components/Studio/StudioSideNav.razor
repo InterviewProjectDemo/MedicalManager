@@ -1,0 +1,77 @@
+@namespace MedicalManager.Components.Studio
+
+<div class="studio-nav">
+    @if (Guest)
+    {
+        <NavLink class="studio-nav-link" href="Account/Login" @onclick="OnNavigate">
+            @Mark("login", "Log in")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="Account/Register" @onclick="OnNavigate">
+            @Mark("register", "Register")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="Account/Register?account=doctor" @onclick="OnNavigate">
+            @Mark("doctorreg", "I'm a doctor")
+        </NavLink>
+    }
+    else
+    {
+        <button type="button" class="studio-nav-link" @onclick="OnEmergency">
+            @Mark("emergency", "Emergency")
+        </button>
+        <button type="button" class="studio-nav-link" @onclick="OnVoice">
+            @Mark("voice", "Say Call")
+        </button>
+        <NavLink class="studio-nav-link" href="@Href("dashboard-studio")" @onclick="OnNavigate">
+            @Mark("layout", "Layout")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="@Href("profile")" @onclick="OnNavigate">
+            @Mark("profile", "Profile")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="@Href("resource")" @onclick="OnNavigate">
+            @Mark("resource", "Resource")
+        </NavLink>
+        <AuthorizeView Roles="@AppRoles.Doctor" Context="doctorNav">
+            <NavLink class="studio-nav-link" href="patients" @onclick="OnNavigate">
+                @Mark("patients", "Patients")
+            </NavLink>
+        </AuthorizeView>
+        <AuthorizeView Roles="@AppRoles.Patient" Context="patientNav">
+            <NavLink class="studio-nav-link" href="access-requests" @onclick="OnNavigate">
+                @Mark("access", "Access")
+            </NavLink>
+        </AuthorizeView>
+        <NavLink class="studio-nav-link" href="@Href("medication-schedule")" title="Daily medication schedule" @onclick="OnNavigate">
+            @Mark("schedule", "Schedule")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="@Href("medications")" title="Medication list" @onclick="OnNavigate">
+            @Mark("meds", "Med list")
+        </NavLink>
+        <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
+            @Mark("account", "Account")
+        </NavLink>
+        <form class="studio-nav-form" action="Account/Logout" method="post">
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
+            <button type="submit" class="studio-nav-link">
+                @Mark("logout", "Log out")
+            </button>
+        </form>
+    }
+</div>
+
+@code {
+    [Parameter] public bool Guest { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? CurrentUrl { get; set; }
+    [Parameter] public string? AccountName { get; set; }
+    [Parameter] public EventCallback OnEmergency { get; set; }
+    [Parameter] public EventCallback OnVoice { get; set; }
+    [Parameter] public EventCallback OnNavigate { get; set; }
+
+    private string Href(string path) => CareLinks.To(path, PatientUserId);
+
+    private RenderFragment Mark(string scene, string label) => @<span class="studio-nav-mark">
+        <span class="studio-nav-orb"><FeatureScene Scene="@scene" /></span>
+        <span class="studio-nav-name">@label</span>
+    </span>;
+}

@@ -10,6 +10,8 @@
     <main>
         <AuthorizeView>
             <Authorized>
+                @if (!HideStudioChrome)
+                {
                 <div class="top-row px-4">
                     <nav class="legend" aria-label="Quick navigation">
                         <a class="legend-item bp" href="@Href("blood-pressure")">Blood Pressure</a>
@@ -19,10 +21,15 @@
                         <a class="legend-item todo" href="@Href("todos")">To Do</a>
                     </nav>
                 </div>
+                }
             </Authorized>
         </AuthorizeView>
 
         <article class="content px-4">
+            @if (ShowHomeMark)
+            {
+                <HomeMark PatientUserId="@selectedPatientId" />
+            }
             @Body
             <footer class="site-footer">
                 <p><strong>Medical Manager</strong>, a service of @SmsCopy.BusinessName. Support: <a href="mailto:@SmsCopy.SupportEmail">@SmsCopy.SupportEmail</a>.</p>
@@ -76,6 +83,20 @@
     }
 
     private string Href(string path) => CareLinks.To(path, selectedPatientId);
+
+    private bool ShowHomeMark
+    {
+        get
+        {
+            if (!StudioLayout.Enabled)
+                return false;
+
+            var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Split('?', '#')[0].Trim('/');
+            return path.Length > 0;
+        }
+    }
+
+    private bool HideStudioChrome => StudioLayout.Enabled;
 
     public void Dispose()
     {

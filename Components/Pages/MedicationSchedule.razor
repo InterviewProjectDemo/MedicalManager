@@ -1,0 +1,40 @@
+@page "/medication-schedule"
+@attribute [Authorize]
+@inject MedicationScheduleService MedSchedule
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Daily medication schedule</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <MedicationSchedulePanel Schedule="_schedule"
+                             PatientUserId="@scope.PatientId"
+                             ManageHref="@Link("medications")"
+                             ScheduleChanged="OnScheduleChanged" />
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+
+    private PatientScope? scope;
+    private DailyMedicationSchedule? _schedule;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).BlockDoctorChart();
+        if (scope.PatientId is string id)
+            _schedule = await MedSchedule.GetDailyScheduleAsync(id, DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    private Task OnScheduleChanged(DailyMedicationSchedule schedule)
+    {
+        _schedule = schedule;
+        return Task.CompletedTask;
+    }
+
+    private string Link(string path) => CareLinks.To(path, PatientUserId);
+}

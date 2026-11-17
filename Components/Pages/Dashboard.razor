@@ -1,13 +1,25 @@
 @page "/"
+@page "/chart-board"
 @attribute [AllowAnonymous]
+@implements IDisposable
 @inject DashboardLayoutService Layouts
 @inject AuthenticationStateProvider Auth
 @inject PatientAccessService Access
 @inject NavigationManager Navigation
+@inject UserManager<ApplicationUser> Users
+@using MedicalManager.Data.Notifications
 
-<PageTitle>Dashboard</PageTitle>
+<PageTitle>@(StudioHome ? "Home" : "Dashboard")</PageTitle>
 
-@if (!_signedIn)
+@if (!_ready)
+{
+    <p>Loading...</p>
+}
+else if (StudioHome)
+{
+    <PictorialHome SignedIn="_signedIn" PatientUserId="@PatientUserId" Hello="@_hello" />
+}
+else if (!_signedIn)
 {
     <div class="page-head">
         <div>
@@ -43,21 +55,79 @@ else
 
     private DashboardLayout? layout;
     private bool _signedIn;
+    private bool _ready;
+    private bool _onboardingChecked;
+    private string _hello = "there";
+
+    private bool StudioHome => StudioLayout.Enabled && !IsChartBoard;
+
+    private bool IsChartBoard =>
+        Navigation.ToBaseRelativePath(Navigation.Uri)
+            .Split('?', '#')[0]
+            .Trim('/')
+            .Equals("chart-board", StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await LoadAsync();
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
         _signedIn = state.User.Identity?.IsAuthenticated == true;
         if (!_signedIn)
-            return;
-
-        if (await Access.NeedsOnboardingAsync(state.User))
         {
-            Navigation.NavigateTo("/onboarding");
+            _ready = true;
             return;
         }
 
         var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        layout = await Layouts.GetForUserAsync(userId ?? "");
+        var account = string.IsNullOrEmpty(userId) ? null : await Users.FindByIdAsync(userId);
+        _hello = GivenName(account?.FullName);
+        if (!_onboardingChecked)
+        {
+            _onboardingChecked = true;
+            if (await Access.NeedsOnboardingAsync(state.User))
+            {
+                Navigation.NavigateTo("/onboarding");
+                return;
+            }
+        }
+
+        if (!StudioHome)
+            layout = await Layouts.GetForUserAsync(userId ?? "");
+
+        _ready = true;
+    }
+
+    private static string GivenName(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "there";
+
+        var first = NameSpeaker.Split(fullName).First;
+        return string.IsNullOrWhiteSpace(first) ? "there" : first;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

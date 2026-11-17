@@ -1,0 +1,21 @@
+@namespace MedicalManager.Components.Studio
+
+<a class="portrait home-mark" href="@Href">
+    <span class="portrait-figure">
+        <span class="portrait-orb"><FeatureScene Scene="home" /></span>
+        <span class="portrait-pedestal" aria-hidden="true"></span>
+    </span>
+    <span class="portrait-stem" aria-hidden="true"></span>
+    <span class="portrait-dot" aria-hidden="true"></span>
+    <span class="portrait-name">Home</span>
+    <span class="portrait-hint">@Hint</span>
+</a>
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string Hint { get; set; } = "Returns to Home";
+
+    private string Href => string.IsNullOrWhiteSpace(PatientUserId)
+        ? "/"
+        : CareLinks.To("", PatientUserId);
+}

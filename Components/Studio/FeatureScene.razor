@@ -1,0 +1,42 @@
+@namespace MedicalManager.Components.Studio
+
+<img class="scene-img" src="@Source" alt="" />
+
+@code {
+    [Parameter] public string Scene { get; set; } = "bp";
+
+    private string Source => Scene switch
+    {
+        "sugar" => "/studio/studio-sugar.jpg",
+        "labs" => "/studio/studio-labs.jpg",
+        "meds" => "/studio/studio-meds.jpg",
+        "appt" => "/studio/studio-appt.jpg",
+        "todo" => "/studio/studio-todo.jpg",
+        "doctors" => "/studio/studio-doctor.jpg",
+        "medcheck" => "/studio/studio-medcheck.jpg",
+        "trend" => "/studio/studio-trend.jpg",
+        "ledger" => "/studio/studio-ledger.jpg",
+        "entry" => "/studio/studio-entry.jpg",
+        "family" => "/studio/studio-family.jpg",
+        "monitor" => "/studio/studio-monitor.jpg",
+        "today" => "/studio/studio-today.jpg",
+        "home" => "/studio/studio-home.jpg",
+        "emergency" => "/studio/studio-emergency.jpg",
+        "voice" => "/studio/studio-voice.jpg",
+        "layout" => "/studio/studio-layout.jpg",
+        "profile" => "/studio/studio-profile.jpg",
+        "resource" => "/studio/studio-resource.jpg",
+        "patients" => "/studio/studio-patients.jpg",
+        "access" => "/studio/studio-access.jpg",
+        "account" => "/studio/studio-account.jpg",
+        "privacy" => "/studio/studio-privacy.jpg",
+        "terms" => "/studio/studio-terms.jpg",
+        "sms" => "/studio/studio-sms.jpg",
+        "schedule" => "/studio/studio-schedule.jpg",
+        "logout" => "/studio/studio-logout.jpg",
+        "login" => "/studio/studio-login.jpg",
+        "register" => "/studio/studio-register.jpg",
+        "doctorreg" => "/studio/studio-doctorreg.jpg",
+        _ => "/studio/studio-bp.jpg"
+    };
+}

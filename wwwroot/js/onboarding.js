@@ -527,33 +527,39 @@ window.mmOnboarding = {
         scenes: [
             {
                 id: "dashboard",
-                title: "Your Dashboard at a Glance",
-                narration: "Let's start with your dashboard — your personalized home screen. Here you'll see blood pressure trends, medications due today, upcoming appointments, and your to-do list at a glance. You can customize which widgets appear using Dashboard Studio from the menu.",
-                durationMs: 24000
+                title: "A Dashboard Clinicians Can Trust",
+                narration: "Welcome to the Medical Manager dashboard, the home screen a medical professional can trust before every decision. The Blood Pressure Monthly Trend and the Daily Trend each show a living graph plus the statistics that guide care: High, Low, and Average. Any value outside the safe range appears in red, so a spike is never buried in a list. That picture shows whether pressure is steady, climbing, or swinging, in time to repeat a reading, hold the plan, or adjust treatment. Every vitals graph and chart can be shared with the care team by email, by text message, or as a printout, so the visit starts with evidence instead of memory.",
+                durationMs: 48000
+            },
+            {
+                id: "medication-care",
+                title: "Every Dose, On Record",
+                narration: "Look across the top of this same screen: today's medication schedule, morning, lunch, evening, and bedtime. Medical Manager alerts you the moment a dose is due, then keeps an exact record of every dose that was administered, including who gave it and when. Missed doses stand out, so a busy day cannot hide a skipped pill. Place that schedule beside the vital charts and their High, Low, and Average, and improvement becomes precise. You can see whether the medicine is working and act while there is still time. Families and clinicians share the same picture by email, text, or print, and patients do better because every dose and every reading is accounted for.",
+                durationMs: 56000
             },
             {
                 id: "medication",
-                title: "Adding a Medication",
-                narration: "To add a medication, open Medications from the menu and tap Add. Enter the medication name, dose, and schedule — just the basics for now. Medical Manager helps you track reminders so nothing is missed on busy days.",
-                durationMs: 23000
+                title: "Build the Schedule",
+                narration: "Ready to build that schedule? Open Medications and tap Add. Enter the name, the dose, and when it should be taken. From that moment, Medical Manager watches the clock, alerts you when the dose is due, and lets you mark it administered, so the record stays honest.",
+                durationMs: 20000
             },
             {
                 id: "blood-pressure",
-                title: "Logging Blood Pressure",
-                narration: "For blood pressure, open Blood Pressure from the menu and tap Add. Enter your systolic, diastolic, and pulse, then save. Your readings build a gentle trend chart on the dashboard so patterns are easier to spot over time.",
-                durationMs: 23000
-            },
-            {
-                id: "todo",
-                title: "Creating a To Do",
-                narration: "For anything you don't want to forget, visit To Do and tap Add. Write a short description, set a finish-by date, and choose a priority. It's a simple way to keep health tasks organized and top of mind.",
+                title: "One Reading, A Clearer Trend",
+                narration: "Logging a reading is just as simple. Open Blood Pressure, tap Add, and enter systolic, diastolic, and pulse. Save it, and it joins the monthly trend and the daily trend, updating High, Low, and Average. If it is out of range, it shows in red, ready to email, text, or print for the next visit.",
                 durationMs: 22000
             },
             {
-                id: "closing",
-                title: "You're Ready!",
-                narration: "That's the essentials — dashboard, medications, blood pressure, and to-dos. You're ready to explore on your own. We're glad you're here, and we wish you well on your health journey.",
+                id: "todo",
+                title: "Nothing Slips Away",
+                narration: "For the tasks around that care, open To Do and tap Add. A short note, a finish-by date, and a priority keep refills and follow-ups from slipping away.",
                 durationMs: 16000
+            },
+            {
+                id: "closing",
+                title: "Clearer Decisions Start Here",
+                narration: "This is the dashboard patients and clinicians have been waiting for. Medication alerts, a record of every dose given, and vital charts with High, Low, and Average, marked in red when a reading is out of range. Share any chart by email, text, or print. Welcome to clearer decisions and healthier days.",
+                durationMs: 20000
             }
         ],
 

@@ -1,0 +1,138 @@
+@namespace MedicalManager.Components.Studio
+@inject NavigationManager Navigation
+@inject FamilyCallCoordinator FamilyCalls
+
+<section class="studio-home">
+    <header class="studio-intro">
+        <HomeMark PatientUserId="@PatientUserId" Hint="Always returns here" />
+        <div class="studio-intro-copy">
+            <p class="eyebrow">Medical Manager</p>
+            @if (SignedIn)
+            {
+                <h1>Hello, @Hello</h1>
+                <p>Please click the picture of your interest to help perform the actions it states.</p>
+            }
+            else
+            {
+                <h1>Your care, one picture at a time</h1>
+                <p>Please click the picture of your interest to help perform the actions it states.</p>
+            }
+        </div>
+        @if (SignedIn)
+        {
+            <a class="portrait studio-today" href="@ChartBoard">
+                @PortraitCard(Today)
+            </a>
+        }
+    </header>
+
+    <div class="portrait-stage">
+        <div class="portrait-row">
+            @foreach (var item in Vitals)
+            {
+                <a class="portrait" href="@Href(item.Path)">
+                    @PortraitCard(item)
+                </a>
+            }
+            @foreach (var item in Care)
+            {
+                <a class="portrait" href="@Href(item.Path)">
+                    @PortraitCard(item)
+                </a>
+            }
+            @foreach (var item in Reach)
+            {
+                @if (SignedIn)
+                {
+                    <button type="button" class="portrait" @onclick="() => OpenReachAsync(item.Scene)">
+                        @PortraitCard(item)
+                    </button>
+                }
+                else
+                {
+                    <a class="portrait" href="@LoginHome">
+                        @PortraitCard(item)
+                    </a>
+                }
+            }
+        </div>
+    </div>
+
+    @if (!SignedIn)
+    {
+        <div class="studio-actions">
+            <a class="btn btn-primary" href="Account/Login">Log in</a>
+            <a class="btn btn-outline-secondary" href="Account/Register">Register</a>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public bool SignedIn { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string Hello { get; set; } = "there";
+
+    private string ChartBoard => CareLinks.To("chart-board", PatientUserId);
+
+    private static readonly Portrait[] Vitals =
+    [
+        new("bp", "Blood pressure", "See the trend, or add today's reading", "blood-pressure"),
+        new("sugar", "Blood sugar", "Log a glucose check", "sugar"),
+        new("labs", "Labs", "Open results from the lab", "labs"),
+        new("meds", "Medications", "See what you take, and when", "medications"),
+        new("appt", "Appointments", "Look at a visit, or add one", "appointments")
+    ];
+
+    private static readonly Portrait[] Care =
+    [
+        new("todo", "To do", "Finish what is still open", "todos"),
+        new("doctors", "Doctors", "The people who care for you", "doctors"),
+        new("medcheck", "Med check", "Look up a medicine", "med-check")
+    ];
+
+    private static readonly Portrait Today =
+        new("today", "Today", "See how your day looks", "chart-board");
+
+    private static readonly Portrait[] Reach =
+    [
+        new("family", "Call family", "Talk with the person you listed", ""),
+        new("monitor", "Monitor", "Let family see you and check in", "")
+    ];
+
+    private string LoginHome => Navigation.GetUriWithQueryParameters(
+        "Account/Login",
+        new Dictionary<string, object?> { ["ReturnUrl"] = "/" });
+
+    private RenderFragment PortraitCard(Portrait item) => @<span class="portrait-figure-wrap">
+        <span class="portrait-figure">
+            <span class="portrait-orb"><FeatureScene Scene="@item.Scene" /></span>
+            <span class="portrait-pedestal" aria-hidden="true"></span>
+        </span>
+        <span class="portrait-stem" aria-hidden="true"></span>
+        <span class="portrait-dot" aria-hidden="true"></span>
+        <span class="portrait-name">@item.Label</span>
+        <span class="portrait-hint">@item.Hint</span>
+    </span>;
+
+    private async Task OpenReachAsync(string scene)
+    {
+        if (scene == "monitor")
+            await FamilyCalls.RequestMonitorAsync();
+        else
+            await FamilyCalls.RequestOpenAsync();
+    }
+
+    private string Href(string path)
+    {
+        if (!SignedIn)
+        {
+            return Navigation.GetUriWithQueryParameters(
+                "Account/Login",
+                new Dictionary<string, object?> { ["ReturnUrl"] = "/" + path });
+        }
+
+        return CareLinks.To(path, PatientUserId);
+    }
+
+    private sealed record Portrait(string Scene, string Label, string Hint, string Path);
+}

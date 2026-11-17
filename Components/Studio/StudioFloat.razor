@@ -1,0 +1,96 @@
+@namespace MedicalManager.Components.Studio
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (Visible)
+{
+    <div @ref="_panel" class="studio-float place-@Place" style="@Style" role="dialog" aria-modal="false" aria-labelledby="@_titleId">
+        <header class="studio-float-head" data-float-grip>
+            <h2 id="@_titleId">@Title</h2>
+            <button type="button" class="studio-float-close" aria-label="Close" @onclick="Close">&times;</button>
+        </header>
+        <div class="studio-float-body">
+            @ChildContent
+        </div>
+        <button type="button" class="studio-float-resize" data-float-resize aria-label="Resize"></button>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Place { get; set; } = "graph";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private readonly string _titleId = "studio-float-" + Guid.NewGuid().ToString("N");
+    private readonly string _modulePath = "./Components/Studio/StudioFloat.razor.js";
+    private ElementReference _panel;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<StudioFloat>? _self;
+    private bool _hooked;
+    private bool _placed;
+    private bool _disposed;
+    private double _left;
+    private double _top;
+    private double _width;
+    private double _height;
+    private int _z = 1100;
+
+    private string? Style => _placed
+        ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;width:{_width:0.0}px;height:{_height:0.0}px;right:auto;bottom:auto;transform:none;z-index:{_z}")
+        : null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible || _disposed)
+        {
+            _hooked = false;
+            return;
+        }
+
+        if (_hooked)
+            return;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            _self ??= DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("attach", _panel, _self);
+            _hooked = true;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    [JSInvokable]
+    public void Remember(double left, double top, double width, double height, int z)
+    {
+        _placed = true;
+        _left = left;
+        _top = top;
+        _width = width;
+        _height = height;
+        _z = z;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private Task Close() => VisibleChanged.InvokeAsync(false);
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _self?.Dispose();
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

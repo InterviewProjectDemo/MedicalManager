@@ -5,7 +5,6 @@
 @inject PatientAccessService Access
 @inject AuthenticationStateProvider Auth
 @inject NavigationManager Nav
-
 <PageTitle>@(Id is null ? "Add" : "Update") sugar reading</PageTitle>
 <RequirePatient Scope="scope" />
 
@@ -72,6 +71,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (StudioLayout.Enabled)
+        {
+            var target = CareLinks.To("sugar", PatientUserId);
+            var sep = target.Contains('?') ? "&" : "?";
+            var compose = Id is int existingId ? existingId.ToString() : "new";
+            Nav.NavigateTo($"{target}{sep}compose={compose}", replace: true);
+            return;
+        }
+
         var state = await Auth.GetAuthenticationStateAsync();
         scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Sugar, update: true);
         if (scope.PatientId is not string patientId)

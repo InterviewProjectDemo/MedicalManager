@@ -1,0 +1,666 @@
+@namespace MedicalManager.Components.Studio
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Blood pressure</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <section class="bp-studio">
+        <div class="bp-hero">
+            <div class="portrait" aria-hidden="true">
+                <span class="portrait-figure">
+                    <span class="portrait-orb"><FeatureScene Scene="bp" /></span>
+                    <span class="portrait-pedestal"></span>
+                </span>
+            </div>
+            <div>
+                <p class="bp-kicker">Blood pressure</p>
+                <h1>@(latest is null ? "No reading yet" : "Latest reading")</h1>
+                @if (latest is null)
+                {
+                    <p class="bp-when">Add a reading when you are ready. Graph and Review each open in a window you can move.</p>
+                }
+                else
+                {
+                    var tag = VitalStatus.ForBloodPressure(latest);
+                    <p class="bp-reading">@latest.Systolic<small>/</small>@latest.Diastolic</p>
+                    <p class="bp-when">
+                        mmHg
+                        @if (latest.Pulse is int pulse)
+                        {
+                            <span> · pulse @pulse</span>
+                        }
+                        · @latest.RecordedAt.ToString("MMM d, h:mm tt")
+                    </p>
+                    <StatusPill Label="@tag.Label" CssClass="@tag.CssClass" />
+                    <svg class="bp-gauge" viewBox="0 0 160 86" aria-hidden="true">
+                        <path d="M16 70 A64 64 0 0 1 144 70" fill="none" stroke="#e6eef8" stroke-width="12" stroke-linecap="round" />
+                        <path d="@GaugeArc(latest.Systolic)" fill="none" stroke="@GaugeColor(tag)" stroke-width="12" stroke-linecap="round" />
+                    </svg>
+                }
+            </div>
+        </div>
+
+        <div class="module-dock">
+            <button type="button" class="module-orb" aria-pressed="@_graphOpen" @onclick="ToggleGraph">
+                <span class="module-orb-art"><FeatureScene Scene="trend" /></span>
+                <span class="module-title">Graph</span>
+                <span class="module-hint">See the day and the month</span>
+            </button>
+            <button type="button" class="module-ledger" aria-pressed="@_reviewOpen" @onclick="ToggleReview">
+                <span class="module-person"><FeatureScene Scene="ledger" /></span>
+                <span>
+                    <span class="module-title">Review readings</span>
+                    <span class="module-hint">Look through each number</span>
+                </span>
+            </button>
+            @if (CanUpdate)
+            {
+                <button type="button" class="module-window" @onclick="OpenAdd">
+                    <span class="module-person"><FeatureScene Scene="entry" /></span>
+                    <span>
+                        <span class="module-title">Add reading</span>
+                        <span class="module-hint">Enter systolic, diastolic, and pulse</span>
+                    </span>
+                </button>
+            }
+        </div>
+
+        <StudioFloat @bind-Visible="_graphOpen" Title="Blood pressure graph" Place="graph">
+                <VitalSpan Accent="#2f80ed"
+                           DaySubtitle="Systolic and diastolic through the day"
+                           MonthSubtitle="Systolic and diastolic for the month"
+                           SelectedDay="bpDay"
+                           SelectedDayChanged="OnBpDayChanged"
+                           CanGoPreviousDay="dayCanGoPrev"
+                           DayStats="dayStats"
+                           DayChartStats="dayChartStats"
+                           DaySeries="daySeries"
+                           SelectedMonth="bpMonth"
+                           SelectedMonthChanged="OnBpMonthChanged"
+                           CanGoPreviousMonth="bpCanGoPrev"
+                           MonthStats="bpStats"
+                           MonthSeries="bpSeries"
+                           PatientName="@printPatientName"
+                           PatientDateOfBirth="@printDateOfBirth" />
+        </StudioFloat>
+
+        <StudioFloat @bind-Visible="_reviewOpen" Title="Blood pressure readings" Place="review">
+                <div class="table-card">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th aria-sort="@AriaSort(BpSort.When)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.When)">
+                                        When <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.When)</span>
+                                    </button>
+                                </th>
+                                <th aria-sort="@AriaSort(BpSort.Reading)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Reading)">
+                                        Reading <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Reading)</span>
+                                    </button>
+                                </th>
+                                <th aria-sort="@AriaSort(BpSort.Pulse)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Pulse)">
+                                        Pulse <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Pulse)</span>
+                                    </button>
+                                </th>
+                                <th aria-sort="@AriaSort(BpSort.Status)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(BpSort.Status)">
+                                        Status <span class="sort-indicator" aria-hidden="true">@SortMark(BpSort.Status)</span>
+                                    </button>
+                                </th>
+                                <th></th>
+                            </tr>
+                            <tr class="column-filter-row" @key="_filterVersion">
+                                <th>
+                                    <div class="column-filter-dates">
+                                        <label>
+                                            <span class="visually-hidden">From date</span>
+                                            <input type="date" class="form-control form-control-sm" value="@FormatDate(_whenFrom)" @onchange="e => _whenFrom = ParseFilterDate(e.Value)" />
+                                        </label>
+                                        <label>
+                                            <span class="visually-hidden">To date</span>
+                                            <input type="date" class="form-control form-control-sm" value="@FormatDate(_whenTo)" @onchange="e => _whenTo = ParseFilterDate(e.Value)" />
+                                        </label>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="column-filter-range">
+                                        <label><span class="visually-hidden">Minimum systolic</span><input type="number" class="form-control form-control-sm" placeholder="Sys min" min="0" value="@FormatInt(_sysMin)" @oninput="e => _sysMin = ParseFilterInt(e.Value)" /></label>
+                                        <label><span class="visually-hidden">Maximum systolic</span><input type="number" class="form-control form-control-sm" placeholder="Sys max" min="0" value="@FormatInt(_sysMax)" @oninput="e => _sysMax = ParseFilterInt(e.Value)" /></label>
+                                        <label><span class="visually-hidden">Minimum diastolic</span><input type="number" class="form-control form-control-sm" placeholder="Dia min" min="0" value="@FormatInt(_diaMin)" @oninput="e => _diaMin = ParseFilterInt(e.Value)" /></label>
+                                        <label><span class="visually-hidden">Maximum diastolic</span><input type="number" class="form-control form-control-sm" placeholder="Dia max" min="0" value="@FormatInt(_diaMax)" @oninput="e => _diaMax = ParseFilterInt(e.Value)" /></label>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="column-filter-range">
+                                        <label><span class="visually-hidden">Minimum pulse</span><input type="number" class="form-control form-control-sm" placeholder="Min" min="0" value="@FormatInt(_pulseMin)" @oninput="e => _pulseMin = ParseFilterInt(e.Value)" /></label>
+                                        <label><span class="visually-hidden">Maximum pulse</span><input type="number" class="form-control form-control-sm" placeholder="Max" min="0" value="@FormatInt(_pulseMax)" @oninput="e => _pulseMax = ParseFilterInt(e.Value)" /></label>
+                                    </div>
+                                </th>
+                                <th>
+                                    <label class="column-filter-select">
+                                        <span class="visually-hidden">Filter by status</span>
+                                        <select class="form-select form-select-sm" value="@_statusFilter" @onchange="OnStatusFilterChanged">
+                                            <option value="">All statuses</option>
+                                            @foreach (var status in StatusOptions)
+                                            {
+                                                <option value="@status">@status</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </th>
+                                <th>
+                                    @if (HasFilters)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                                    }
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in VisibleItems)
+                            {
+                                var rowTag = VitalStatus.ForBloodPressure(item);
+                                var overwritten = OverwriteNote.IsOverwrite(item.Notes);
+                                <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                                    <td data-label="When">
+                                        @if (overwritten)
+                                        {
+                                            <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                            <span class="visually-hidden">Overwritten. </span>
+                                        }
+                                        @item.RecordedAt.ToString("g")
+                                    </td>
+                                    <td data-label="Reading">@item.Systolic/@item.Diastolic mmHg</td>
+                                    <td data-label="Pulse">@(item.Pulse?.ToString() ?? "—")</td>
+                                    <td data-label="Status"><StatusPill Label="@rowTag.Label" CssClass="@rowTag.CssClass" /></td>
+                                    <td class="text-end">
+                                        @if (CanUpdate)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenEdit(item.Id)">Update</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (items.Count == 0)
+                    {
+                        <p class="muted p-3">No blood pressure readings yet.</p>
+                    }
+                    else if (VisibleItems.Count == 0)
+                    {
+                        <p class="muted p-3">No readings match the current filters.</p>
+                    }
+                </div>
+        </StudioFloat>
+    </section>
+}
+
+@if (_entryOpen && model is not null)
+{
+    <div class="entry-shade" @onclick="CloseEntry">
+        <div @ref="_entryPanel" class="entry-window" role="dialog" aria-modal="true" aria-labelledby="bp-entry-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="OnEntryKey">
+            <div class="entry-window-bar">
+                <div>
+                    <p class="bp-kicker">Blood pressure</p>
+                    <h2 id="bp-entry-title">@(model.Id == 0 ? "Add reading" : "Update reading")</h2>
+                </div>
+                <div>
+                    @if (CanOverwrite)
+                    {
+                        <button type="button" class="btn btn-light" @onclick="BeginOverwrite">Overwrite</button>
+                    }
+                    <button type="button" class="entry-close" aria-label="Close" @onclick="CloseEntry">&times;</button>
+                </div>
+            </div>
+            <EditForm Model="model" OnValidSubmit="Save" @key="_formKey">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Systolic</label>
+                        <InputNumber class="form-control" @bind-Value="model.Systolic" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Diastolic</label>
+                        <InputNumber class="form-control" @bind-Value="model.Diastolic" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Pulse (optional)</label>
+                        <InputNumber class="form-control" @bind-Value="model.Pulse" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Recorded at</label>
+                        <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
+                    </div>
+                    <div class="col-12">
+                        <ReadingOverwrite @ref="_overwrite" OfferOverwrite="true" Suggestions="_noteSuggestions" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@_overwritePending">Save</button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseEntry">Cancel</button>
+                    @if (model.Id != 0)
+                    {
+                        <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+                    }
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? Compose { get; set; }
+
+    private PatientScope? scope;
+    private List<BloodPressureReading> items = [];
+    private BloodPressureReading? latest;
+    private BloodPressureReading? model;
+    private ReadingOverwrite? _overwrite;
+    private bool _overwritePending;
+    private bool _entryOpen;
+    private bool _entryFocused;
+    private int _formKey;
+    private ElementReference _entryPanel;
+    private IReadOnlyList<string> _noteSuggestions = [];
+    private string? _openedCompose;
+    private bool _graphOpen;
+    private bool _reviewOpen;
+
+    private DateOnly bpMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private DateOnly bpDay = DateOnly.FromDateTime(DateTime.Today);
+    private List<BloodPressureReading> monthBp = [];
+    private List<TrendChart.ChartSeries> bpSeries = [];
+    private List<TrendChart.ChartSeries> daySeries = [];
+    private List<ChartStatItem> bpStats = [];
+    private List<ChartStatItem> dayChartStats = [];
+    private DailyVitalDayStats dayStats = DailyVitalDayStats.Empty;
+    private bool dayCanGoPrev;
+    private DateTime? earliestBp;
+    private bool bpCanGoPrev;
+    private string? printPatientName;
+    private string? printDateOfBirth;
+    private string? loadedPatientId;
+
+    private BpSort _sort = BpSort.When;
+    private bool _sortAsc;
+    private DateOnly? _whenFrom;
+    private DateOnly? _whenTo;
+    private int? _sysMin;
+    private int? _sysMax;
+    private int? _diaMin;
+    private int? _diaMax;
+    private int? _pulseMin;
+    private int? _pulseMax;
+    private string _statusFilter = "";
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private static readonly string[] StatusOptions = ["Normal", "Watch", "Elevated", "High", "Crisis", "Out of range"];
+
+    private enum BpSort { When, Reading, Pulse, Status }
+
+    private bool CanUpdate => scope?.Allows(ChartSection.BloodPressure, update: true) == true;
+    private bool CanOverwrite => model is not null && !OverwriteNote.IsOverwrite(model.Notes);
+
+    private bool HasFilters =>
+        _whenFrom is not null || _whenTo is not null || _sysMin is not null || _sysMax is not null
+        || _diaMin is not null || _diaMax is not null || _pulseMin is not null || _pulseMax is not null
+        || !string.IsNullOrEmpty(_statusFilter);
+
+    private List<BloodPressureReading> VisibleItems => Sort(Filter(items)).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.BloodPressure, update: false);
+        if (scope.PatientId is not string id)
+        {
+            items = [];
+            latest = null;
+            return;
+        }
+
+        if (loadedPatientId != id)
+        {
+            loadedPatientId = id;
+            bpMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+            bpDay = DateOnly.FromDateTime(DateTime.Today);
+            earliestBp = await Records.GetEarliestBloodPressureDateAsync(id);
+            printPatientName = scope.Patient?.DisplayName;
+            var profile = await Access.GetProfileAsync(id);
+            printDateOfBirth = profile?.DateOfBirth?.ToString("MMMM d, yyyy");
+        }
+
+        await ReloadAsync();
+        await OpenComposeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+        if (_entryOpen && !_entryFocused)
+        {
+            _entryFocused = true;
+            try
+            {
+                await _entryPanel.FocusAsync();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or JSException)
+            {
+            }
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (scope?.PatientId is not string id) return;
+        items = await Records.GetBloodPressureAsync(id, 200);
+        latest = items.OrderByDescending(x => x.RecordedAt).FirstOrDefault();
+        await LoadMonthAsync();
+    }
+
+    private async Task LoadMonthAsync()
+    {
+        if (scope?.PatientId is not string id) return;
+        var start = FirstOfMonth(bpMonth).ToDateTime(TimeOnly.MinValue);
+        monthBp = await Records.GetBloodPressureInRangeAsync(id, start, start.AddMonths(1));
+        bpCanGoPrev = earliestBp is DateTime earliest && FirstOfMonth(DateOnly.FromDateTime(earliest)) < FirstOfMonth(bpMonth);
+        var ordered = monthBp.OrderBy(x => x.RecordedAt).ToList();
+        bpSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Systolic",
+                Color = "#2f80ed",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    x.Systolic,
+                    x.RecordedAt,
+                    $"{x.Systolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            },
+            new TrendChart.ChartSeries
+            {
+                Name = "Diastolic",
+                Color = "#56ccf2",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    x.Diastolic,
+                    x.RecordedAt,
+                    $"{x.Diastolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            }
+        ];
+        bpStats = ChartStatsHelper.ForBloodPressureMonth(ordered);
+        RebuildDay();
+    }
+
+    private void RebuildDay()
+    {
+        var dayReadings = monthBp.Where(x => DateOnly.FromDateTime(x.RecordedAt) == bpDay).ToList();
+        dayStats = ChartStatsHelper.ForBloodPressureDay(dayReadings);
+        dayChartStats = ChartStatsHelper.ForDailyChart(dayStats);
+        var ordered = dayReadings.OrderBy(x => x.RecordedAt).ToList();
+        daySeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Systolic",
+                Color = "#2f80ed",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    x.Systolic,
+                    x.RecordedAt,
+                    $"{x.Systolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            },
+            new TrendChart.ChartSeries
+            {
+                Name = "Diastolic",
+                Color = "#56ccf2",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    x.Diastolic,
+                    x.RecordedAt,
+                    $"{x.Diastolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(x.Systolic, x.Diastolic),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            }
+        ];
+        dayCanGoPrev = earliestBp is DateTime earliest && bpDay > DateOnly.FromDateTime(earliest);
+    }
+
+    private async Task OnBpMonthChanged(DateOnly month)
+    {
+        bpMonth = FirstOfMonth(month);
+        bpDay = DayInMonth(bpDay, bpMonth);
+        await LoadMonthAsync();
+    }
+
+    private async Task OnBpDayChanged(DateOnly day)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (day > today)
+            day = today;
+        bpDay = day;
+        if (FirstOfMonth(day) != FirstOfMonth(bpMonth))
+        {
+            bpMonth = FirstOfMonth(day);
+            await LoadMonthAsync();
+            return;
+        }
+
+        RebuildDay();
+    }
+
+    private static DateOnly DayInMonth(DateOnly day, DateOnly month)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var last = DateTime.DaysInMonth(month.Year, month.Month);
+        var chosen = new DateOnly(month.Year, month.Month, Math.Min(day.Day, last));
+        return chosen > today ? today : chosen;
+    }
+
+    private void ToggleGraph() => _graphOpen = !_graphOpen;
+
+    private void ToggleReview() => _reviewOpen = !_reviewOpen;
+
+    private async Task OpenComposeAsync()
+    {
+        if (!CanUpdate || string.IsNullOrWhiteSpace(Compose) || Compose == _openedCompose)
+            return;
+
+        _openedCompose = Compose;
+        if (Compose.Equals("new", StringComparison.OrdinalIgnoreCase))
+            await OpenAdd();
+        else if (int.TryParse(Compose, out var id))
+            await OpenEdit(id);
+    }
+
+    private async Task OpenAdd()
+    {
+        if (scope?.PatientId is not string patientId) return;
+        model = new BloodPressureReading
+        {
+            UserId = patientId,
+            RecordedAt = DateTime.Now,
+            Systolic = 120,
+            Diastolic = 80
+        };
+        _noteSuggestions = await Records.GetBloodPressureNoteSuggestionsAsync(patientId);
+        ShowEntry();
+    }
+
+    private async Task OpenEdit(int id)
+    {
+        if (scope?.PatientId is not string patientId) return;
+        var existing = await Records.GetBloodPressureByIdAsync(id, patientId);
+        if (existing is null) return;
+        if (OverwriteNote.IsOverwrite(existing.Notes))
+            existing.AllowOutOfRange = true;
+        model = existing;
+        _noteSuggestions = await Records.GetBloodPressureNoteSuggestionsAsync(patientId, id);
+        ShowEntry();
+    }
+
+    private void ShowEntry()
+    {
+        _formKey++;
+        _entryOpen = true;
+        _entryFocused = false;
+    }
+
+    private void CloseEntry()
+    {
+        if (_overwritePending) return;
+        _entryOpen = false;
+        model = null;
+    }
+
+    private void OnEntryKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            CloseEntry();
+    }
+
+    private async Task BeginOverwrite()
+    {
+        if (_overwrite is not null)
+            await _overwrite.BeginAsync();
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await Records.SaveBloodPressureAsync(model);
+        _entryOpen = false;
+        model = null;
+        earliestBp = await Records.GetEarliestBloodPressureDateAsync(scope.PatientId);
+        await ReloadAsync();
+    }
+
+    private async Task Delete()
+    {
+        if (model?.Id is int id && id != 0 && scope?.PatientId is not null)
+            await Records.DeleteBloodPressureAsync(id, scope.PatientId);
+        _entryOpen = false;
+        model = null;
+        if (scope?.PatientId is string patientId)
+            earliestBp = await Records.GetEarliestBloodPressureDateAsync(patientId);
+        await ReloadAsync();
+    }
+
+    private static DateOnly FirstOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
+
+    private static string GaugeArc(int systolic)
+    {
+        var t = Math.Clamp((systolic - 90) / 90d, 0, 1);
+        var angle = Math.PI * (1 - t);
+        var x = 80 + 64 * Math.Cos(angle);
+        var y = 70 - 64 * Math.Sin(angle);
+        var large = t > 0.5 ? 1 : 0;
+        return $"M16 70 A64 64 0 {large} 1 {x:0.##} {y:0.##}";
+    }
+
+    private static string GaugeColor(StatusTag tag) => tag.CssClass switch
+    {
+        "status-danger" => "#eb5757",
+        "status-warn" => "#f2994a",
+        _ => "#27ae60"
+    };
+
+    private IEnumerable<BloodPressureReading> Filter(IEnumerable<BloodPressureReading> source)
+    {
+        var query = source;
+        if (_whenFrom is DateOnly from) query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) >= from);
+        if (_whenTo is DateOnly to) query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) <= to);
+        if (_sysMin is int sysMin) query = query.Where(x => x.Systolic >= sysMin);
+        if (_sysMax is int sysMax) query = query.Where(x => x.Systolic <= sysMax);
+        if (_diaMin is int diaMin) query = query.Where(x => x.Diastolic >= diaMin);
+        if (_diaMax is int diaMax) query = query.Where(x => x.Diastolic <= diaMax);
+        if (_pulseMin is int pulseMin) query = query.Where(x => x.Pulse is int pulse && pulse >= pulseMin);
+        if (_pulseMax is int pulseMax) query = query.Where(x => x.Pulse is int pulse && pulse <= pulseMax);
+        if (!string.IsNullOrEmpty(_statusFilter))
+            query = query.Where(x => VitalStatus.ForBloodPressure(x).Label == _statusFilter);
+        return query;
+    }
+
+    private IEnumerable<BloodPressureReading> Sort(IEnumerable<BloodPressureReading> source) => _sort switch
+    {
+        BpSort.Reading => _sortAsc
+            ? source.OrderBy(x => x.Systolic).ThenBy(x => x.Diastolic)
+            : source.OrderByDescending(x => x.Systolic).ThenByDescending(x => x.Diastolic),
+        BpSort.Pulse => _sortAsc
+            ? source.OrderBy(x => x.Pulse ?? int.MaxValue)
+            : source.OrderByDescending(x => x.Pulse ?? int.MinValue),
+        BpSort.Status => _sortAsc ? source.OrderBy(StatusRank) : source.OrderByDescending(StatusRank),
+        _ => _sortAsc ? source.OrderBy(x => x.RecordedAt) : source.OrderByDescending(x => x.RecordedAt)
+    };
+
+    private void SortBy(BpSort column)
+    {
+        if (_sort == column) { _sortAsc = !_sortAsc; return; }
+        _sort = column;
+        _sortAsc = column != BpSort.When;
+    }
+
+    private void ClearFilters()
+    {
+        _whenFrom = null;
+        _whenTo = null;
+        _sysMin = null;
+        _sysMax = null;
+        _diaMin = null;
+        _diaMax = null;
+        _pulseMin = null;
+        _pulseMax = null;
+        _statusFilter = "";
+        _filterVersion++;
+    }
+
+    private int? ParseFilterInt(object? value) => _filterVersion != _appliedFilterVersion ? null : ParseInt(value);
+    private DateOnly? ParseFilterDate(object? value) => _filterVersion != _appliedFilterVersion ? null : ParseDate(value);
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _statusFilter = e.Value?.ToString() ?? "";
+    }
+
+    private string AriaSort(BpSort column) => _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+
+    private string SortMark(BpSort column) => _sort != column ? "↕" : _sortAsc ? "↑" : "↓";
+
+    private static int StatusRank(BloodPressureReading item)
+    {
+        var tag = VitalStatus.ForBloodPressure(item);
+        return tag.Label switch
+        {
+            "Watch" => 1,
+            "Elevated" => 2,
+            "High" => 3,
+            "Crisis" => 4,
+            "Out of range" => 5,
+            _ => 0
+        };
+    }
+
+    private static string FormatDate(DateOnly? date) => date?.ToString("yyyy-MM-dd") ?? "";
+    private static string FormatInt(int? value) => value?.ToString() ?? "";
+    private static DateOnly? ParseDate(object? value) => DateOnly.TryParse(value?.ToString(), out var date) ? date : null;
+    private static int? ParseInt(object? value) => int.TryParse(value?.ToString(), out var number) ? number : null;
+}

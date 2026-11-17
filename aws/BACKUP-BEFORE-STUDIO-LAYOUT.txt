@@ -1,0 +1,52 @@
+SAVE THIS FILE. It is the rollback note for the production site before the pictorial studio layout.
+
+Production site
+  https://www.medicalmgr.com
+  https://medicalmanager-alb-2058805303.us-east-1.elb.amazonaws.com
+  Account 041755786175
+  Region us-east-1
+  Cluster medicalmanager
+  Service medicalmanager-app
+  Task definition medicalmanager-app:12
+  Service was healthy on task definition :12, deployment completed 2026-11-06 12:16 CST
+
+Code that was live
+  Branch registration-update-video-instruction-added
+  Commit 04fb80dacbcdfd3a21ef23faf31e5e3905e0113b
+  Subject: State message frequency, rates, and opt-out in the privacy policy for the 2FA campaign.
+  Author: Medical Manager <medmgr-us@gmail.com>
+  Date: 2026-11-06 12:14:47 -0600
+  Remote: https://github.com/InterviewProjectDemo/MedicalManager.git
+
+Image that was live
+  Repository 041755786175.dkr.ecr.us-east-1.amazonaws.com/medicalmanager
+  Tag latest at backup time
+  Index digest sha256:920233b73d9a0f9499a91554f675e100d957543a79598516f3f05d7ec7de4dc1
+  Linux image digest sha256:3d0d955b7d6df06a7d8dfe07162a71513a7815ac68a802d140717adefdfc8e26
+  Pushed 2026-11-06 12:16:25 -0600
+  Backup tag backup-before-studio-layout-20261116
+  Backup tag index digest sha256:fb11e443469debc0732c7dfe1eceef5e56a4eec20e94b64028fff8b94bb8cd5b
+  That backup tag points at the same Linux image digest as the live release.
+
+What the new release changes
+  Layout only. The pictorial home, round navigation, and the blood pressure and blood sugar windows.
+  Readings, medications, appointments, labs, calls, monitor, and accounts keep the same behavior.
+  Database, secrets, and the RDS instance are not replaced.
+
+Roll back the site
+  1. Put the backup image back on the latest tag:
+
+     aws ecr batch-get-image --region us-east-1 --repository-name medicalmanager --image-ids imageTag=backup-before-studio-layout-20261116 --query images[0].imageManifest --output text > manifest.json
+     aws ecr put-image --region us-east-1 --repository-name medicalmanager --image-tag latest --image-manifest file://manifest.json
+
+  2. Start the previous image:
+
+     aws ecs update-service --region us-east-1 --cluster medicalmanager --service medicalmanager-app --task-definition medicalmanager-app:12 --force-new-deployment
+
+  3. Confirm https://www.medicalmgr.com shows the previous screens.
+
+Roll back the git branch
+  git checkout registration-update-video-instruction-added
+  git reset --hard 04fb80dacbcdfd3a21ef23faf31e5e3905e0113b
+
+Do not delete the ECR backup tag or task definition medicalmanager-app:12.

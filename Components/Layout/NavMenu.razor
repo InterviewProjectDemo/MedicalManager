@@ -75,6 +75,17 @@
     <nav class="nav flex-column" aria-label="Main">
         <AuthorizeView>
             <Authorized Context="authContext">
+                @if (StudioLayout.Enabled)
+                {
+                    <StudioSideNav PatientUserId="@selectedPatientId"
+                                   CurrentUrl="@currentUrl"
+                                   AccountName="@authContext.User.Identity?.Name"
+                                   OnEmergency="OpenEmergencyCall"
+                                   OnVoice="OpenGuide"
+                                   OnNavigate="CloseNav" />
+                }
+                else
+                {
                 <div class="nav-call-actions">
                     <button type="button" class="nav-call-btn nav-call-emergency" @onclick="OpenEmergencyCall">
                         Emergency
@@ -204,8 +215,15 @@
                     </button>
                     <p class="nav-call-hint">@(_monitorLive ? "Camera is on" : "Family can watch")</p>
                 </div>
+                }
             </Authorized>
             <NotAuthorized>
+                @if (StudioLayout.Enabled)
+                {
+                    <StudioSideNav Guest="true" OnNavigate="CloseNav" />
+                }
+                else
+                {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-dash" href="Account/Login">
                         <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Login
@@ -236,6 +254,7 @@
                         <span class="bi bi-journal-nav-menu" aria-hidden="true"></span> Text message consent
                     </NavLink>
                 </div>
+                }
             </NotAuthorized>
         </AuthorizeView>
     </nav>
@@ -243,6 +262,27 @@
 
 <AuthorizeView>
     <Authorized>
+        @if (StudioLayout.Enabled)
+        {
+            <nav class="mobile-tabbar" aria-label="Primary">
+                <button type="button" class="mobile-tab" @onclick="OpenEmergencyCall">
+                    <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="emergency" /></span>
+                    Emergency
+                </button>
+                <button type="button" class="mobile-tab" @onclick="OpenGuide">
+                    <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="voice" /></span>
+                    Say Call
+                </button>
+                <button type="button"
+                        class="mobile-tab @(_navOpen || IsMoreSection ? "active" : null)"
+                        @onclick="ToggleNav">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span>
+                    More
+                </button>
+            </nav>
+        }
+        else
+        {
         <nav class="mobile-tabbar" aria-label="Primary">
             <button type="button" class="mobile-tab mobile-tab-emergency" @onclick="OpenEmergencyCall">Emergency</button>
             <button type="button" class="mobile-tab mobile-tab-family" @onclick="OpenFamilyCall">Family</button>
@@ -299,6 +339,7 @@
                 More
             </button>
         </nav>
+        }
     </Authorized>
 </AuthorizeView>
 
@@ -380,6 +421,7 @@
         UpdateFromUri();
         NavigationManager.LocationChanged += OnLocationChanged;
         FamilyCalls.OpenFamilyCallRequested += OpenFamilyCall;
+        FamilyCalls.OpenMonitorRequested += OpenMonitorFromHome;
         await LoadPhotoAsync();
         await LoadFamilyContactAsync();
     }
@@ -462,6 +504,12 @@
     {
         _monitorOpen = true;
         _navOpen = false;
+    }
+
+    private Task OpenMonitorFromHome()
+    {
+        OpenMonitor();
+        return InvokeAsync(StateHasChanged);
     }
 
     private Task OnMonitorVisibleChanged(bool visible)
@@ -664,6 +712,7 @@
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
         FamilyCalls.OpenFamilyCallRequested -= OpenFamilyCall;
+        FamilyCalls.OpenMonitorRequested -= OpenMonitorFromHome;
         _ = StopWakeAsync();
         _wakeSelf?.Dispose();
     }

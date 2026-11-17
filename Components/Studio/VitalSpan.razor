@@ -1,0 +1,120 @@
+@namespace MedicalManager.Components.Studio
+
+<div class="vital-span">
+    <section class="chart-card daily-span-card" style="border-top: 5px solid @Accent">
+        <div class="chart-card-head monthly-chart-head">
+            <span class="chart-dot" style="background:@Accent"></span>
+            <div class="monthly-chart-title">
+                <h3>Daily</h3>
+                <p>@DaySubtitle</p>
+            </div>
+            <div class="monthly-date-nav">
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary daily-date-btn"
+                        aria-label="Previous day"
+                        disabled="@(!CanGoPreviousDay)"
+                        @onclick="PrevDay">&lsaquo;</button>
+                <label class="daily-date-picker">
+                    <span class="visually-hidden">Choose a day</span>
+                    <input type="date"
+                           class="daily-date-input"
+                           value="@SelectedDay.ToString("yyyy-MM-dd")"
+                           max="@Today.ToString("yyyy-MM-dd")"
+                           @onchange="OnDayInput" />
+                </label>
+                @if (SelectedDay == Today)
+                {
+                    <span class="day-badge">Today</span>
+                }
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary daily-date-btn"
+                        aria-label="Next day"
+                        disabled="@(SelectedDay >= Today)"
+                        @onclick="NextDay">&rsaquo;</button>
+            </div>
+        </div>
+
+        <div class="chart-stats">
+            <div class="chart-stat-item">
+                <span class="chart-stat-label">Readings</span>
+                <strong class="chart-stat-value" style="color:@Accent">@DayStats.ReadingCount</strong>
+            </div>
+            @if (DayStats.HasReadings)
+            {
+                @foreach (var stat in DayChartStats)
+                {
+                    <div class="chart-stat-item">
+                        <span class="chart-stat-label">@stat.Label</span>
+                        <strong class="chart-stat-value @(stat.IsOutOfRange ? "out-of-range" : "")">@stat.Value</strong>
+                        @if (!string.IsNullOrWhiteSpace(stat.SubValue))
+                        {
+                            <span class="chart-stat-subvalue @(stat.IsOutOfRange ? "out-of-range" : "")">@stat.SubValue</span>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="chart-stat-item"><span class="chart-stat-label">Average</span><strong class="chart-stat-value">—</strong></div>
+                <div class="chart-stat-item"><span class="chart-stat-label">High</span><strong class="chart-stat-value">—</strong></div>
+                <div class="chart-stat-item"><span class="chart-stat-label">Low</span><strong class="chart-stat-value">—</strong></div>
+            }
+        </div>
+
+        <TrendChart Embedded="true"
+                    Accent="@Accent"
+                    Series="DaySeries"
+                    EmptyMessage="@($"No readings on {SelectedDay:MMMM d}.")" />
+    </section>
+
+    <TrendChart Title="Monthly"
+                Subtitle="@MonthSubtitle"
+                PrintSubject="@PrintSubject"
+                Accent="@Accent"
+                Series="MonthSeries"
+                Stats="MonthStats"
+                SelectedMonth="SelectedMonth"
+                SelectedMonthChanged="SelectedMonthChanged"
+                CanGoPrevious="CanGoPreviousMonth"
+                PatientName="@PatientName"
+                PatientDateOfBirth="@PatientDateOfBirth" />
+</div>
+
+@code {
+    [Parameter] public string Accent { get; set; } = "#2f80ed";
+    [Parameter] public string DaySubtitle { get; set; } = "Readings through the day";
+    [Parameter] public string MonthSubtitle { get; set; } = "Readings through the month";
+    [Parameter] public string PrintSubject { get; set; } = "";
+    [Parameter] public DateOnly SelectedDay { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    [Parameter] public EventCallback<DateOnly> SelectedDayChanged { get; set; }
+    [Parameter] public bool CanGoPreviousDay { get; set; } = true;
+    [Parameter] public DailyVitalDayStats DayStats { get; set; } = DailyVitalDayStats.Empty;
+    [Parameter] public List<ChartStatItem> DayChartStats { get; set; } = [];
+    [Parameter] public List<TrendChart.ChartSeries> DaySeries { get; set; } = [];
+    [Parameter] public DateOnly SelectedMonth { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    [Parameter] public EventCallback<DateOnly> SelectedMonthChanged { get; set; }
+    [Parameter] public bool CanGoPreviousMonth { get; set; } = true;
+    [Parameter] public List<ChartStatItem> MonthStats { get; set; } = [];
+    [Parameter] public List<TrendChart.ChartSeries> MonthSeries { get; set; } = [];
+    [Parameter] public string? PatientName { get; set; }
+    [Parameter] public string? PatientDateOfBirth { get; set; }
+
+    private DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+
+    private Task PrevDay() => SelectedDayChanged.InvokeAsync(SelectedDay.AddDays(-1));
+
+    private Task NextDay()
+    {
+        var next = SelectedDay.AddDays(1);
+        return next > Today ? Task.CompletedTask : SelectedDayChanged.InvokeAsync(next);
+    }
+
+    private Task OnDayInput(ChangeEventArgs e)
+    {
+        if (!DateOnly.TryParse(e.Value?.ToString(), out var day))
+            return Task.CompletedTask;
+        if (day > Today)
+            day = Today;
+        return SelectedDayChanged.InvokeAsync(day);
+    }
+}

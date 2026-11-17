@@ -164,7 +164,7 @@ else
             <header class="walkthrough-header">
                 <div class="walkthrough-header-left">
                     <span class="walkthrough-badge">Video Walkthrough</span>
-                    <h2 data-walkthrough-title>Your Dashboard at a Glance</h2>
+                    <h2 data-walkthrough-title>A Dashboard Clinicians Can Trust</h2>
                 </div>
                 <button type="button" class="walkthrough-close" data-walkthrough-close aria-label="Close walkthrough">✕</button>
             </header>
@@ -218,17 +218,39 @@ else
 
                 <div class="walkthrough-scenes">
                     <div class="walkthrough-scene active" data-walkthrough-scene="dashboard">
-                        <div class="walkthrough-mock walkthrough-mock-dashboard">
-                            <div class="walkthrough-mock-bar"><span></span><span></span><span></span></div>
-                            <div class="walkthrough-mock-title">Dashboard</div>
-                            <div class="walkthrough-mock-widgets">
-                                <div class="walkthrough-mock-widget highlight"><span class="mock-icon">🩺</span><strong>BP Trend</strong><span class="mock-chart"></span></div>
-                                <div class="walkthrough-mock-widget"><span class="mock-icon">💊</span><strong>Medications</strong><span class="mock-line"></span></div>
-                                <div class="walkthrough-mock-widget"><span class="mock-icon">📅</span><strong>Appointments</strong><span class="mock-line short"></span></div>
-                                <div class="walkthrough-mock-widget"><span class="mock-icon">✓</span><strong>To Do</strong><span class="mock-line"></span></div>
+                        <figure class="walkthrough-shot">
+                            <div class="walkthrough-shot-frame">
+                                <img src="images/walkthrough-dashboard.png"
+                                     alt="Medical Manager dashboard with today's medication schedule, blood pressure monthly and daily trends, High Low and Average statistics, and readings marked in red when out of range."
+                                     width="1440"
+                                     height="810" />
                             </div>
-                            <button type="button" class="walkthrough-mock-btn">Customize</button>
-                        </div>
+                            <figcaption class="walkthrough-shot-caption">
+                                <span>Monthly trend</span>
+                                <span>Daily trend</span>
+                                <span>High, Low, Average</span>
+                                <span class="is-alert">Out of range in red</span>
+                                <span>Email, text, or print</span>
+                            </figcaption>
+                        </figure>
+                    </div>
+
+                    <div class="walkthrough-scene" data-walkthrough-scene="medication-care">
+                        <figure class="walkthrough-shot">
+                            <div class="walkthrough-shot-frame">
+                                <img src="images/walkthrough-dashboard.png"
+                                     alt="Today's medication schedule across morning, lunch, evening, and bedtime, above the blood pressure charts."
+                                     width="1440"
+                                     height="810" />
+                            </div>
+                            <figcaption class="walkthrough-shot-caption">
+                                <span>Medication schedule</span>
+                                <span>Dose alerts</span>
+                                <span>Doses administered</span>
+                                <span class="is-alert">Missed doses stand out</span>
+                                <span>Share with the care team</span>
+                            </figcaption>
+                        </figure>
                     </div>
 
                     <div class="walkthrough-scene" data-walkthrough-scene="medication">
@@ -269,8 +291,8 @@ else
                     <div class="walkthrough-scene" data-walkthrough-scene="closing">
                         <div class="walkthrough-mock walkthrough-mock-closing">
                             <div class="walkthrough-mock-check">✓</div>
-                            <h3>You're all set!</h3>
-                            <p>Dashboard, medications, blood pressure, and to-dos — you're ready to explore.</p>
+                            <h3>Clearer care starts here</h3>
+                            <p>Medication alerts, vital charts, and High, Low, and Average — ready to email, text, or print.</p>
                         </div>
                     </div>
                 </div>
@@ -282,7 +304,7 @@ else
                 </div>
                 <div class="walkthrough-controls-row">
                     <button type="button" class="walkthrough-play" data-walkthrough-play aria-label="Pause walkthrough">⏸</button>
-                    <span class="walkthrough-time" data-walkthrough-time>0:00 / 1:48</span>
+                    <span class="walkthrough-time" data-walkthrough-time>0:00 / 3:02</span>
                     <button type="button" class="walkthrough-skip" data-walkthrough-skip>Skip</button>
                 </div>
             </footer>

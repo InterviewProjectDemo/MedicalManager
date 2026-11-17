@@ -129,6 +129,7 @@
     [Parameter] public string EmptyMessage { get; set; } = "No readings";
     [Parameter] public string? PatientName { get; set; }
     [Parameter] public string? PatientDateOfBirth { get; set; }
+    [Parameter] public string PrintSubject { get; set; } = "";
 
     private ElementReference _host;
     private IJSObjectReference? _module;
@@ -531,13 +532,16 @@
         }
     }
 
+    private bool IsSugarChart =>
+        $"{PrintSubject} {Title}".Contains("sugar", StringComparison.OrdinalIgnoreCase);
+
     private string PrintButtonLabel =>
-        Title.Contains("sugar", StringComparison.OrdinalIgnoreCase)
+        IsSugarChart
             ? "Print blood sugar monthly trend"
             : "Print blood pressure monthly trend";
 
     private string PrintDocTitle =>
-        Title.Contains("sugar", StringComparison.OrdinalIgnoreCase)
+        IsSugarChart
             ? "Blood Sugar — Monthly Trend"
             : "Blood Pressure — Monthly Trend";
 

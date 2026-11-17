@@ -1,0 +1,574 @@
+@namespace MedicalManager.Components.Studio
+@inject HealthRecordService Records
+@inject PatientAccessService Access
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Blood sugar</PageTitle>
+<RequirePatient Scope="scope" />
+
+@if (scope?.Patient is not null)
+{
+    <PatientBanner Scope="scope" />
+    <section class="bp-studio">
+        <div class="bp-hero">
+            <div class="portrait" aria-hidden="true">
+                <span class="portrait-figure">
+                    <span class="portrait-orb"><FeatureScene Scene="sugar" /></span>
+                    <span class="portrait-pedestal"></span>
+                </span>
+            </div>
+            <div>
+                <p class="bp-kicker">Blood sugar</p>
+                <h1>@(latest is null ? "No reading yet" : "Latest reading")</h1>
+                @if (latest is null)
+                {
+                    <p class="bp-when">Add a reading when you are ready. Graph and Review each open in a window you can move.</p>
+                }
+                else
+                {
+                    var tag = VitalStatus.ForSugar(latest);
+                    <p class="bp-reading">@latest.Value.ToString("0") <small>@latest.Unit</small></p>
+                    <p class="bp-when">@latest.Kind · @latest.RecordedAt.ToString("MMM d, h:mm tt")</p>
+                    <StatusPill Label="@tag.Label" CssClass="@tag.CssClass" />
+                }
+            </div>
+        </div>
+
+        <div class="module-dock">
+            <button type="button" class="module-orb" aria-pressed="@_graphOpen" @onclick="ToggleGraph">
+                <span class="module-orb-art"><FeatureScene Scene="trend" /></span>
+                <span class="module-title">Graph</span>
+                <span class="module-hint">See the day and the month</span>
+            </button>
+            <button type="button" class="module-ledger" aria-pressed="@_reviewOpen" @onclick="ToggleReview">
+                <span class="module-person"><FeatureScene Scene="ledger" /></span>
+                <span>
+                    <span class="module-title">Review readings</span>
+                    <span class="module-hint">Look through each number</span>
+                </span>
+            </button>
+            @if (CanUpdate)
+            {
+                <button type="button" class="module-window" @onclick="OpenAdd">
+                    <span class="module-person"><FeatureScene Scene="entry" /></span>
+                    <span>
+                        <span class="module-title">Add reading</span>
+                        <span class="module-hint">Enter glucose and the type</span>
+                    </span>
+                </button>
+            }
+        </div>
+
+        <StudioFloat @bind-Visible="_graphOpen" Title="Blood sugar graph" Place="graph">
+                <VitalSpan Accent="#f2994a"
+                           PrintSubject="Blood sugar"
+                           DaySubtitle="Glucose through the day"
+                           MonthSubtitle="Glucose for the month"
+                           SelectedDay="sugarDay"
+                           SelectedDayChanged="OnSugarDayChanged"
+                           CanGoPreviousDay="dayCanGoPrev"
+                           DayStats="dayStats"
+                           DayChartStats="dayChartStats"
+                           DaySeries="daySeries"
+                           SelectedMonth="sugarMonth"
+                           SelectedMonthChanged="OnSugarMonthChanged"
+                           CanGoPreviousMonth="sugarCanGoPrev"
+                           MonthStats="sugarStats"
+                           MonthSeries="sugarSeries"
+                           PatientName="@printPatientName"
+                           PatientDateOfBirth="@printDateOfBirth" />
+        </StudioFloat>
+
+        <StudioFloat @bind-Visible="_reviewOpen" Title="Blood sugar readings" Place="review">
+                <div class="table-card">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th aria-sort="@AriaSort(SugarSort.When)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(SugarSort.When)">When <span class="sort-indicator" aria-hidden="true">@SortMark(SugarSort.When)</span></button>
+                                </th>
+                                <th aria-sort="@AriaSort(SugarSort.Value)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(SugarSort.Value)">Value <span class="sort-indicator" aria-hidden="true">@SortMark(SugarSort.Value)</span></button>
+                                </th>
+                                <th aria-sort="@AriaSort(SugarSort.Type)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(SugarSort.Type)">Type <span class="sort-indicator" aria-hidden="true">@SortMark(SugarSort.Type)</span></button>
+                                </th>
+                                <th aria-sort="@AriaSort(SugarSort.Status)">
+                                    <button type="button" class="sort-th-btn" @onclick="() => SortBy(SugarSort.Status)">Status <span class="sort-indicator" aria-hidden="true">@SortMark(SugarSort.Status)</span></button>
+                                </th>
+                                <th></th>
+                            </tr>
+                            <tr class="column-filter-row" @key="_filterVersion">
+                                <th>
+                                    <div class="column-filter-dates">
+                                        <label><span class="visually-hidden">From date</span><input type="date" class="form-control form-control-sm" value="@FormatDate(_whenFrom)" @onchange="e => _whenFrom = ParseFilterDate(e.Value)" /></label>
+                                        <label><span class="visually-hidden">To date</span><input type="date" class="form-control form-control-sm" value="@FormatDate(_whenTo)" @onchange="e => _whenTo = ParseFilterDate(e.Value)" /></label>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="column-filter-range">
+                                        <label><span class="visually-hidden">Minimum glucose</span><input type="number" class="form-control form-control-sm" placeholder="Min" min="0" value="@FormatDecimal(_valueMin)" @oninput="e => _valueMin = ParseFilterDecimal(e.Value)" /></label>
+                                        <label><span class="visually-hidden">Maximum glucose</span><input type="number" class="form-control form-control-sm" placeholder="Max" min="0" value="@FormatDecimal(_valueMax)" @oninput="e => _valueMax = ParseFilterDecimal(e.Value)" /></label>
+                                    </div>
+                                </th>
+                                <th>
+                                    <label class="column-filter-select">
+                                        <span class="visually-hidden">Filter by type</span>
+                                        <select class="form-select form-select-sm" value="@_kindFilter" @onchange="OnKindFilterChanged">
+                                            <option value="">All types</option>
+                                            @foreach (var kind in Enum.GetValues<SugarKind>())
+                                            {
+                                                <option value="@kind">@kind</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </th>
+                                <th>
+                                    <label class="column-filter-select">
+                                        <span class="visually-hidden">Filter by status</span>
+                                        <select class="form-select form-select-sm" value="@_statusFilter" @onchange="OnStatusFilterChanged">
+                                            <option value="">All statuses</option>
+                                            @foreach (var status in StatusOptions)
+                                            {
+                                                <option value="@status">@status</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </th>
+                                <th>
+                                    @if (HasFilters)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                                    }
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in VisibleItems)
+                            {
+                                var rowTag = VitalStatus.ForSugar(item);
+                                var overwritten = OverwriteNote.IsOverwrite(item.Notes);
+                                <tr class="@(overwritten ? "reading-overwrite-row" : null)">
+                                    <td data-label="When">
+                                        @if (overwritten)
+                                        {
+                                            <span class="reading-overwrite-star" aria-hidden="true">★</span>
+                                            <span class="visually-hidden">Overwritten. </span>
+                                        }
+                                        @item.RecordedAt.ToString("g")
+                                    </td>
+                                    <td data-label="Value">@item.Value.ToString("0.#") @item.Unit</td>
+                                    <td data-label="Type">@item.Kind</td>
+                                    <td data-label="Status"><StatusPill Label="@rowTag.Label" CssClass="@rowTag.CssClass" /></td>
+                                    <td class="text-end">
+                                        @if (CanUpdate)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => OpenEdit(item.Id)">Update</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (items.Count == 0)
+                    {
+                        <p class="muted p-3">No sugar readings yet.</p>
+                    }
+                    else if (VisibleItems.Count == 0)
+                    {
+                        <p class="muted p-3">No readings match the current filters.</p>
+                    }
+                </div>
+        </StudioFloat>
+    </section>
+}
+
+@if (_entryOpen && model is not null)
+{
+    <div class="entry-shade" @onclick="CloseEntry">
+        <div @ref="_entryPanel" class="entry-window" role="dialog" aria-modal="true" aria-labelledby="sugar-entry-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="OnEntryKey">
+            <div class="entry-window-bar">
+                <div>
+                    <p class="bp-kicker">Blood sugar</p>
+                    <h2 id="sugar-entry-title">@(model.Id == 0 ? "Add reading" : "Update reading")</h2>
+                </div>
+                <div>
+                    @if (CanOverwrite)
+                    {
+                        <button type="button" class="btn btn-light" @onclick="BeginOverwrite">Overwrite</button>
+                    }
+                    <button type="button" class="entry-close" aria-label="Close" @onclick="CloseEntry">&times;</button>
+                </div>
+            </div>
+            <EditForm Model="model" OnValidSubmit="Save" @key="_formKey">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Value (mg/dL)</label>
+                        <InputNumber class="form-control" @bind-Value="model.Value" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Type</label>
+                        <InputSelect class="form-select" @bind-Value="model.Kind">
+                            @foreach (var kind in Enum.GetValues<SugarKind>())
+                            {
+                                <option value="@kind">@kind</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Recorded at</label>
+                        <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="model.RecordedAt" />
+                    </div>
+                    <div class="col-12">
+                        <ReadingOverwrite @ref="_overwrite" OfferOverwrite="true" Suggestions="_noteSuggestions" @bind-AllowOutOfRange="model.AllowOutOfRange" @bind-Notes="model.Notes" @bind-Pending="_overwritePending" />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-warning text-white" disabled="@_overwritePending">Save</button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseEntry">Cancel</button>
+                    @if (model.Id != 0)
+                    {
+                        <button type="button" class="btn btn-outline-danger ms-auto" @onclick="Delete">Delete</button>
+                    }
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? Compose { get; set; }
+
+    private PatientScope? scope;
+    private List<SugarReading> items = [];
+    private SugarReading? latest;
+    private SugarReading? model;
+    private ReadingOverwrite? _overwrite;
+    private bool _overwritePending;
+    private bool _entryOpen;
+    private bool _entryFocused;
+    private int _formKey;
+    private ElementReference _entryPanel;
+    private IReadOnlyList<string> _noteSuggestions = [];
+    private string? _openedCompose;
+    private bool _graphOpen;
+    private bool _reviewOpen;
+
+    private DateOnly sugarMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private DateOnly sugarDay = DateOnly.FromDateTime(DateTime.Today);
+    private List<SugarReading> monthSugar = [];
+    private List<TrendChart.ChartSeries> sugarSeries = [];
+    private List<TrendChart.ChartSeries> daySeries = [];
+    private List<ChartStatItem> sugarStats = [];
+    private List<ChartStatItem> dayChartStats = [];
+    private DailyVitalDayStats dayStats = DailyVitalDayStats.Empty;
+    private DateTime? earliestSugar;
+    private bool sugarCanGoPrev;
+    private bool dayCanGoPrev;
+    private string? printPatientName;
+    private string? printDateOfBirth;
+    private string? loadedPatientId;
+
+    private SugarSort _sort = SugarSort.When;
+    private bool _sortAsc;
+    private DateOnly? _whenFrom;
+    private DateOnly? _whenTo;
+    private decimal? _valueMin;
+    private decimal? _valueMax;
+    private string _kindFilter = "";
+    private string _statusFilter = "";
+    private int _filterVersion;
+    private int _appliedFilterVersion;
+
+    private static readonly string[] StatusOptions = ["Low", "Normal", "Elevated", "High", "Out of range"];
+
+    private enum SugarSort { When, Value, Type, Status }
+
+    private bool CanUpdate => scope?.Allows(ChartSection.Sugar, update: true) == true;
+    private bool CanOverwrite => model is not null && !OverwriteNote.IsOverwrite(model.Notes);
+    private bool HasFilters =>
+        _whenFrom is not null || _whenTo is not null || _valueMin is not null || _valueMax is not null
+        || !string.IsNullOrEmpty(_kindFilter) || !string.IsNullOrEmpty(_statusFilter);
+    private List<SugarReading> VisibleItems => Sort(Filter(items)).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Sugar, update: false);
+        if (scope.PatientId is not string id)
+        {
+            items = [];
+            latest = null;
+            return;
+        }
+
+        if (loadedPatientId != id)
+        {
+            loadedPatientId = id;
+            sugarMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+            sugarDay = DateOnly.FromDateTime(DateTime.Today);
+            earliestSugar = await Records.GetEarliestSugarDateAsync(id);
+            printPatientName = scope.Patient?.DisplayName;
+            var profile = await Access.GetProfileAsync(id);
+            printDateOfBirth = profile?.DateOfBirth?.ToString("MMMM d, yyyy");
+        }
+
+        await ReloadAsync();
+        await OpenComposeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _appliedFilterVersion = _filterVersion;
+        if (_entryOpen && !_entryFocused)
+        {
+            _entryFocused = true;
+            try { await _entryPanel.FocusAsync(); }
+            catch (Exception ex) when (ex is InvalidOperationException or JSException) { }
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (scope?.PatientId is not string id) return;
+        items = await Records.GetSugarAsync(id, 200);
+        latest = items.OrderByDescending(x => x.RecordedAt).FirstOrDefault();
+        await LoadMonthAsync();
+    }
+
+    private async Task LoadMonthAsync()
+    {
+        if (scope?.PatientId is not string id) return;
+        var start = FirstOfMonth(sugarMonth).ToDateTime(TimeOnly.MinValue);
+        monthSugar = await Records.GetSugarInRangeAsync(id, start, start.AddMonths(1));
+        sugarCanGoPrev = earliestSugar is DateTime earliest && FirstOfMonth(DateOnly.FromDateTime(earliest)) < FirstOfMonth(sugarMonth);
+        var ordered = monthSugar.OrderBy(x => x.RecordedAt).ToList();
+        sugarSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Glucose",
+                Color = "#f2994a",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("MMM d"),
+                    (double)x.Value,
+                    x.RecordedAt,
+                    $"{x.Value:0} {x.Unit} · {x.Kind}",
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            }
+        ];
+        sugarStats = ChartStatsHelper.ForSugarMonth(ordered);
+        RebuildDay();
+    }
+
+    private void RebuildDay()
+    {
+        var dayReadings = monthSugar.Where(x => DateOnly.FromDateTime(x.RecordedAt) == sugarDay).ToList();
+        dayStats = ChartStatsHelper.ForSugarDay(dayReadings);
+        dayChartStats = ChartStatsHelper.ForDailyChart(dayStats);
+        var ordered = dayReadings.OrderBy(x => x.RecordedAt).ToList();
+        daySeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Glucose",
+                Color = "#f2994a",
+                Points = ordered.Select(x => new TrendChart.ChartPoint(
+                    x.RecordedAt.ToString("h:mm tt"),
+                    (double)x.Value,
+                    x.RecordedAt,
+                    $"{x.Value:0} {x.Unit}",
+                    VitalStatus.IsSugarOutOfRange(x.Value, x.Kind),
+                    OverwriteNote.IsOverwrite(x.Notes))).ToList()
+            }
+        ];
+        dayCanGoPrev = earliestSugar is DateTime earliest && sugarDay > DateOnly.FromDateTime(earliest);
+    }
+
+    private async Task OnSugarMonthChanged(DateOnly month)
+    {
+        sugarMonth = FirstOfMonth(month);
+        sugarDay = DayInMonth(sugarDay, sugarMonth);
+        await LoadMonthAsync();
+    }
+
+    private async Task OnSugarDayChanged(DateOnly day)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (day > today) day = today;
+        sugarDay = day;
+        if (FirstOfMonth(day) != FirstOfMonth(sugarMonth))
+        {
+            sugarMonth = FirstOfMonth(day);
+            await LoadMonthAsync();
+            return;
+        }
+
+        RebuildDay();
+    }
+
+    private static DateOnly DayInMonth(DateOnly day, DateOnly month)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var last = DateTime.DaysInMonth(month.Year, month.Month);
+        var chosen = new DateOnly(month.Year, month.Month, Math.Min(day.Day, last));
+        return chosen > today ? today : chosen;
+    }
+
+    private void ToggleGraph() => _graphOpen = !_graphOpen;
+
+    private void ToggleReview() => _reviewOpen = !_reviewOpen;
+
+    private async Task OpenComposeAsync()
+    {
+        if (!CanUpdate || string.IsNullOrWhiteSpace(Compose) || Compose == _openedCompose)
+            return;
+        _openedCompose = Compose;
+        if (Compose.Equals("new", StringComparison.OrdinalIgnoreCase))
+            await OpenAdd();
+        else if (int.TryParse(Compose, out var id))
+            await OpenEdit(id);
+    }
+
+    private async Task OpenAdd()
+    {
+        if (scope?.PatientId is not string patientId) return;
+        model = new SugarReading { UserId = patientId, RecordedAt = DateTime.Now, Value = 100, Kind = SugarKind.Fasting };
+        _noteSuggestions = await Records.GetSugarNoteSuggestionsAsync(patientId);
+        ShowEntry();
+    }
+
+    private async Task OpenEdit(int id)
+    {
+        if (scope?.PatientId is not string patientId) return;
+        var existing = await Records.GetSugarByIdAsync(id, patientId);
+        if (existing is null) return;
+        if (OverwriteNote.IsOverwrite(existing.Notes))
+            existing.AllowOutOfRange = true;
+        model = existing;
+        _noteSuggestions = await Records.GetSugarNoteSuggestionsAsync(patientId, id);
+        ShowEntry();
+    }
+
+    private void ShowEntry()
+    {
+        _formKey++;
+        _entryOpen = true;
+        _entryFocused = false;
+    }
+
+    private void CloseEntry()
+    {
+        if (_overwritePending) return;
+        _entryOpen = false;
+        model = null;
+    }
+
+    private void OnEntryKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseEntry();
+    }
+
+    private async Task BeginOverwrite()
+    {
+        if (_overwrite is not null) await _overwrite.BeginAsync();
+    }
+
+    private async Task Save()
+    {
+        if (model is null || scope?.PatientId is null) return;
+        model.UserId = scope.PatientId;
+        await Records.SaveSugarAsync(model);
+        _entryOpen = false;
+        model = null;
+        if (scope.PatientId is string patientId)
+            earliestSugar = await Records.GetEarliestSugarDateAsync(patientId);
+        await ReloadAsync();
+    }
+
+    private async Task Delete()
+    {
+        if (model?.Id is int id && id != 0 && scope?.PatientId is string patientId)
+            await Records.DeleteSugarAsync(id, patientId);
+        _entryOpen = false;
+        model = null;
+        if (scope?.PatientId is string current)
+            earliestSugar = await Records.GetEarliestSugarDateAsync(current);
+        await ReloadAsync();
+    }
+
+    private static DateOnly FirstOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
+
+    private IEnumerable<SugarReading> Filter(IEnumerable<SugarReading> source)
+    {
+        var query = source;
+        if (_whenFrom is DateOnly from) query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) >= from);
+        if (_whenTo is DateOnly to) query = query.Where(x => DateOnly.FromDateTime(x.RecordedAt) <= to);
+        if (_valueMin is decimal valueMin) query = query.Where(x => x.Value >= valueMin);
+        if (_valueMax is decimal valueMax) query = query.Where(x => x.Value <= valueMax);
+        if (Enum.TryParse<SugarKind>(_kindFilter, out var kind)) query = query.Where(x => x.Kind == kind);
+        if (!string.IsNullOrEmpty(_statusFilter)) query = query.Where(x => VitalStatus.ForSugar(x).Label == _statusFilter);
+        return query;
+    }
+
+    private IEnumerable<SugarReading> Sort(IEnumerable<SugarReading> source) => _sort switch
+    {
+        SugarSort.Value => _sortAsc ? source.OrderBy(x => x.Value) : source.OrderByDescending(x => x.Value),
+        SugarSort.Type => _sortAsc
+            ? source.OrderBy(x => x.Kind).ThenBy(x => x.RecordedAt)
+            : source.OrderByDescending(x => x.Kind).ThenByDescending(x => x.RecordedAt),
+        SugarSort.Status => _sortAsc ? source.OrderBy(StatusRank) : source.OrderByDescending(StatusRank),
+        _ => _sortAsc ? source.OrderBy(x => x.RecordedAt) : source.OrderByDescending(x => x.RecordedAt)
+    };
+
+    private void SortBy(SugarSort column)
+    {
+        if (_sort == column) { _sortAsc = !_sortAsc; return; }
+        _sort = column;
+        _sortAsc = column != SugarSort.When;
+    }
+
+    private void ClearFilters()
+    {
+        _whenFrom = null;
+        _whenTo = null;
+        _valueMin = null;
+        _valueMax = null;
+        _kindFilter = "";
+        _statusFilter = "";
+        _filterVersion++;
+    }
+
+    private decimal? ParseFilterDecimal(object? value) => _filterVersion != _appliedFilterVersion ? null : ParseDecimal(value);
+    private DateOnly? ParseFilterDate(object? value) => _filterVersion != _appliedFilterVersion ? null : ParseDate(value);
+
+    private void OnKindFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _kindFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void OnStatusFilterChanged(ChangeEventArgs e)
+    {
+        if (_filterVersion != _appliedFilterVersion) return;
+        _statusFilter = e.Value?.ToString() ?? "";
+    }
+
+    private string AriaSort(SugarSort column) => _sort != column ? "none" : _sortAsc ? "ascending" : "descending";
+    private string SortMark(SugarSort column) => _sort != column ? "↕" : _sortAsc ? "↑" : "↓";
+
+    private static int StatusRank(SugarReading item)
+    {
+        var tag = VitalStatus.ForSugar(item);
+        return tag.Label switch { "Elevated" => 1, "High" => 2, "Low" => 3, "Out of range" => 4, _ => 0 };
+    }
+
+    private static string FormatDate(DateOnly? date) => date?.ToString("yyyy-MM-dd") ?? "";
+    private static string FormatDecimal(decimal? value) => value?.ToString("0.#") ?? "";
+    private static DateOnly? ParseDate(object? value) => DateOnly.TryParse(value?.ToString(), out var date) ? date : null;
+    private static decimal? ParseDecimal(object? value) => decimal.TryParse(value?.ToString(), out var number) ? number : null;
+}
