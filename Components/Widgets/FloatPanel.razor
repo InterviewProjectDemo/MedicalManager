@@ -23,7 +23,7 @@
     [Parameter] public string? LabelledBy { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private static int _nextZ = 1800;
+    private static int _nextZ = 4400;
 
     private readonly string _modulePath = "./Components/Widgets/FloatPanel.razor.js";
     private IJSObjectReference? _module;
@@ -41,7 +41,7 @@
     private double _top;
     private double _viewWidth = 1280;
     private double _viewHeight = 800;
-    private int _z = 1320;
+    private int _z = 4400;
 
     private string Style => _placed
         ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;z-index:{_z}")
@@ -49,12 +49,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_module is not null || _disposed)
+        if (_disposed)
             return;
 
         try
         {
-            _module = await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            await _module.InvokeVoidAsync("layer", _panel);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {

@@ -81,6 +81,7 @@
                                    CurrentUrl="@currentUrl"
                                    AccountName="@authContext.User.Identity?.Name"
                                    OnEmergency="OpenEmergencyCall"
+                                   OnFamily="OpenFamilyCall"
                                    OnVoice="OpenGuide"
                                    OnNavigate="CloseNav" />
                 }
@@ -268,6 +269,10 @@
                 <button type="button" class="mobile-tab" @onclick="OpenEmergencyCall">
                     <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="emergency" /></span>
                     Emergency
+                </button>
+                <button type="button" class="mobile-tab" data-family-dock @onclick="OpenFamilyCall">
+                    <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="family" /></span>
+                    Family
                 </button>
                 <button type="button" class="mobile-tab" @onclick="OpenGuide">
                     <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="voice" /></span>

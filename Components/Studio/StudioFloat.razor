@@ -35,7 +35,7 @@
     private double _top;
     private double _width;
     private double _height;
-    private int _z = 1100;
+    private int _z = 4100;
 
     private string? Style => _placed
         ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;width:{_width:0.0}px;height:{_height:0.0}px;right:auto;bottom:auto;transform:none;z-index:{_z}")
@@ -49,15 +49,16 @@
             return;
         }
 
-        if (_hooked)
-            return;
-
         try
         {
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
             _self ??= DotNetObjectReference.Create(this);
-            await _module.InvokeVoidAsync("attach", _panel, _self);
-            _hooked = true;
+            if (!_hooked)
+            {
+                await _module.InvokeVoidAsync("attach", _panel, _self);
+                _hooked = true;
+            }
+            await _module.InvokeVoidAsync("layer", _panel);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {

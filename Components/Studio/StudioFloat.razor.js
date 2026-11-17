@@ -1,5 +1,22 @@
-let nextZ = 1100;
 const handles = new WeakMap();
+
+export function layer(panel) {
+    if (!panel || !panel.isConnected)
+        return;
+    if (panel.parentElement !== document.body)
+        document.body.appendChild(panel);
+    if (!panel.dataset.floated) {
+        panel.dataset.floated = "1";
+        bringForward(panel);
+    }
+}
+
+function bringForward(panel) {
+    const next = Math.min((window.__mmFloatZ || 4100) + 1, 5000);
+    window.__mmFloatZ = next;
+    panel.style.zIndex = String(next);
+    return next;
+}
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -25,7 +42,7 @@ export function attach(panel, dotNet) {
             try { handle.releasePointerCapture(state.pointerId); } catch { /* already released */ }
         }
         const rect = panel.getBoundingClientRect();
-        const z = Number(panel.style.zIndex) || nextZ;
+        const z = Number(panel.style.zIndex) || (window.__mmFloatZ || 4100);
         dotNet.invokeMethodAsync("Remember", rect.left, rect.top, rect.width, rect.height, z);
     };
 
@@ -72,8 +89,7 @@ export function attach(panel, dotNet) {
         panel.style.right = "auto";
         panel.style.bottom = "auto";
         panel.style.transform = "none";
-        nextZ = Math.min(nextZ + 1, 1190);
-        panel.style.zIndex = String(nextZ);
+        bringForward(panel);
         try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* drag still follows while the pointer stays down */ }
     };
 

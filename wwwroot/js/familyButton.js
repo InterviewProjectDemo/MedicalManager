@@ -23,6 +23,9 @@ let opener = null;
 export function bind(dotnetRef) {
     if (dotnetRef)
         opener = dotnetRef;
+    const host = document.querySelector("[data-family-float]");
+    if (host && host.parentElement !== document.body)
+        document.body.appendChild(host);
     if (window.__mmFamilyBound)
         return;
     window.__mmFamilyBound = true;

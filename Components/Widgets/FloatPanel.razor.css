@@ -1,6 +1,6 @@
 .float-panel {
     position: fixed;
-    z-index: 1320;
+    z-index: 4400;
     width: min(24rem, calc(100vw - 1.5rem));
     max-height: min(42rem, calc(100dvh - 6.5rem));
     overflow: auto;
@@ -21,7 +21,7 @@
     top: auto;
     right: 1rem;
     bottom: 1rem;
-    z-index: 1280;
+    z-index: 4500;
     width: min(24rem, calc(100vw - 1.5rem));
     max-height: min(40rem, calc(100dvh - 1.5rem));
 }
@@ -30,7 +30,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 1400;
+    z-index: 4800;
     width: min(28rem, calc(100vw - 1.5rem));
     max-height: min(92dvh, calc(100dvh - 2rem));
 }

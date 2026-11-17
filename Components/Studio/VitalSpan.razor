@@ -1,6 +1,18 @@
 @namespace MedicalManager.Components.Studio
 
 <div class="vital-span">
+    <TrendChart Title="Monthly"
+                Subtitle="@MonthSubtitle"
+                PrintSubject="@PrintSubject"
+                Accent="@Accent"
+                Series="MonthSeries"
+                Stats="MonthStats"
+                SelectedMonth="SelectedMonth"
+                SelectedMonthChanged="SelectedMonthChanged"
+                CanGoPrevious="CanGoPreviousMonth"
+                PatientName="@PatientName"
+                PatientDateOfBirth="@PatientDateOfBirth" />
+
     <section class="chart-card daily-span-card" style="border-top: 5px solid @Accent">
         <div class="chart-card-head monthly-chart-head">
             <span class="chart-dot" style="background:@Accent"></span>
@@ -66,18 +78,6 @@
                     Series="DaySeries"
                     EmptyMessage="@($"No readings on {SelectedDay:MMMM d}.")" />
     </section>
-
-    <TrendChart Title="Monthly"
-                Subtitle="@MonthSubtitle"
-                PrintSubject="@PrintSubject"
-                Accent="@Accent"
-                Series="MonthSeries"
-                Stats="MonthStats"
-                SelectedMonth="SelectedMonth"
-                SelectedMonthChanged="SelectedMonthChanged"
-                CanGoPrevious="CanGoPreviousMonth"
-                PatientName="@PatientName"
-                PatientDateOfBirth="@PatientDateOfBirth" />
 </div>
 
 @code {

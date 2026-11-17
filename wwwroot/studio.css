@@ -614,16 +614,12 @@ article.content > .home-mark {
 
 .vital-span {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 1rem;
     align-items: start;
 }
 
 .daily-span-card .chart-stats { margin-bottom: 0.2rem; }
-
-@media (max-width: 1100px) {
-    .vital-span { grid-template-columns: 1fr; }
-}
 
 .bp-empty {
     background: #fff;
@@ -636,7 +632,7 @@ article.content > .home-mark {
 .entry-shade {
     position: fixed;
     inset: 0;
-    z-index: 1200;
+    z-index: 5200;
     background: rgba(22, 32, 45, 0.46);
     display: grid;
     place-items: center;
@@ -695,7 +691,7 @@ article.content > .home-mark {
 
 .studio-float {
     position: fixed;
-    z-index: 1100;
+    z-index: 4100;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -709,8 +705,8 @@ article.content > .home-mark {
 .studio-float.place-graph {
     top: 4.2rem;
     left: 17.2rem;
-    width: min(1080px, calc(100vw - 18.5rem));
-    height: min(74vh, 760px);
+    width: min(860px, calc(100vw - 18.5rem));
+    height: min(88vh, 920px);
 }
 
 .studio-float.place-review {
@@ -794,7 +790,6 @@ article.content > .home-mark {
 .studio-float .chart-card { margin: 0; }
 
 .studio-float .vital-span {
-    min-height: 100%;
     align-items: stretch;
 }
 
@@ -802,7 +797,7 @@ article.content > .home-mark {
 .studio-float .monthly-chart-card {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: auto;
     min-height: 0;
 }
 
@@ -820,9 +815,6 @@ article.content > .home-mark {
     min-height: 11rem;
 }
 
-@container (max-width: 860px) {
-    .studio-float .vital-span { grid-template-columns: 1fr; }
-}
 
 @media (max-width: 800px) {
     .studio-float.place-graph,

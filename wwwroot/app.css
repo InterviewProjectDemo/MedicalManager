@@ -1952,7 +1952,7 @@ th[aria-sort="descending"] .sort-indicator {
 .card-share-dialog {
     position: fixed;
     inset: 0;
-    z-index: 1200;
+    z-index: 5300;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3636,7 +3636,7 @@ body:has(.nav-scrollable.open) {
 .walkthrough-overlay {
     position: fixed;
     inset: 0;
-    z-index: 2000;
+    z-index: 5600;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4462,7 +4462,7 @@ body:has(.nav-scrollable.open) {
 .family-float-host {
     display: none;
     position: fixed;
-    z-index: 40;
+    z-index: 5050;
     left: var(--family-x, 16px);
     top: var(--family-y, 16px);
     width: var(--family-w, 240px);
