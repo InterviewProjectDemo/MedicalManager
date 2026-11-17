@@ -1,11 +1,11 @@
 const STORAGE_KEY = "mm-family-button";
 const DRAG_THRESHOLD = 24;
-const MIN_W = 168;
-const MIN_H = 76;
-const DEFAULT_W = 240;
-const DEFAULT_H = 96;
-const MAX_W = 720;
-const MAX_H = 420;
+const MIN_W = 140;
+const MIN_H = 190;
+const DEFAULT_W = 180;
+const DEFAULT_H = 248;
+const MAX_W = 420;
+const MAX_H = 560;
 
 let mode = null;
 let moved = false;

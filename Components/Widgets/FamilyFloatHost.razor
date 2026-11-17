@@ -3,9 +3,17 @@
 @implements IDisposable
 
 <div class="family-float-host" data-family-float>
-    <button type="button" class="family-face" @onclick="OpenFamily">Family</button>
-    <button type="button" class="family-menu" aria-label="Return Family button to the side menu">Menu</button>
-    <button type="button" class="family-resize" aria-label="Resize Family button"></button>
+    <button type="button" class="family-face" aria-label="Call family" @onclick="OpenFamily">
+        <span class="portrait-figure">
+            <span class="portrait-orb"><img src="/studio/studio-family.jpg" alt="" /></span>
+            <span class="portrait-pedestal" aria-hidden="true"></span>
+        </span>
+        <span class="portrait-stem" aria-hidden="true"></span>
+        <span class="portrait-dot" aria-hidden="true"></span>
+        <span class="portrait-name">Call family</span>
+    </button>
+    <button type="button" class="family-menu" aria-label="Return Call family to its place">Back</button>
+    <button type="button" class="family-resize" aria-label="Resize Call family"></button>
 </div>
 
 @code {

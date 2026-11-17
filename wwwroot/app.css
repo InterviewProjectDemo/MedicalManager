@@ -4465,8 +4465,8 @@ body:has(.nav-scrollable.open) {
     z-index: 5050;
     left: var(--family-x, 16px);
     top: var(--family-y, 16px);
-    width: var(--family-w, 240px);
-    height: var(--family-h, 96px);
+    width: var(--family-w, 180px);
+    height: var(--family-h, 248px);
     margin: 0;
     pointer-events: none;
     container-type: size;
@@ -4481,7 +4481,12 @@ html.family-btn-floating [data-family-dock] {
     pointer-events: none;
 }
 
-.family-float-host .family-face,
+.family-float-host .family-face {
+    pointer-events: none;
+}
+
+.family-float-host .portrait-orb,
+.family-float-host .portrait-name,
 .family-float-host .family-menu,
 .family-float-host .family-resize {
     pointer-events: auto;
@@ -4491,15 +4496,40 @@ html.family-btn-floating [data-family-dock] {
     width: 100%;
     height: 100%;
     border: none;
-    border-radius: 16px;
-    background: #16a34a;
-    color: #fff;
+    border-radius: 18px;
+    background: transparent;
+    color: #243044;
     font-weight: 800;
-    letter-spacing: 0.01em;
-    font-size: clamp(1.2rem, 28cqh, 3.6rem);
+    letter-spacing: 0;
+    font-size: 1rem;
     cursor: grab;
-    box-shadow: 0 10px 28px rgba(15, 61, 92, 0.22);
+    box-shadow: none;
     touch-action: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0.35rem 0.2rem 0.2rem;
+}
+
+.family-float-host .portrait-orb {
+    width: min(78cqw, 62cqh);
+    height: min(78cqw, 62cqh);
+}
+
+.family-float-host .portrait-orb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.family-float-host .portrait-name {
+    color: #243044;
+    font-size: clamp(0.85rem, 12cqh, 1.35rem);
 }
 
 .family-float-host .family-face:hover,
@@ -4547,8 +4577,8 @@ html.family-btn-floating [data-family-dock] {
     bottom: 10px;
     width: 16px;
     height: 16px;
-    border-right: 3px solid rgba(255, 255, 255, 0.95);
-    border-bottom: 3px solid rgba(255, 255, 255, 0.95);
+    border-right: 3px solid #243044;
+    border-bottom: 3px solid #243044;
 }
 
 [data-family-dock] {

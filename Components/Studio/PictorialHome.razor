@@ -42,7 +42,13 @@
             }
             @foreach (var item in Reach)
             {
-                @if (SignedIn)
+                @if (SignedIn && item.Scene == "family")
+                {
+                    <button type="button" class="portrait" data-family-dock @onclick="() => OpenReachAsync(item.Scene)">
+                        @PortraitCard(item)
+                    </button>
+                }
+                else if (SignedIn)
                 {
                     <button type="button" class="portrait" @onclick="() => OpenReachAsync(item.Scene)">
                         @PortraitCard(item)
