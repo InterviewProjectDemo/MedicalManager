@@ -30,7 +30,13 @@ export function bind(dotnetRef) {
         return;
     window.__mmFamilyBound = true;
     document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("dragstart", onDragStart, true);
     document.addEventListener("click", onClickCapture, true);
+}
+
+function onDragStart(event) {
+    if (event.target.closest?.("[data-family-dock], [data-family-float]"))
+        event.preventDefault();
 }
 
 function onPointerDown(event) {
@@ -51,6 +57,9 @@ function onPointerDown(event) {
     if (!rect)
         return;
 
+    const captureOn = resize || dock || floatFace;
+    try { captureOn.setPointerCapture(event.pointerId); } catch { /* the window listeners still follow the pointer */ }
+
     mode = resize ? "resize" : "move";
     moved = false;
     startedOnFloatFace = !!floatFace;
@@ -62,9 +71,9 @@ function onPointerDown(event) {
     originW = floating ? readPx("--family-w", rect.width) : rect.width;
     originH = floating ? readPx("--family-h", rect.height) : rect.height;
 
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
+    document.addEventListener("pointermove", onPointerMove, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerUp, true);
 }
 
 function onPointerMove(event) {
@@ -115,15 +124,15 @@ function onPointerUp(event) {
     if (event.pointerId !== activePointer)
         return;
 
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("pointercancel", onPointerUp);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("pointerup", onPointerUp, true);
+    document.removeEventListener("pointercancel", onPointerUp, true);
 
     if (moved) {
         suppressClick = true;
         const host = document.querySelector("[data-family-float]");
         const rect = host?.getBoundingClientRect();
-        if (mode === "move" && rect && releasedOverNav(event.clientX, event.clientY, rect))
+        if (mode === "move" && rect && releasedOverDock(event.clientX, event.clientY, rect))
             park();
         else
             persist();
@@ -162,40 +171,20 @@ function onClickCapture(event) {
     event.stopPropagation();
 }
 
-function releasedOverNav(clientX, clientY, rect) {
-    const zones = navZones();
-    if (zones.length === 0)
+function releasedOverDock(clientX, clientY, rect) {
+    const dock = document.querySelector("[data-family-dock]");
+    if (!dock)
         return false;
 
-    for (const zone of zones) {
-        if (clientX >= zone.left && clientX <= zone.right && clientY >= zone.top && clientY <= zone.bottom)
-            return true;
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        if (cx >= zone.left && cx <= zone.right && cy >= zone.top && cy <= zone.bottom)
-            return true;
-        const overlapW = Math.max(0, Math.min(rect.right, zone.right) - Math.max(rect.left, zone.left));
-        const overlapH = Math.max(0, Math.min(rect.bottom, zone.bottom) - Math.max(rect.top, zone.top));
-        const limit = zone.width * Math.min(zone.height, rect.height) * 0.45;
-        if (overlapW * overlapH >= limit)
-            return true;
-    }
+    const zone = dock.getBoundingClientRect();
+    if (zone.width < 8 || zone.height < 8)
+        return false;
 
-    return false;
-}
-
-function navZones() {
-    const zones = [];
-    for (const el of document.querySelectorAll(".sidebar, .nav-scrollable")) {
-        const style = getComputedStyle(el);
-        if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none")
-            continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 8 || rect.height < 8)
-            continue;
-        zones.push(rect);
-    }
-    return zones;
+    const pointerOver = clientX >= zone.left && clientX <= zone.right && clientY >= zone.top && clientY <= zone.bottom;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const centerOver = cx >= zone.left && cx <= zone.right && cy >= zone.top && cy <= zone.bottom;
+    return pointerOver || centerOver;
 }
 
 function park() {

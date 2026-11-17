@@ -4561,7 +4561,7 @@ html.family-btn-floating [data-family-dock] {
     position: absolute;
     right: 0;
     bottom: 0;
-    z-index: 2;
+    z-index: 5;
     width: 48px;
     height: 48px;
     border: none;
@@ -4583,6 +4583,21 @@ html.family-btn-floating [data-family-dock] {
 
 [data-family-dock] {
     touch-action: none;
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
+[data-family-dock] *,
+.family-float-host,
+.family-float-host * {
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
+[data-family-dock] img,
+.family-float-host img {
+    pointer-events: none;
+    -webkit-user-drag: none;
 }
 
 .site-footer {
