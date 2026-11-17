@@ -28,6 +28,14 @@ Image that was live
   Backup tag index digest sha256:fb11e443469debc0732c7dfe1eceef5e56a4eec20e94b64028fff8b94bb8cd5b
   That backup tag points at the same Linux image digest as the live release.
 
+New release that replaced it
+  Commit d461ff0f91ceefaed477d242ab15cd7f136b157f
+  Branch registration-update-video-instruction-added
+  Image tag latest and studio-layout-d461ff0
+  Image digest sha256:f2f78e9304dfe6dfd474876e1c23722cf25bc135beae66c578ea859dff963e45
+  Pushed 2026-11-16 and deployed to ECS the same evening
+  ECS reported steady state with one running task and no failed tasks
+
 What the new release changes
   Layout only. The pictorial home, round navigation, and the blood pressure and blood sugar windows.
   Readings, medications, appointments, labs, calls, monitor, and accounts keep the same behavior.
