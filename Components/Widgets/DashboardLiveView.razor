@@ -2,6 +2,7 @@
 @inject MedicationScheduleService MedSchedule
 @inject PatientAccessService Access
 @inject AuthenticationStateProvider Auth
+@inject GrantedPatientSelection ChartSelection
 
 @if (error is not null)
 {
@@ -280,6 +281,10 @@ else if (snapshot is not null && scope.Patient is not null)
             </div>
             </div>
         }
+        @if (scope.IsDoctorViewingPatient && !IsPreview)
+        {
+            <VisitToolDock ForDoctor="true" PatientUserId="@scope.PatientId" PatientName="@scope.Patient.DisplayName" />
+        }
     </div>
 }
 
@@ -353,6 +358,9 @@ else if (snapshot is not null && scope.Patient is not null)
                 error = null;
                 return;
             }
+
+            if (scope.IsDoctorViewingPatient && scope.Patient is not null && !IsPreview)
+                ChartSelection.Select(scope.Patient.Id, scope.Patient.DisplayName);
 
             var canViewMedications = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.Medication, false);
             snapshot = await Records.GetDashboardAsync(scope.PatientId!, canViewMedications);

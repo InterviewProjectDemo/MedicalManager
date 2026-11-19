@@ -1,150 +1,15 @@
 @page "/visit-notes"
 @attribute [Authorize]
-@inject VirtualVisitService Visits
-@inject AuthenticationStateProvider Auth
+@rendermode InteractiveServer
 
 <PageTitle>Notes</PageTitle>
 
 <div class="page-head accent-doctor">
     <div>
-        <p class="eyebrow">Virtual visit</p>
+        <p class="eyebrow">Visit</p>
         <h1>Notes</h1>
-        <p class="muted">Clinical notes for a patient who approved access. The patient can read notes written about them.</p>
+        <p class="muted">Patient and doctor notes stay in separate sections. Each person writes only in their own section.</p>
     </div>
 </div>
 
-<VisitDesk EmptyMessage="No patient has approved access for notes." SelectionChanged="LoadAsync">
-    <ChildContent Context="choice">
-        @if (choice.IsDoctor)
-        {
-            <EditForm Model="_form" OnValidSubmit="SaveAsync" class="form-card mb-3">
-                <div class="mb-3">
-                    <label class="form-label" for="note-body">Clinical note</label>
-                    <InputTextArea id="note-body" class="form-control" rows="5" @bind-Value="_form.Body" />
-                </div>
-                @if (!string.IsNullOrWhiteSpace(_error))
-                {
-                    <div class="alert alert-danger py-2" role="alert">@_error</div>
-                }
-                <button type="submit" class="btn btn-teal" disabled="@_saving">Save note</button>
-            </EditForm>
-        }
-        <div class="table-card p-3">
-            @if (_notes.Count == 0)
-            {
-                <p class="muted mb-0">No notes yet.</p>
-            }
-            else
-            {
-                @foreach (var note in _notes)
-                {
-                    <article class="visit-entry">
-                        <header>
-                            <strong>@note.AuthorName</strong>
-                            <time>@note.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
-                        </header>
-                        <p>@note.Body</p>
-                    </article>
-                }
-            }
-        </div>
-        @if (!choice.IsDoctor)
-        {
-            <h2 class="h5 mt-4">After-visit summaries</h2>
-            <div class="table-card p-3">
-                @if (_summaries.Count == 0)
-                {
-                    <p class="muted mb-0">No after-visit summary yet.</p>
-                }
-                else
-                {
-                    @foreach (var summary in _summaries)
-                    {
-                        <article class="visit-entry">
-                            <header>
-                                <strong>@summary.AuthorName</strong>
-                                <time>@summary.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
-                            </header>
-                            <p>@summary.Body</p>
-                        </article>
-                    }
-                }
-            </div>
-            <h2 class="h5 mt-4">Referrals</h2>
-            <div class="table-card p-3">
-                @if (_referrals.Count == 0)
-                {
-                    <p class="muted mb-0">No referral yet.</p>
-                }
-                else
-                {
-                    @foreach (var referral in _referrals)
-                    {
-                        <article class="visit-entry">
-                            <header>
-                                <strong>@referral.Specialty</strong>
-                                <time>@referral.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</time>
-                            </header>
-                            <p>@referral.Reason</p>
-                            @if (!string.IsNullOrWhiteSpace(referral.ClinicianName))
-                            {
-                                <p class="muted mb-0">Clinician: @referral.ClinicianName</p>
-                            }
-                        </article>
-                    }
-                }
-            </div>
-        }
-    </ChildContent>
-</VisitDesk>
-
-@code {
-    private readonly NoteForm _form = new();
-    private IReadOnlyList<ClinicalNote> _notes = [];
-    private IReadOnlyList<AfterVisitSummary> _summaries = [];
-    private IReadOnlyList<ReferralOrder> _referrals = [];
-    private VisitChoice? _choice;
-    private string? _error;
-    private bool _saving;
-
-    private async Task LoadAsync(VisitChoice choice)
-    {
-        _choice = choice;
-        _error = null;
-        var state = await Auth.GetAuthenticationStateAsync();
-        _notes = await Visits.ListNotesAsync(state.User, choice.PatientUserId);
-        if (!choice.IsDoctor)
-        {
-            _summaries = await Visits.ListSummariesAsync(state.User, choice.PatientUserId);
-            _referrals = await Visits.ListReferralsAsync(state.User, choice.PatientUserId);
-        }
-    }
-
-    private async Task SaveAsync()
-    {
-        if (_choice is null)
-            return;
-
-        _saving = true;
-        _error = null;
-        try
-        {
-            await Visits.AddNoteAsync(_choice.DoctorUserId, _choice.PatientUserId, _form.Body);
-            _form.Body = "";
-            await LoadAsync(_choice);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _saving = false;
-        }
-    }
-
-    private sealed class NoteForm
-    {
-        public string Body { get; set; } = "";
-    }
-}
+<VisitNotesPanel />

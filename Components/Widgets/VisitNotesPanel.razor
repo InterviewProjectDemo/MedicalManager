@@ -1,0 +1,235 @@
+@using System.Security.Claims
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@inject GrantedPatientSelection Selection
+@implements IAsyncDisposable
+
+@if (_loading && _notes.Count == 0 && string.IsNullOrWhiteSpace(_error))
+{
+    <p class="muted">Loading notes...</p>
+}
+else if (_missingPatient)
+{
+    <p class="mb-0">Select a patient who approved access. This window stays with that one patient and does not open anyone else's notes.</p>
+}
+else
+{
+    <div class="note-frame">
+        <div class="note-board">
+            <section class="note-column" aria-label="Patient notes">
+                <header>
+                    <h3>Patient</h3>
+                    <p>@(_isDoctor ? "Written by the patient. You can read this section." : "Your notes. Only you can add to this section.")</p>
+                </header>
+                @foreach (var note in PatientNotes)
+                {
+                    <article class="visit-entry">
+                        <header>
+                            <time datetime="@note.CreatedAt.ToString("o")">@FormatWhen(note.CreatedAt)</time>
+                            <span>Entry by @note.AuthorName · @Role(note)</span>
+                        </header>
+                        <p>@note.Body</p>
+                    </article>
+                }
+                @if (PatientNotes.Count == 0)
+                {
+                    <p class="muted">No patient notes yet.</p>
+                }
+                @if (!_isDoctor)
+                {
+                    <form class="note-compose" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+                        <label class="form-label" for="@_patientField">Add a patient note</label>
+                        <textarea id="@_patientField" class="form-control" rows="4" @bind="_draft" @bind:event="oninput"></textarea>
+                        <button type="submit" class="btn btn-teal" disabled="@_saving">Save note</button>
+                    </form>
+                }
+            </section>
+            <section class="note-column" aria-label="Doctor notes">
+                <header>
+                    <h3>Doctor</h3>
+                    <p>@(_isDoctor ? "Your clinical notes for this patient." : "Written by your doctors. You can read this section.")</p>
+                </header>
+                @foreach (var note in DoctorNotes)
+                {
+                    <article class="visit-entry">
+                        <header>
+                            <time datetime="@note.CreatedAt.ToString("o")">@FormatWhen(note.CreatedAt)</time>
+                            <span>Entry by @note.AuthorName · @Role(note)</span>
+                        </header>
+                        <p>@note.Body</p>
+                    </article>
+                }
+                @if (DoctorNotes.Count == 0)
+                {
+                    <p class="muted">No doctor notes yet.</p>
+                }
+                @if (_isDoctor)
+                {
+                    <form class="note-compose" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+                        <label class="form-label" for="@_doctorField">Add a doctor note</label>
+                        <textarea id="@_doctorField" class="form-control" rows="4" @bind="_draft" @bind:event="oninput"></textarea>
+                        <button type="submit" class="btn btn-teal" disabled="@_saving">Save note</button>
+                    </form>
+                }
+            </section>
+        </div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger py-2 mt-2" role="alert">@_error</div>
+    }
+}
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+
+    private readonly string _patientField = "patient-note-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _doctorField = "doctor-note-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly CancellationTokenSource _poll = new();
+    private IReadOnlyList<ClinicalNote> _notes = [];
+    private string _draft = "";
+    private string? _error;
+    private string? _loadedFor;
+    private bool _hasLoaded;
+    private bool _loading;
+    private bool _saving;
+    private bool _isDoctor;
+    private bool _missingPatient;
+    private int _generation;
+
+    private IReadOnlyList<ClinicalNote> PatientNotes =>
+        _notes.Where(note => note.Section == NoteSection.Patient).ToList();
+
+    private IReadOnlyList<ClinicalNote> DoctorNotes =>
+        _notes.Where(note => note.Section != NoteSection.Patient).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = PatientUserId ?? "";
+        if (_hasLoaded && _loadedFor == key)
+            return;
+
+        _hasLoaded = true;
+        _loadedFor = key;
+        _notes = [];
+        await ReloadAsync();
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        _ = PollAsync();
+        return Task.CompletedTask;
+    }
+
+    private async Task ReloadAsync()
+    {
+        var generation = ++_generation;
+        _loading = true;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            if (generation != _generation)
+                return;
+
+            _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+            var patientId = ResolvePatientId(state.User);
+            _missingPatient = string.IsNullOrWhiteSpace(patientId);
+            if (string.IsNullOrWhiteSpace(patientId))
+            {
+                _notes = [];
+                _error = null;
+                return;
+            }
+
+            var notes = await Visits.ListNotesAsync(state.User, patientId);
+            if (generation != _generation)
+                return;
+
+            _notes = notes;
+            _error = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            if (generation == _generation)
+            {
+                _notes = [];
+                _error = ex.Message;
+            }
+        }
+        finally
+        {
+            if (generation == _generation)
+                _loading = false;
+        }
+    }
+
+    private string? ResolvePatientId(System.Security.Claims.ClaimsPrincipal user)
+    {
+        if (!user.IsInRole(AppRoles.Doctor))
+            return user.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!string.IsNullOrWhiteSpace(PatientUserId))
+            return PatientUserId;
+
+        return Selection.PatientUserId;
+    }
+
+    private async Task SaveAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var patientId = ResolvePatientId(state.User);
+        if (string.IsNullOrWhiteSpace(patientId))
+        {
+            _missingPatient = true;
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Visits.AddNoteAsync(state.User, patientId, _draft);
+            _draft = "";
+            await ReloadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_poll.Token))
+            {
+                await ReloadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string Role(ClinicalNote note) =>
+        string.IsNullOrWhiteSpace(note.AuthorRole)
+            ? (note.Section == NoteSection.Patient ? "Patient" : "Doctor")
+            : note.AuthorRole;
+
+    private static string FormatWhen(DateTime utc) =>
+        utc.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+
+    public ValueTask DisposeAsync()
+    {
+        _poll.Cancel();
+        _poll.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

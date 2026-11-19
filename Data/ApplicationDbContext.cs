@@ -327,6 +327,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<ClinicalNote>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
         builder.Entity<VisitMessage>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
         builder.Entity<VideoVisitSession>().Property(x => x.DoctorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<VideoVisitSession>().Property(x => x.Specialty).HasConversion(optional).HasColumnType("text");
         builder.Entity<AfterVisitSummary>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
         builder.Entity<AfterVisitSummary>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
         builder.Entity<ReferralOrder>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");

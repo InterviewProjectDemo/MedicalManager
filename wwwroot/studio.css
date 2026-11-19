@@ -741,6 +741,27 @@ article.content > .home-mark {
     height: min(68vh, 680px);
 }
 
+.studio-float.place-notes {
+    top: 4.4rem;
+    left: 11rem;
+    width: min(1040px, calc(100vw - 2rem));
+    height: min(84vh, 780px);
+}
+
+.studio-float.place-message {
+    top: 5.2rem;
+    left: 14rem;
+    width: min(520px, calc(100vw - 2rem));
+    height: min(78vh, 680px);
+}
+
+.studio-float.place-video {
+    top: 6rem;
+    left: 16rem;
+    width: min(760px, calc(100vw - 2rem));
+    height: min(80vh, 720px);
+}
+
 .studio-float-head {
     display: flex;
     align-items: center;
@@ -843,7 +864,10 @@ article.content > .home-mark {
 
 @media (max-width: 800px) {
     .studio-float.place-graph,
-    .studio-float.place-review {
+    .studio-float.place-review,
+    .studio-float.place-notes,
+    .studio-float.place-message,
+    .studio-float.place-video {
         top: 0.6rem;
         left: 0.5rem;
         width: calc(100vw - 1rem);

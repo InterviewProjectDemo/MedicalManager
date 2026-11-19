@@ -1,0 +1,213 @@
+@inject VirtualVisitService Visits
+@inject HealthRecordService Records
+@inject AuthenticationStateProvider Auth
+
+<section class="doctor-chart-block">
+    <div class="table-card doctor-chart-card">
+        <h2>Doctor chart</h2>
+        @if (string.IsNullOrWhiteSpace(PatientUserId))
+        {
+            <p class="mb-0">Select a patient who approved access. The chart and the visit tools below stay with that one patient.</p>
+        }
+        else if (_denied)
+        {
+            <p class="mb-0">This patient has not approved access for your account.</p>
+        }
+        else
+        {
+            <p class="muted">@_patientName</p>
+            @if (!_showBp && !_showSugar)
+            {
+                <p>This patient approved access. Blood pressure and sugar are not included in that approval.</p>
+            }
+            @if (_showBp)
+            {
+                <TrendChart Title="Blood pressure"
+                            Subtitle="Systolic and diastolic (mmHg)"
+                            Accent="#2f80ed"
+                            Series="_bpSeries"
+                            Stats="_bpStats"
+                            SelectedMonth="_bpMonth"
+                            SelectedMonthChanged="OnBpMonth"
+                            CanGoPrevious="_bpCanPrev"
+                            PatientName="@_patientName" />
+            }
+            @if (_showSugar)
+            {
+                <TrendChart Title="Blood sugar"
+                            Subtitle="Glucose values (mg/dL)"
+                            Accent="#f2994a"
+                            Series="_sugarSeries"
+                            Stats="_sugarStats"
+                            SelectedMonth="_sugarMonth"
+                            SelectedMonthChanged="OnSugarMonth"
+                            CanGoPrevious="_sugarCanPrev"
+                            PatientName="@_patientName" />
+            }
+        }
+    </div>
+    <VisitToolDock ForDoctor="true" PatientUserId="@(_denied ? null : PatientUserId)" PatientName="@PatientName" />
+</section>
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+
+    private string? _loadedFor;
+    private string? _patientName;
+    private bool _denied;
+    private bool _showBp;
+    private bool _showSugar;
+    private DateOnly _bpMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private DateOnly _sugarMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+    private bool _bpCanPrev;
+    private bool _sugarCanPrev;
+    private DateTime? _earliestBp;
+    private DateTime? _earliestSugar;
+    private List<TrendChart.ChartSeries> _bpSeries = [];
+    private List<TrendChart.ChartSeries> _sugarSeries = [];
+    private List<ChartStatItem> _bpStats = [];
+    private List<ChartStatItem> _sugarStats = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == PatientUserId)
+            return;
+
+        _loadedFor = PatientUserId;
+        _bpMonth = FirstOfMonth(DateOnly.FromDateTime(DateTime.Today));
+        _sugarMonth = _bpMonth;
+        _patientName = PatientName;
+        await LoadAccessAsync();
+    }
+
+    private async Task LoadAccessAsync()
+    {
+        _denied = false;
+        _showBp = false;
+        _showSugar = false;
+        _bpSeries = [];
+        _sugarSeries = [];
+        if (string.IsNullOrWhiteSpace(PatientUserId))
+            return;
+
+        var state = await Auth.GetAuthenticationStateAsync();
+        var desk = await Visits.OpenAsync(state.User, labUpdateOnly: false);
+        var grant = desk.Patients.FirstOrDefault(patient => patient.PatientId == PatientUserId);
+        if (grant is null)
+        {
+            _denied = true;
+            return;
+        }
+
+        _patientName = grant.PatientName;
+        _showBp = grant.BloodPressure != ChartAccessLevel.None;
+        _showSugar = grant.Sugar != ChartAccessLevel.None;
+        if (_showBp)
+        {
+            _earliestBp = await Records.GetEarliestBloodPressureDateAsync(PatientUserId);
+            await LoadBpAsync();
+        }
+
+        if (_showSugar)
+        {
+            _earliestSugar = await Records.GetEarliestSugarDateAsync(PatientUserId);
+            await LoadSugarAsync();
+        }
+    }
+
+    private async Task OnBpMonth(DateOnly month)
+    {
+        _bpMonth = FirstOfMonth(month);
+        await LoadBpAsync();
+    }
+
+    private async Task OnSugarMonth(DateOnly month)
+    {
+        _sugarMonth = FirstOfMonth(month);
+        await LoadSugarAsync();
+    }
+
+    private async Task LoadBpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PatientUserId))
+            return;
+
+        var (start, end) = MonthRange(_bpMonth);
+        var readings = await Records.GetBloodPressureInRangeAsync(PatientUserId, start, end);
+        _bpCanPrev = CanGoPrev(_earliestBp, _bpMonth);
+        var ordered = readings.OrderBy(reading => reading.RecordedAt).ToList();
+        _bpSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Systolic",
+                Color = "#2f80ed",
+                Points = ordered.Select(reading => new TrendChart.ChartPoint(
+                    reading.RecordedAt.ToString("MMM d"),
+                    reading.Systolic,
+                    reading.RecordedAt,
+                    $"{reading.Systolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(reading.Systolic, reading.Diastolic),
+                    OverwriteNote.IsOverwrite(reading.Notes))).ToList()
+            },
+            new TrendChart.ChartSeries
+            {
+                Name = "Diastolic",
+                Color = "#56ccf2",
+                Points = ordered.Select(reading => new TrendChart.ChartPoint(
+                    reading.RecordedAt.ToString("MMM d"),
+                    reading.Diastolic,
+                    reading.RecordedAt,
+                    $"{reading.Diastolic} mmHg",
+                    VitalStatus.IsBloodPressureOutOfRange(reading.Systolic, reading.Diastolic),
+                    OverwriteNote.IsOverwrite(reading.Notes))).ToList()
+            }
+        ];
+        _bpStats = ChartStatsHelper.ForBloodPressureMonth(ordered);
+    }
+
+    private async Task LoadSugarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PatientUserId))
+            return;
+
+        var (start, end) = MonthRange(_sugarMonth);
+        var readings = await Records.GetSugarInRangeAsync(PatientUserId, start, end);
+        _sugarCanPrev = CanGoPrev(_earliestSugar, _sugarMonth);
+        var ordered = readings.OrderBy(reading => reading.RecordedAt).ToList();
+        _sugarSeries =
+        [
+            new TrendChart.ChartSeries
+            {
+                Name = "Glucose",
+                Color = "#f2994a",
+                Points = ordered.Select(reading => new TrendChart.ChartPoint(
+                    reading.RecordedAt.ToString("MMM d"),
+                    (double)reading.Value,
+                    reading.RecordedAt,
+                    $"{reading.Value:0} {reading.Unit} · {reading.Kind}",
+                    VitalStatus.IsSugarOutOfRange(reading.Value, reading.Kind),
+                    OverwriteNote.IsOverwrite(reading.Notes))).ToList()
+            }
+        ];
+        _sugarStats = ChartStatsHelper.ForSugarMonth(ordered);
+    }
+
+    private static DateOnly FirstOfMonth(DateOnly date) => new(date.Year, date.Month, 1);
+
+    private static (DateTime Start, DateTime End) MonthRange(DateOnly month)
+    {
+        var start = FirstOfMonth(month).ToDateTime(TimeOnly.MinValue);
+        return (start, start.AddMonths(1));
+    }
+
+    private static bool CanGoPrev(DateTime? earliest, DateOnly month)
+    {
+        if (earliest is null)
+            return false;
+
+        var first = new DateOnly(earliest.Value.Year, earliest.Value.Month, 1);
+        return first < month;
+    }
+}

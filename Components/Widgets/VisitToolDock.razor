@@ -1,0 +1,51 @@
+<section class="table-card visit-tool-card">
+    <h2>@(ForDoctor ? "Visit tools" : "With your doctors")</h2>
+    <p class="muted">
+        @(ForDoctor
+            ? "Notes, messages, and video for the selected patient. Each one opens in a window you can move and resize."
+            : "Notes, a separate message tab for each doctor, and video invites. Each one opens in a window you can move and resize.")
+    </p>
+    <div class="visit-tool-row">
+        <button type="button" class="visit-tool" aria-pressed="@_notesOpen" @onclick="() => _notesOpen = true">
+            <span class="visit-tool-logo"><span class="bi bi-notes-nav-menu" aria-hidden="true"></span></span>
+            <span>Notes</span>
+        </button>
+        <button type="button" class="visit-tool" aria-pressed="@_messageOpen" @onclick="() => _messageOpen = true">
+            <span class="visit-tool-logo"><span class="bi bi-message-nav-menu" aria-hidden="true"></span></span>
+            <span>Message</span>
+        </button>
+        <button type="button" class="visit-tool" aria-pressed="@_videoOpen" @onclick="() => _videoOpen = true">
+            <span class="visit-tool-logo"><span class="bi bi-video-nav-menu" aria-hidden="true"></span></span>
+            <span>Video Visit</span>
+        </button>
+    </div>
+</section>
+
+@if (_notesOpen)
+{
+    <StudioFloat @bind-Visible="_notesOpen" Title="Notes" Place="notes">
+        <VisitNotesPanel PatientUserId="@PatientUserId" />
+    </StudioFloat>
+}
+@if (_messageOpen)
+{
+    <StudioFloat @bind-Visible="_messageOpen" Title="Message" Place="message">
+        <VisitMessagePanel PatientUserId="@PatientUserId" PatientName="@PatientName" />
+    </StudioFloat>
+}
+@if (_videoOpen)
+{
+    <StudioFloat @bind-Visible="_videoOpen" Title="Video Visit" Place="video">
+        <VisitVideoPanel PatientUserId="@PatientUserId" PatientName="@PatientName" />
+    </StudioFloat>
+}
+
+@code {
+    [Parameter] public bool ForDoctor { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+
+    private bool _notesOpen;
+    private bool _messageOpen;
+    private bool _videoOpen;
+}

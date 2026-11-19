@@ -1,90 +1,15 @@
 @page "/messages"
 @attribute [Authorize]
-@inject VirtualVisitService Visits
-@inject AuthenticationStateProvider Auth
+@rendermode InteractiveServer
 
 <PageTitle>Message</PageTitle>
 
 <div class="page-head accent-doctor">
     <div>
-        <p class="eyebrow">Virtual visit</p>
+        <p class="eyebrow">Visit</p>
         <h1>Message</h1>
-        <p class="muted">A private thread between this doctor and this patient. Messages stay in Medical Manager.</p>
+        <p class="muted">A private thread between one doctor and one patient. Messages stay in Medical Manager.</p>
     </div>
 </div>
 
-<VisitDesk NeedsDoctor="true" EmptyMessage="No patient has approved access for messages." SelectionChanged="LoadAsync">
-    <ChildContent Context="choice">
-        <div class="table-card visit-thread" aria-live="polite">
-            @if (_messages.Count == 0)
-            {
-                <p class="muted mb-0">No messages yet.</p>
-            }
-            else
-            {
-                @foreach (var message in _messages)
-                {
-                    var mine = message.SenderUserId == choice.ActorUserId;
-                    <article class="visit-bubble @(mine ? "mine" : "theirs")">
-                        <p>@message.Body</p>
-                        <time>@message.SentAt.ToLocalTime().ToString("MMM d, h:mm tt")</time>
-                    </article>
-                }
-            }
-        </div>
-        <EditForm Model="_form" OnValidSubmit="SendAsync" class="form-card mt-3">
-            <label class="form-label" for="message-body">Message</label>
-            <InputTextArea id="message-body" class="form-control mb-3" rows="3" @bind-Value="_form.Body" />
-            @if (!string.IsNullOrWhiteSpace(_error))
-            {
-                <div class="alert alert-danger py-2" role="alert">@_error</div>
-            }
-            <button type="submit" class="btn btn-teal" disabled="@_saving">Send</button>
-        </EditForm>
-    </ChildContent>
-</VisitDesk>
-
-@code {
-    private readonly MessageForm _form = new();
-    private IReadOnlyList<VisitMessage> _messages = [];
-    private VisitChoice? _choice;
-    private string? _error;
-    private bool _saving;
-
-    private async Task LoadAsync(VisitChoice choice)
-    {
-        _choice = choice;
-        _error = null;
-        var state = await Auth.GetAuthenticationStateAsync();
-        _messages = await Visits.ListMessagesAsync(state.User, choice.PatientUserId, choice.DoctorUserId);
-    }
-
-    private async Task SendAsync()
-    {
-        if (_choice is null)
-            return;
-
-        _saving = true;
-        _error = null;
-        try
-        {
-            var state = await Auth.GetAuthenticationStateAsync();
-            await Visits.SendMessageAsync(state.User, _choice.PatientUserId, _choice.DoctorUserId, _form.Body);
-            _form.Body = "";
-            await LoadAsync(_choice);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _saving = false;
-        }
-    }
-
-    private sealed class MessageForm
-    {
-        public string Body { get; set; } = "";
-    }
-}
+<VisitMessagePanel />

@@ -1,0 +1,445 @@
+@using System.Security.Claims
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@inject GrantedPatientSelection Selection
+@inject VideoSignalBroker Broker
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (_loading && !_loaded)
+{
+    <p class="muted">Loading video visit...</p>
+}
+else if (_missingPatient)
+{
+    <p class="mb-0">Select a patient who approved access. A video invite can be sent only for that patient.</p>
+}
+else if (_isDoctor)
+{
+    <div class="visit-invite-card">
+        @if (_doctorInvite is null)
+        {
+            <p>Send a video invite to <strong>@_patientName</strong>. The patient sees your name, specialty, and the time, then joins from their Video Visit window.</p>
+            <button type="button" class="btn btn-teal" disabled="@_busy" @onclick="SendInviteAsync">Send video invite</button>
+        }
+        else
+        {
+            <p class="visit-status">Invite sent</p>
+            <p><strong>@_doctorInvite.DoctorName</strong><br />@SpecialtyLabel(_doctorInvite.Specialty)</p>
+            <p class="muted">@FormatWhen(_doctorInvite.CreatedAt)</p>
+            <div class="form-actions">
+                <button type="button" class="btn btn-teal" disabled="@(_busy || _inCall)" @onclick="() => JoinAsync(_doctorInvite)">Join</button>
+                <button type="button" class="btn btn-outline-secondary" disabled="@(!_inCall)" @onclick="LeaveAsync">Leave</button>
+                <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="EndAsync">End visit</button>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger py-2 mt-2" role="alert">@_error</div>
+        }
+    </div>
+}
+else
+{
+    @if (_invites.Count == 0)
+    {
+        <p class="mb-0">Your doctor starts the video visit. When an invite arrives, the doctor's name, specialty, and time appear here with Join.</p>
+    }
+    else
+    {
+        <div class="visit-invite-list">
+            @foreach (var invite in _invites)
+            {
+                <article class="visit-invite-card">
+                    <p><strong>@invite.DoctorName</strong></p>
+                    <p>@SpecialtyLabel(invite.Specialty)</p>
+                    <p class="muted">@FormatWhen(invite.CreatedAt)</p>
+                    <button type="button" class="btn btn-teal" disabled="@(_busy || (_inCall && _activeVisitId == invite.Id))" @onclick="() => JoinAsync(invite)">Join</button>
+                </article>
+            }
+        </div>
+        @if (_inCall)
+        {
+            <button type="button" class="btn btn-outline-secondary mt-2" @onclick="LeaveAsync">Leave</button>
+        }
+    }
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger py-2 mt-2" role="alert">@_error</div>
+    }
+}
+
+<div class="visit-call @(_inCall ? "is-live" : null)">
+    <div class="visit-videos">
+        <figure>
+            <video @ref="_local" class="visit-camera" autoplay playsinline muted></video>
+            <figcaption>You</figcaption>
+        </figure>
+        <figure>
+            <video @ref="_remote" class="visit-camera" autoplay playsinline></video>
+            <figcaption>Other person</figcaption>
+        </figure>
+    </div>
+    <p class="visit-status" role="status">@_status</p>
+</div>
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+
+    private readonly CancellationTokenSource _poll = new();
+    private ElementReference _local;
+    private ElementReference _remote;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<VisitVideoPanel>? _self;
+    private VideoVisitSession? _doctorInvite;
+    private IReadOnlyList<VideoVisitSession> _invites = [];
+    private string? _patientId;
+    private string? _patientName;
+    private string? _selfId;
+    private string? _error;
+    private string _status = "";
+    private string? _loadedFor;
+    private bool _hasLoaded;
+    private bool _loaded;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _isDoctor;
+    private bool _missingPatient;
+    private bool _inCall;
+    private bool _offered;
+    private bool _leaving;
+    private bool _resume;
+    private int _activeVisitId;
+    private int _generation;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = PatientUserId ?? "";
+        if (_hasLoaded && _loadedFor == key)
+            return;
+
+        if (_inCall)
+            await LeaveAsync();
+
+        _hasLoaded = true;
+        _loadedFor = key;
+        _doctorInvite = null;
+        _invites = [];
+        await ReloadAsync();
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        _patientName = PatientName;
+        _ = PollAsync();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_resume || _module is null)
+            return;
+
+        _resume = false;
+        try
+        {
+            await _module.InvokeVoidAsync("resume", _local, _remote);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var generation = ++_generation;
+        _loading = true;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            if (generation != _generation)
+                return;
+
+            _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+            _selfId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (_isDoctor)
+            {
+                _patientId = !string.IsNullOrWhiteSpace(PatientUserId) ? PatientUserId : Selection.PatientUserId;
+                _patientName = !string.IsNullOrWhiteSpace(PatientName) ? PatientName : (Selection.PatientName ?? "this patient");
+                _missingPatient = string.IsNullOrWhiteSpace(_patientId) || string.IsNullOrWhiteSpace(_selfId);
+                _doctorInvite = _missingPatient
+                    ? null
+                    : await Visits.OpenInviteAsync(state.User, _patientId!, _selfId!);
+            }
+            else
+            {
+                _missingPatient = false;
+                _patientId = _selfId;
+                _invites = await Visits.ListOpenInvitesAsync(state.User);
+            }
+
+            if (generation == _generation)
+                _error = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            if (generation == _generation)
+                _error = ex.Message;
+        }
+        finally
+        {
+            if (generation == _generation)
+            {
+                _loading = false;
+                _loaded = true;
+            }
+        }
+    }
+
+    private async Task SendInviteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_patientId) || string.IsNullOrWhiteSpace(_selfId))
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            _doctorInvite = await Visits.InviteVideoAsync(_selfId, _patientId);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task JoinAsync(VideoVisitSession invite)
+    {
+        if (_busy)
+            return;
+
+        _busy = true;
+        _error = null;
+        _offered = false;
+        try
+        {
+            if (_inCall)
+                await LeaveAsync();
+
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/VisitVideoPanel.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("startCall", _local, _remote, _self);
+            var state = await Auth.GetAuthenticationStateAsync();
+            var visit = await Visits.RequireCallAsync(state.User, invite.Id);
+            await Visits.MarkVideoJoinedAsync(state.User, visit.Id);
+            _activeVisitId = visit.Id;
+            _inCall = true;
+            _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+            _status = "Waiting for the other person to join.";
+            var peerWaiting = await Broker.JoinAsync(
+                visit.Id,
+                _selfId ?? "",
+                _isDoctor,
+                signal => InvokeAsync(() => OnSignalAsync(signal)));
+            if (_isDoctor && peerWaiting)
+                await SendOfferAsync();
+            _resume = true;
+        }
+        catch (JSException)
+        {
+            _inCall = false;
+            _status = "";
+            _error = "Camera or microphone permission was blocked, so the visit cannot start.";
+            await StopMediaAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _inCall = false;
+            _status = "";
+            _error = ex.Message;
+            await StopMediaAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SendOfferAsync()
+    {
+        if (_offered || _module is null || !_inCall)
+            return;
+
+        _offered = true;
+        _status = "Connecting directly between the two browsers...";
+        var offer = await _module.InvokeAsync<string>("makeOffer");
+        await Broker.RelayAsync(_activeVisitId, _selfId ?? "", true, new VideoSignal("offer", offer));
+    }
+
+    private async Task OnSignalAsync(VideoSignal signal)
+    {
+        if (!_inCall || _module is null)
+            return;
+
+        try
+        {
+            switch (signal.Kind)
+            {
+                case "peer-ready" when _isDoctor:
+                    await SendOfferAsync();
+                    break;
+                case "offer" when !_isDoctor:
+                    _status = "Connecting directly between the two browsers...";
+                    var answer = await _module.InvokeAsync<string>("takeOffer", signal.Payload);
+                    await Broker.RelayAsync(_activeVisitId, _selfId ?? "", false, new VideoSignal("answer", answer));
+                    break;
+                case "answer" when _isDoctor:
+                    await _module.InvokeVoidAsync("takeAnswer", signal.Payload);
+                    break;
+                case "ice":
+                    await _module.InvokeVoidAsync("addIce", signal.Payload);
+                    break;
+                case "peer-left":
+                    await _module.InvokeVoidAsync("clearRemote", _remote);
+                    _status = "The other person left the visit.";
+                    _offered = false;
+                    break;
+                case "ended":
+                    _status = "The doctor ended this visit.";
+                    await StopMediaAsync();
+                    _inCall = false;
+                    await ReloadAsync();
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            _status = "The video connection stopped.";
+        }
+    }
+
+    [JSInvokable]
+    public Task OnLocalIce(string candidateJson) =>
+        Broker.RelayAsync(_activeVisitId, _selfId ?? "", _isDoctor, new VideoSignal("ice", candidateJson));
+
+    [JSInvokable]
+    public Task OnConnectionState(string state)
+    {
+        _status = state switch
+        {
+            "connected" => "Connected. You can see and hear each other in this browser.",
+            "connecting" or "checking" => "Connecting directly between the two browsers...",
+            "failed" => "A direct video connection could not be established. Medical Manager does not relay this visit through a video server.",
+            "disconnected" => "The connection dropped. A direct path between these browsers is not available right now.",
+            "closed" when _leaving => "You left the visit.",
+            _ => _status
+        };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LeaveAsync()
+    {
+        _leaving = true;
+        var visitId = _activeVisitId;
+        var userId = _selfId;
+        await StopMediaAsync();
+        _inCall = false;
+        _offered = false;
+        _status = "You left the visit.";
+        if (visitId > 0 && !string.IsNullOrWhiteSpace(userId))
+            await Broker.LeaveAsync(visitId, userId);
+        _leaving = false;
+    }
+
+    private async Task EndAsync()
+    {
+        if (_doctorInvite is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            if (_inCall)
+            {
+                await Broker.RelayAsync(_doctorInvite.Id, _selfId ?? "", true, new VideoSignal("ended", ""));
+                await LeaveAsync();
+            }
+
+            await Visits.EndVideoVisitAsync(state.User, _doctorInvite.Id, _doctorInvite.PatientUserId, _doctorInvite.DoctorUserId);
+            _doctorInvite = null;
+            _status = "";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StopMediaAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("hangup", _local, _remote);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_poll.Token))
+            {
+                if (_inCall)
+                    continue;
+                await ReloadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string SpecialtyLabel(string? specialty) =>
+        string.IsNullOrWhiteSpace(specialty) ? "Specialty not on file" : specialty;
+
+    private static string FormatWhen(DateTime utc) =>
+        utc.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+
+    public async ValueTask DisposeAsync()
+    {
+        _poll.Cancel();
+        _poll.Dispose();
+        if (_inCall)
+            await LeaveAsync();
+        await StopMediaAsync();
+        _self?.Dispose();
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

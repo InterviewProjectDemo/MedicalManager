@@ -57,37 +57,90 @@ public sealed class VirtualVisitService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var query = db.ClinicalNotes.AsNoTracking().Where(note => note.PatientUserId == patientUserId);
         if (actor.IsDoctor)
-            query = query.Where(note => note.DoctorUserId == actor.UserId);
+        {
+            query = query.Where(note =>
+                note.Section == NoteSection.Patient || note.DoctorUserId == actor.UserId);
+        }
 
-        return await query.OrderByDescending(note => note.CreatedAt).ToListAsync();
+        return await query.OrderBy(note => note.CreatedAt).ToListAsync();
     }
 
-    public async Task AddNoteAsync(string doctorUserId, string patientUserId, string body)
+    public async Task AddNoteAsync(ClaimsPrincipal principal, string patientUserId, string body)
     {
-        await RequireGrantAsync(doctorUserId, patientUserId, labUpdate: false);
-        var doctor = await users.FindByIdAsync(doctorUserId)
-            ?? throw new InvalidOperationException("Doctor account was not found.");
+        var user = await users.GetUserAsync(principal)
+            ?? throw new InvalidOperationException("You must be signed in.");
         var text = RequiredText(body, "Note", 8000);
+        var doctorWriting = principal.IsInRole(AppRoles.Doctor);
+        if (doctorWriting)
+            await RequireGrantAsync(user.Id, patientUserId, labUpdate: false);
+        else if (user.Id != patientUserId)
+            throw new UnauthorizedAccessException("Patients can only write in their own note section.");
+
         await using var db = await dbFactory.CreateDbContextAsync();
         db.ClinicalNotes.Add(new ClinicalNote
         {
             PatientUserId = patientUserId,
-            DoctorUserId = doctorUserId,
-            AuthorName = doctor.DisplayName,
+            DoctorUserId = doctorWriting ? user.Id : patientUserId,
+            Section = doctorWriting ? NoteSection.Doctor : NoteSection.Patient,
+            AuthorUserId = user.Id,
+            AuthorName = user.DisplayName,
+            AuthorRole = doctorWriting ? "Doctor" : "Patient",
             Body = text,
             CreatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
     }
 
-    public async Task<IReadOnlyList<VisitMessage>> ListMessagesAsync(ClaimsPrincipal principal, string patientUserId, string doctorUserId)
+    public async Task<IReadOnlyList<VisitMessageItem>> ListMessagesAsync(ClaimsPrincipal principal, string patientUserId, string doctorUserId)
     {
         await RequireThreadAsync(principal, patientUserId, doctorUserId);
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.VisitMessages.AsNoTracking()
+        var messages = await db.VisitMessages.AsNoTracking()
             .Where(message => message.PatientUserId == patientUserId && message.DoctorUserId == doctorUserId)
             .OrderBy(message => message.SentAt)
             .ToListAsync();
+        var senderIds = messages.Select(message => message.SenderUserId).Distinct().ToList();
+        var names = senderIds.Count == 0
+            ? new Dictionary<string, string>()
+            : await db.Users.AsNoTracking()
+                .Where(user => senderIds.Contains(user.Id))
+                .ToDictionaryAsync(user => user.Id, user => user.DisplayName);
+        return messages
+            .Select(message => new VisitMessageItem(
+                message.Id,
+                message.SenderUserId,
+                names.GetValueOrDefault(message.SenderUserId) ?? "Member",
+                message.Body,
+                message.SentAt))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<VisitDoctorOption>> ListMessageDoctorsAsync(ClaimsPrincipal principal)
+    {
+        var user = await users.GetUserAsync(principal)
+            ?? throw new InvalidOperationException("You must be signed in.");
+        if (principal.IsInRole(AppRoles.Doctor))
+            return [];
+
+        var care = await ListDoctorsForPatientAsync(user.Id);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var threadIds = await db.VisitMessages.AsNoTracking()
+            .Where(message => message.PatientUserId == user.Id)
+            .Select(message => message.DoctorUserId)
+            .Distinct()
+            .ToListAsync();
+        var known = care.Select(doctor => doctor.DoctorUserId).ToHashSet();
+        var extraIds = threadIds.Where(id => !known.Contains(id)).ToList();
+        if (extraIds.Count == 0)
+            return care;
+
+        var names = await db.Users.AsNoTracking()
+            .Where(account => extraIds.Contains(account.Id))
+            .ToDictionaryAsync(account => account.Id, account => account.DisplayName);
+        return care
+            .Concat(extraIds.Select(id => new VisitDoctorOption(id, names.GetValueOrDefault(id) ?? "Doctor")))
+            .OrderBy(doctor => doctor.DoctorName)
+            .ToList();
     }
 
     public async Task SendMessageAsync(ClaimsPrincipal principal, string patientUserId, string doctorUserId, string body)
@@ -141,23 +194,83 @@ public sealed class VirtualVisitService(
             .ToListAsync();
     }
 
-    public async Task<VideoVisitSession> ScheduleVideoVisitAsync(string doctorUserId, string patientUserId)
+    public async Task<VideoVisitSession> InviteVideoAsync(string doctorUserId, string patientUserId)
     {
         await RequireGrantAsync(doctorUserId, patientUserId, labUpdate: false);
         var doctor = await users.FindByIdAsync(doctorUserId)
             ?? throw new InvalidOperationException("Doctor account was not found.");
         await using var db = await dbFactory.CreateDbContextAsync();
+        var open = await db.VideoVisitSessions
+            .Where(visit => visit.PatientUserId == patientUserId
+                && visit.DoctorUserId == doctorUserId
+                && visit.Status != "Ended")
+            .OrderByDescending(visit => visit.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (open is not null)
+            return open;
+
+        var specialty = string.IsNullOrWhiteSpace(doctor.Specialty) ? null : doctor.Specialty.Trim();
         var visit = new VideoVisitSession
         {
             PatientUserId = patientUserId,
             DoctorUserId = doctorUserId,
             DoctorName = doctor.DisplayName,
+            Specialty = specialty,
             CreatedAt = DateTime.UtcNow,
-            Status = "Scheduled"
+            Status = "Invited"
         };
         db.VideoVisitSessions.Add(visit);
         await db.SaveChangesAsync();
         return visit;
+    }
+
+    public async Task<VideoVisitSession?> OpenInviteAsync(ClaimsPrincipal principal, string patientUserId, string doctorUserId)
+    {
+        await RequireThreadAsync(principal, patientUserId, doctorUserId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.VideoVisitSessions.AsNoTracking()
+            .Where(visit => visit.PatientUserId == patientUserId
+                && visit.DoctorUserId == doctorUserId
+                && visit.Status != "Ended")
+            .OrderByDescending(visit => visit.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<IReadOnlyList<VideoVisitSession>> ListOpenInvitesAsync(ClaimsPrincipal principal)
+    {
+        var user = await users.GetUserAsync(principal)
+            ?? throw new InvalidOperationException("You must be signed in.");
+        if (principal.IsInRole(AppRoles.Doctor))
+            return [];
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.VideoVisitSessions.AsNoTracking()
+            .Where(visit => visit.PatientUserId == user.Id && visit.Status != "Ended")
+            .OrderByDescending(visit => visit.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<VideoVisitSession> RequireCallAsync(ClaimsPrincipal principal, int visitId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var visit = await db.VideoVisitSessions.AsNoTracking().FirstOrDefaultAsync(item => item.Id == visitId)
+            ?? throw new InvalidOperationException("Video visit was not found.");
+        if (visit.Status == "Ended")
+            throw new InvalidOperationException("This video visit has ended.");
+        await RequireThreadAsync(principal, visit.PatientUserId, visit.DoctorUserId);
+        return visit;
+    }
+
+    public async Task MarkVideoJoinedAsync(ClaimsPrincipal principal, int visitId)
+    {
+        var visit = await RequireCallAsync(principal, visitId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var row = await db.VideoVisitSessions.FirstOrDefaultAsync(item => item.Id == visit.Id)
+            ?? throw new InvalidOperationException("Video visit was not found.");
+        row.StartedAt ??= DateTime.UtcNow;
+        if (row.Status != "Ended")
+            row.Status = "In progress";
+        await db.SaveChangesAsync();
     }
 
     public async Task<VideoVisitSession> StartVideoVisitAsync(ClaimsPrincipal principal, int visitId, string patientUserId, string doctorUserId)

@@ -1,0 +1,265 @@
+@using System.Security.Claims
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@inject GrantedPatientSelection Selection
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (_loading && _messages.Count == 0 && _doctors.Count == 0 && string.IsNullOrWhiteSpace(_error))
+{
+    <p class="muted">Loading messages...</p>
+}
+else if (_missingPatient)
+{
+    <p class="mb-0">Select a patient who approved access. This message box is only for that patient.</p>
+}
+else if (!_isDoctor && _doctors.Count == 0)
+{
+    <p class="mb-0">No doctor is on your care team yet. A tab appears here for each doctor you can message.</p>
+}
+else
+{
+    @if (!_isDoctor && _doctors.Count > 0)
+    {
+        <div class="visit-tabs" role="tablist" aria-label="Doctors">
+            @foreach (var doctor in _doctors)
+            {
+                <button type="button"
+                        role="tab"
+                        class="visit-tab @(_doctorId == doctor.DoctorUserId ? "is-active" : null)"
+                        aria-selected="@(_doctorId == doctor.DoctorUserId)"
+                        @onclick="() => ChooseDoctor(doctor.DoctorUserId)">
+                    @doctor.DoctorName
+                </button>
+            }
+        </div>
+    }
+    else if (_isDoctor && !string.IsNullOrWhiteSpace(_patientName))
+    {
+        <p class="muted">Patient: <strong>@_patientName</strong></p>
+    }
+
+    <div @ref="_thread" class="visit-thread" aria-live="polite">
+        @if (_messages.Count == 0)
+        {
+            <p class="muted mb-0">No messages yet.</p>
+        }
+        else
+        {
+            @foreach (var message in _messages)
+            {
+                var mine = message.SenderUserId == _selfId;
+                var role = message.SenderUserId == _patientId ? "Patient" : "Doctor";
+                <article class="visit-bubble @(mine ? "mine" : "theirs")">
+                    <p>@message.Body</p>
+                    <span class="visit-author">@message.SenderName · @role</span>
+                    <time datetime="@message.SentAt.ToString("o")">@message.SentAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                </article>
+            }
+        }
+    </div>
+    <form class="note-compose" @onsubmit="SendAsync" @onsubmit:preventDefault="true">
+        <label class="form-label" for="@_field">@(_isDoctor ? "Message to this patient" : "Message to this doctor")</label>
+        <textarea id="@_field" class="form-control" rows="3" @bind="_draft" @bind:event="oninput"></textarea>
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger py-2" role="alert">@_error</div>
+        }
+        <button type="submit" class="btn btn-teal" disabled="@(_saving || string.IsNullOrWhiteSpace(_doctorId))">Send</button>
+    </form>
+}
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? PatientName { get; set; }
+
+    private readonly string _field = "visit-message-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly CancellationTokenSource _poll = new();
+    private IJSObjectReference? _js;
+    private ElementReference _thread;
+    private IReadOnlyList<VisitDoctorOption> _doctors = [];
+    private IReadOnlyList<VisitMessageItem> _messages = [];
+    private string? _doctorId;
+    private string? _patientId;
+    private string? _patientName;
+    private string? _selfId;
+    private string _draft = "";
+    private string? _error;
+    private string? _loadedFor;
+    private bool _hasLoaded;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _isDoctor;
+    private bool _missingPatient;
+    private int _generation;
+    private int _stuckCount = -1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = PatientUserId ?? "";
+        if (_hasLoaded && _loadedFor == key)
+            return;
+
+        _hasLoaded = true;
+        _loadedFor = key;
+        _messages = [];
+        _doctors = [];
+        _doctorId = null;
+        await ReloadAsync();
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        _patientName = PatientName;
+        _ = PollAsync();
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_messages.Count == _stuckCount || _messages.Count == 0)
+            return;
+
+        _stuckCount = _messages.Count;
+        try
+        {
+            _js ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/VisitMessagePanel.razor.js");
+            await _js.InvokeVoidAsync("stick", _thread);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task ChooseDoctor(string doctorId)
+    {
+        if (_doctorId == doctorId)
+            return;
+
+        _doctorId = doctorId;
+        _messages = [];
+        _stuckCount = -1;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var generation = ++_generation;
+        _loading = true;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            if (generation != _generation)
+                return;
+
+            _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+            _selfId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (_isDoctor)
+            {
+                _patientId = !string.IsNullOrWhiteSpace(PatientUserId) ? PatientUserId : Selection.PatientUserId;
+                _patientName = !string.IsNullOrWhiteSpace(PatientName) ? PatientName : Selection.PatientName;
+                _doctorId = _selfId;
+                _missingPatient = string.IsNullOrWhiteSpace(_patientId);
+                if (_missingPatient)
+                {
+                    _messages = [];
+                    return;
+                }
+
+                _messages = await Visits.ListMessagesAsync(state.User, _patientId, _doctorId!);
+            }
+            else
+            {
+                _patientId = _selfId;
+                _missingPatient = false;
+                _doctors = await Visits.ListMessageDoctorsAsync(state.User);
+                if (_doctors.Count == 0)
+                {
+                    _messages = [];
+                    _doctorId = null;
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(_doctorId) || _doctors.All(doctor => doctor.DoctorUserId != _doctorId))
+                    _doctorId = _doctors[0].DoctorUserId;
+
+                _messages = await Visits.ListMessagesAsync(state.User, _patientId ?? "", _doctorId ?? "");
+            }
+
+            if (generation != _generation)
+                return;
+
+            _error = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            if (generation == _generation)
+            {
+                _messages = [];
+                _error = ex.Message;
+            }
+        }
+        finally
+        {
+            if (generation == _generation)
+                _loading = false;
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_patientId) || string.IsNullOrWhiteSpace(_doctorId))
+            return;
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            await Visits.SendMessageAsync(state.User, _patientId, _doctorId, _draft);
+            _draft = "";
+            _stuckCount = -1;
+            await ReloadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_poll.Token))
+            {
+                await ReloadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _poll.Cancel();
+        _poll.Dispose();
+        if (_js is null)
+            return;
+
+        try
+        {
+            await _js.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

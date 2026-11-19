@@ -118,6 +118,8 @@
             <p class="muted p-3">No doctors match the current filters.</p>
         }
     </div>
+
+    <VisitToolDock ForDoctor="false" PatientUserId="@scope.PatientId" PatientName="@scope.Patient.DisplayName" />
 }
 
 @code {

@@ -1529,7 +1529,10 @@ public static class IdentitySeeder
             await CreateSqliteVisitTableAsync(db, "ClinicalNotes", """
                 "AuthorName" TEXT NOT NULL,
                 "Body" TEXT NOT NULL,
-                "CreatedAt" TEXT NOT NULL
+                "CreatedAt" TEXT NOT NULL,
+                "Section" TEXT NOT NULL DEFAULT 'Doctor',
+                "AuthorUserId" TEXT NOT NULL DEFAULT '',
+                "AuthorRole" TEXT NOT NULL DEFAULT 'Doctor'
                 """);
             await CreateSqliteVisitTableAsync(db, "VisitMessages", """
                 "SenderUserId" TEXT NOT NULL,
@@ -1538,6 +1541,7 @@ public static class IdentitySeeder
                 """);
             await CreateSqliteVisitTableAsync(db, "VideoVisits", """
                 "DoctorName" TEXT NOT NULL,
+                "Specialty" TEXT NULL,
                 "CreatedAt" TEXT NOT NULL,
                 "StartedAt" TEXT NULL,
                 "EndedAt" TEXT NULL,
@@ -1570,7 +1574,10 @@ public static class IdentitySeeder
             await CreatePostgresVisitTableAsync(db, "ClinicalNotes", """
                 "AuthorName" text NOT NULL,
                 "Body" text NOT NULL,
-                "CreatedAt" timestamp without time zone NOT NULL
+                "CreatedAt" timestamp without time zone NOT NULL,
+                "Section" text NOT NULL DEFAULT 'Doctor',
+                "AuthorUserId" text NOT NULL DEFAULT '',
+                "AuthorRole" text NOT NULL DEFAULT 'Doctor'
                 """);
             await CreatePostgresVisitTableAsync(db, "VisitMessages", """
                 "SenderUserId" text NOT NULL,
@@ -1579,6 +1586,7 @@ public static class IdentitySeeder
                 """);
             await CreatePostgresVisitTableAsync(db, "VideoVisits", """
                 "DoctorName" text NOT NULL,
+                "Specialty" text NULL,
                 "CreatedAt" timestamp without time zone NOT NULL,
                 "StartedAt" timestamp without time zone NULL,
                 "EndedAt" timestamp without time zone NULL,
@@ -1608,6 +1616,55 @@ public static class IdentitySeeder
             """CREATE INDEX IF NOT EXISTS "IX_AfterVisitSummaries_PatientUserId_CreatedAt" ON "AfterVisitSummaries" ("PatientUserId", "CreatedAt");""");
         await db.Database.ExecuteSqlRawAsync(
             """CREATE INDEX IF NOT EXISTS "IX_ReferralOrders_PatientUserId_CreatedAt" ON "ReferralOrders" ("PatientUserId", "CreatedAt");""");
+        await EnsureVisitDetailColumnsAsync(db);
+    }
+
+    private static async Task EnsureVisitDetailColumnsAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var notes = await ReadSqliteColumnsAsync(connection, "ClinicalNotes");
+                await TryAddColumnAsync(db, notes, "Section",
+                    """ALTER TABLE "ClinicalNotes" ADD COLUMN "Section" TEXT NOT NULL DEFAULT 'Doctor'""");
+                await TryAddColumnAsync(db, notes, "AuthorUserId",
+                    """ALTER TABLE "ClinicalNotes" ADD COLUMN "AuthorUserId" TEXT NOT NULL DEFAULT ''""");
+                await TryAddColumnAsync(db, notes, "AuthorRole",
+                    """ALTER TABLE "ClinicalNotes" ADD COLUMN "AuthorRole" TEXT NOT NULL DEFAULT 'Doctor'""");
+                var visits = await ReadSqliteColumnsAsync(connection, "VideoVisits");
+                await TryAddColumnAsync(db, visits, "Specialty",
+                    """ALTER TABLE "VideoVisits" ADD COLUMN "Specialty" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+        }
+        else
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "ClinicalNotes" ADD COLUMN IF NOT EXISTS "Section" text NOT NULL DEFAULT 'Doctor';""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "ClinicalNotes" ADD COLUMN IF NOT EXISTS "AuthorUserId" text NOT NULL DEFAULT '';""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "ClinicalNotes" ADD COLUMN IF NOT EXISTS "AuthorRole" text NOT NULL DEFAULT 'Doctor';""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "VideoVisits" ADD COLUMN IF NOT EXISTS "Specialty" text NULL;""");
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """UPDATE "ClinicalNotes" SET "AuthorUserId" = "DoctorUserId" WHERE "AuthorUserId" IS NULL OR "AuthorUserId" = '';""");
+        await db.Database.ExecuteSqlRawAsync(
+            """UPDATE "ClinicalNotes" SET "Section" = 'Doctor' WHERE "Section" IS NULL OR "Section" = '';""");
+        await db.Database.ExecuteSqlRawAsync(
+            """UPDATE "ClinicalNotes" SET "AuthorRole" = 'Doctor' WHERE "AuthorRole" IS NULL OR "AuthorRole" = '';""");
     }
 
     private static Task CreateSqliteVisitTableAsync(ApplicationDbContext db, string name, string extraColumns)

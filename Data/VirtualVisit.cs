@@ -1,5 +1,11 @@
 namespace MedicalManager.Data;
 
+public static class NoteSection
+{
+    public const string Patient = "Patient";
+    public const string Doctor = "Doctor";
+}
+
 public class ClinicalNote
 {
     public int Id { get; set; }
@@ -8,7 +14,14 @@ public class ClinicalNote
 
     public string DoctorUserId { get; set; } = string.Empty;
 
+    /// <summary>Patient or Doctor. Plain text so each section can be queried.</summary>
+    public string Section { get; set; } = NoteSection.Doctor;
+
+    public string AuthorUserId { get; set; } = string.Empty;
+
     public string AuthorName { get; set; } = string.Empty;
+
+    public string AuthorRole { get; set; } = "Doctor";
 
     public string Body { get; set; } = string.Empty;
 
@@ -39,6 +52,8 @@ public class VideoVisitSession
     public string DoctorUserId { get; set; } = string.Empty;
 
     public string DoctorName { get; set; } = string.Empty;
+
+    public string? Specialty { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -84,6 +99,13 @@ public class ReferralOrder
 }
 
 public sealed record VisitDoctorOption(string DoctorUserId, string DoctorName);
+
+public sealed record VisitMessageItem(
+    int Id,
+    string SenderUserId,
+    string SenderName,
+    string Body,
+    DateTime SentAt);
 
 public sealed record VisitChoice(
     bool IsDoctor,
