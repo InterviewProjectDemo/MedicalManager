@@ -20,6 +20,11 @@ a, .btn-link {
     padding-top: 1.1rem;
 }
 
+.page > main {
+    min-width: 0;
+    max-width: 100%;
+}
+
 h1:focus {
     outline: none;
 }
@@ -1394,9 +1399,25 @@ th[aria-sort="descending"] .sort-indicator {
     border-bottom: 1px solid #e7eef5;
 }
 .lab-table-head h2 { margin: 0; font-size: 1.05rem; color: #0f3d5c; }
-.lab-table-scroll { overflow-x: auto; }
-.lab-table { min-width: 1200px; font-size: 0.82rem; }
+.lab-desktop-table {
+    max-width: 100%;
+    min-width: 0;
+}
+.lab-table-scroll {
+    overflow: auto;
+    max-height: min(70vh, 36rem);
+    max-width: 100%;
+    width: 100%;
+}
+.lab-table {
+    width: max-content;
+    min-width: 72rem;
+    font-size: 0.82rem;
+}
 .lab-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     vertical-align: bottom;
     background: #eef6fb;
     border-bottom: 2px solid #dce8f2;
@@ -1413,10 +1434,10 @@ th[aria-sort="descending"] .sort-indicator {
     background: #fff;
     box-shadow: 4px 0 8px rgba(15, 61, 92, 0.04);
 }
-.lab-table thead .lab-date-col { background: #eef6fb; }
+.lab-table thead .lab-date-col { background: #eef6fb; z-index: 3; }
 .lab-value-col { text-align: center; }
 .lab-actions-col { min-width: 4.5rem; position: sticky; right: 0; background: #fff; }
-.lab-table thead .lab-actions-col { background: #eef6fb; }
+.lab-table thead .lab-actions-col { background: #eef6fb; z-index: 3; }
 .lab-value {
     display: inline-block;
     border-radius: 8px;
@@ -1436,7 +1457,7 @@ th[aria-sort="descending"] .sort-indicator {
 .lab-status-rx { color: #0f3d5c; }
 .lab-pending { color: #0f766e; font-size: 0.75rem; font-weight: 700; }
 .lab-card-status { margin-top: 0.35rem; }
-.lab-table { min-width: max-content; }
+.lab-status-col { display: table-cell; }
 .lab-note-hint {
     display: block;
     font-size: 0.68rem;
@@ -1449,7 +1470,7 @@ th[aria-sort="descending"] .sort-indicator {
     z-index: 4600;
     top: 4.5rem;
     left: 16rem;
-    width: min(44rem, calc(100vw - 1.5rem));
+    width: min(52rem, calc(100vw - 1.5rem));
     max-height: calc(100dvh - 1.25rem);
     display: flex;
     flex-direction: column;
@@ -1488,7 +1509,69 @@ th[aria-sort="descending"] .sort-indicator {
 .rx-group-title { font-weight: 800; color: #0f3d5c; margin-bottom: 0.4rem; }
 .rx-items { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem 0.8rem; }
 .rx-item small { display: block; color: #667085; font-weight: 500; }
-.rx-foot { display: flex; align-items: center; gap: 0.8rem; }
+.rx-choices {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem 1.2rem;
+    margin: 0 0 0.85rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid #d5e7f2;
+    border-radius: 12px;
+    background: #f8fbff;
+}
+.rx-choices legend {
+    float: left;
+    width: 100%;
+    margin-bottom: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #667085;
+}
+.rx-choices label { display: flex; align-items: center; gap: 0.4rem; font-weight: 800; color: #0f3d5c; margin: 0; }
+.rx-choices label.is-disabled { color: #98a2b3; }
+.rx-denied { margin: 0 0 0.55rem; font-size: 0.84rem; }
+.rx-meds { margin: 0 0 0.9rem; }
+.rx-med-row {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr 1.1fr 1fr auto;
+    gap: 0.4rem;
+    margin-bottom: 0.45rem;
+}
+.rx-foot { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.rx-foot a, .alert a { margin-left: 0.45rem; }
+tr.med-prescribed > td { background: #e6e8ec; color: #3d4654; }
+.med-prescribed-tag {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: #d5d8de;
+    color: #3d4654;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+.med-history {
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.78rem;
+    color: #475467;
+}
+.med-history li { margin-top: 0.2rem; }
+.med-history time { font-weight: 700; }
+.med-pharmacy {
+    margin: 0.4rem 0 0;
+    padding: 1rem 1.1rem 1.15rem;
+    border-top: 1px solid #e7eef5;
+}
+.med-pharmacy h2 { margin: 0 0 0.35rem; font-size: 1.05rem; color: #0f3d5c; }
+.med-pharmacy .form-control { max-width: 28rem; }
 .visit-entry { padding: 0.75rem 0; border-bottom: 1px solid #e7eef5; }
 .visit-entry header { display: flex; justify-content: space-between; gap: 1rem; }
 .visit-entry p { margin: 0.35rem 0 0; white-space: pre-wrap; }
@@ -1503,6 +1586,7 @@ th[aria-sort="descending"] .sort-indicator {
 @media (max-width: 720px) {
     .rx-window { top: 0.5rem; left: 0.5rem; width: calc(100vw - 1rem); }
     .rx-items { grid-template-columns: 1fr; }
+    .rx-med-row { grid-template-columns: 1fr; }
 }
 
 .lab-form-section {
@@ -2979,6 +3063,12 @@ body:has(.nav-scrollable.open) {
         padding: 0.75rem 0.85rem 0.65rem;
         margin-bottom: 0.7rem;
         box-shadow: 0 8px 20px rgba(15, 61, 92, 0.05);
+    }
+
+    .table-card > .table tbody tr.med-prescribed,
+    .table-card > table.table tbody tr.med-prescribed {
+        background: #e6e8ec;
+        border-color: #c5cad3;
     }
 
     .table-card > .table tbody td,

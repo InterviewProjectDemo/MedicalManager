@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject HealthRecordService Records
 @inject PatientAccessService Access
+@inject PrescriptionMailService Pharmacy
 @inject AuthenticationStateProvider Auth
 
 <PageTitle>Medications</PageTitle>
@@ -14,7 +15,7 @@
         <div>
             <p class="eyebrow">Treatment</p>
             <h1>Medications</h1>
-            <p class="muted">Set the days and the time of day for each dose so reminders call when the medicine is due.</p>
+            <p class="muted">Set the days and the time of day for each dose so reminders call when the medicine is due. Medications in gray were prescribed by a doctor.</p>
         </div>
         @if (scope.Allows(ChartSection.Medication, update: true))
         {
@@ -26,6 +27,10 @@
         <table class="table align-middle">
             <thead>
                 <tr>
+                    @if (CanSend)
+                    {
+                        <th>Send</th>
+                    }
                     <th aria-sort="@AriaSort(MedSort.Medication)">
                         <button type="button" class="sort-th-btn" @onclick="() => SortBy(MedSort.Medication)">
                             Medication <span class="sort-indicator" aria-hidden="true">@SortMark(MedSort.Medication)</span>
@@ -41,6 +46,10 @@
                     <th></th>
                 </tr>
                 <tr class="column-filter-row" @key="_filterVersion">
+                    @if (CanSend)
+                    {
+                        <th></th>
+                    }
                     <th>
                         <label class="column-filter-select">
                             <span class="visually-hidden">Filter by medication name</span>
@@ -78,10 +87,32 @@
             <tbody>
                 @foreach (var item in VisibleItems)
                 {
-                    <tr>
+                    <tr class="@(DoctorPrescribed(item) ? "med-prescribed" : null)">
+                        @if (CanSend)
+                        {
+                            <td data-label="Send">
+                                <input type="checkbox"
+                                       aria-label="@($"Include {item.Name} in the pharmacy prescription")"
+                                       checked="@_picked.Contains(item.Id)"
+                                       @onchange="e => TogglePick(item.Id, e)" />
+                            </td>
+                        }
                         <td data-label="Medication">
                             <strong>@item.Name</strong>
+                            @if (DoctorPrescribed(item))
+                            {
+                                <span class="med-prescribed-tag">Prescribed</span>
+                            }
                             <div class="muted">@item.Notes</div>
+                            @if (_history.TryGetValue(item.Id, out var events) && events.Count > 0)
+                            {
+                                <ul class="med-history">
+                                    @foreach (var change in events)
+                                    {
+                                        <li><time datetime="@change.ChangedAt.ToString("o")">@When(change.ChangedAt)</time> @change.ActorName — @change.Summary</li>
+                                    }
+                                </ul>
+                            }
                         </td>
                         <td data-label="Dosage">@item.Dosage</td>
                         <td data-label="Frequency">
@@ -115,6 +146,20 @@
         {
             <p class="muted p-3">No medications match the current filters.</p>
         }
+        @if (CanSend && items.Count > 0)
+        {
+            <div class="med-pharmacy">
+                <h2>Send to pharmacist</h2>
+                <p class="muted">Enter the pharmacy email. Checked medications are included. If none are checked, every current medication is sent, with the doctor and patient details and a copy to you.</p>
+                <label class="form-label" for="pharmacist-email">Pharmacist email</label>
+                <input id="pharmacist-email" type="email" class="form-control" autocomplete="email" @bind="_pharmacistEmail" @bind:event="oninput" />
+                @if (!string.IsNullOrWhiteSpace(_sendMessage))
+                {
+                    <div class="alert @(_sendOk ? "alert-success" : "alert-danger") py-2 mt-3" role="status">@_sendMessage</div>
+                }
+                <button type="button" class="btn btn-success mt-3" disabled="@_sending" @onclick="SendToPharmacistAsync">Send to Pharmacist</button>
+            </div>
+        }
     </div>
 }
 
@@ -122,6 +167,12 @@
     [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
     private PatientScope? scope;
     private List<Medication> items = [];
+    private Dictionary<int, List<MedicationChange>> _history = [];
+    private readonly HashSet<int> _picked = [];
+    private string _pharmacistEmail = "";
+    private string? _sendMessage;
+    private bool _sendOk;
+    private bool _sending;
     private MedSort _sort = MedSort.Medication;
     private bool _sortAsc = true;
 
@@ -138,6 +189,11 @@
         Medication,
         Status
     }
+
+    private bool CanSend => scope is not null && !scope.IsDoctor && scope.PatientId is not null;
+
+    private static bool DoctorPrescribed(Medication item) =>
+        !string.IsNullOrWhiteSpace(item.PrescribingDoctorUserId);
 
     private bool HasFilters =>
         !string.IsNullOrWhiteSpace(_nameFilter)
@@ -234,7 +290,54 @@
         if (scope.PatientId is string id)
         {
             items = await Records.GetMedicationsAsync(id);
+            var changes = await Records.GetMedicationChangesAsync(id);
+            _history = changes
+                .GroupBy(change => change.MedicationId)
+                .ToDictionary(group => group.Key, group => group.ToList());
         }
+    }
+
+    private void TogglePick(int id, ChangeEventArgs e)
+    {
+        if (e.Value is bool on && on)
+            _picked.Add(id);
+        else
+            _picked.Remove(id);
+    }
+
+    private async Task SendToPharmacistAsync()
+    {
+        if (!CanSend || scope?.PatientId is null || scope.IsDoctor)
+            return;
+
+        _sending = true;
+        _sendMessage = null;
+        try
+        {
+            var result = await Pharmacy.SendToPharmacistAsync(scope.CurrentUser.Id, _pharmacistEmail, _picked.ToArray());
+            _sendOk = result.Sent;
+            _sendMessage = result.Message;
+        }
+        catch (Exception)
+        {
+            _sendOk = false;
+            _sendMessage = "The prescription could not be sent. Nothing was delivered.";
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private static string When(DateTime value)
+    {
+        var utc = value.Kind switch
+        {
+            DateTimeKind.Local => value.ToUniversalTime(),
+            DateTimeKind.Utc => value,
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+        return utc.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
     }
 
     private string Link(string path) => CareLinks.To(path, PatientUserId);

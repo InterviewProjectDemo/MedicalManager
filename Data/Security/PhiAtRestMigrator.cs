@@ -44,6 +44,8 @@ public static class PhiAtRestMigrator
         ("Medications", "Purpose", false),
         ("Medications", "Notes", false),
         ("Medications", "PrescribedBy", false),
+        ("MedicationChanges", "ActorName", false),
+        ("MedicationChanges", "Summary", false),
         ("Appointments", "Title", false),
         ("Appointments", "ProviderName", false),
         ("Appointments", "Location", false),

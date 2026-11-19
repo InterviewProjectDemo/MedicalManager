@@ -93,6 +93,8 @@ public sealed record VisitChoice(
     string PatientName,
     string DoctorUserId);
 
+public sealed record MedicationOrder(string Name, string Dose, string Schedule, string? Purpose);
+
 public sealed record VisitAccess(
     bool IsDoctor,
     string ActorUserId,

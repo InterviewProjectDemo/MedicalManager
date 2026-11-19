@@ -29,6 +29,8 @@ public class Medication
     [MaxLength(120)]
     public string PrescribedBy { get; set; } = string.Empty;
 
+    public string? PrescribingDoctorUserId { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
@@ -38,4 +40,6 @@ public class Medication
     public MedicationDays Days { get; set; } = MedicationDays.All;
 
     public List<MedicationSchedule> Schedules { get; set; } = [];
+
+    public List<MedicationChange> Changes { get; set; } = [];
 }

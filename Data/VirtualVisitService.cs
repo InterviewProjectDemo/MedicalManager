@@ -37,6 +37,20 @@ public sealed class VirtualVisitService(
         return await labReports.PrescribeAsync(patientUserId, doctor.DisplayName, orderIds);
     }
 
+    public async Task<int> PrescribeMedicationsAsync(
+        string doctorUserId,
+        string patientUserId,
+        IReadOnlyList<MedicationOrder> orders)
+    {
+        var grant = await chartAccess.GetActiveGrantAsync(doctorUserId, patientUserId);
+        if (grant is null || !grant.Allows(ChartSection.Medication, true))
+            throw new UnauthorizedAccessException("This patient has not approved that access.");
+
+        var doctor = await users.FindByIdAsync(doctorUserId)
+            ?? throw new InvalidOperationException("Doctor account was not found.");
+        return await records.AddPrescribedMedicationsAsync(patientUserId, doctorUserId, doctor.DisplayName, orders);
+    }
+
     public async Task<IReadOnlyList<ClinicalNote>> ListNotesAsync(ClaimsPrincipal principal, string patientUserId)
     {
         var actor = await RequireReaderAsync(principal, patientUserId);

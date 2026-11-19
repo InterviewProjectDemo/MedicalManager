@@ -125,6 +125,9 @@
     private readonly Dictionary<MedicationTimeSlot, bool> slotSelected = MedicationScheduleRules.AllSlots.ToDictionary(slot => slot, _ => false);
     private readonly Dictionary<MedicationTimeSlot, TimeOnly> slotTimes = MedicationScheduleRules.AllSlots.ToDictionary(slot => slot, MedicationScheduleRules.DefaultAdministerAt);
     private string? scheduleError;
+    private bool _isNew;
+    private string _originalDose = "";
+    private string _originalTime = "";
     private string Back => CareLinks.To("medications", PatientUserId);
 
     protected override async Task OnParametersSetAsync()
@@ -138,6 +141,9 @@
         }
         model ??= new Medication { UserId = patientId, Days = MedicationDays.All };
         LoadSchedule(model);
+        _isNew = model.Id == 0;
+        _originalDose = model.Dosage ?? "";
+        _originalTime = MedicationHistoryText.TimeLabel(model.Frequency, model.Days, model.Schedules);
     }
 
     private void LoadSchedule(Medication medication)
@@ -191,12 +197,72 @@
         scheduleError = null;
         model.UserId = scope.PatientId;
         model.Days = selectedDays;
+        if (_isNew && scope.IsDoctor)
+        {
+            model.PrescribingDoctorUserId = scope.CurrentUser.Id;
+            if (string.IsNullOrWhiteSpace(model.PrescribedBy))
+                model.PrescribedBy = scope.CurrentUser.DisplayName;
+        }
+
+        var drafted = selected.Select(slot => new MedicalManager.Data.MedicationSchedule
+        {
+            TimeSlot = slot,
+            AdministerAt = slotTimes[slot]
+        }).ToList();
+        var newTime = MedicationHistoryText.TimeLabel(model.Frequency, selectedDays, drafted);
         model.Schedules = [];
         await Records.SaveMedicationAsync(model);
         await MedSchedule.ReplaceSchedulesAsync(
             model.Id,
             selected.Select(slot => (slot, slotTimes[slot])).ToList());
+        await RecordHistoryAsync(newTime);
         Nav.NavigateTo(Back);
+    }
+
+    private async Task RecordHistoryAsync(string newTime)
+    {
+        if (model is null || scope?.PatientId is null)
+            return;
+
+        var actor = string.IsNullOrWhiteSpace(scope.CurrentUser.DisplayName)
+            ? (scope.IsDoctor ? "Doctor" : "Patient")
+            : scope.CurrentUser.DisplayName;
+        if (_isNew)
+        {
+            await Records.AddMedicationChangeAsync(new MedicationChange
+            {
+                MedicationId = model.Id,
+                PatientUserId = scope.PatientId,
+                ActorUserId = scope.CurrentUser.Id,
+                ActorName = actor,
+                Summary = MedicationHistoryText.Added(model.Name, model.Dosage, newTime)
+            });
+            return;
+        }
+
+        if (!string.Equals(_originalDose.Trim(), model.Dosage.Trim(), StringComparison.Ordinal))
+        {
+            await Records.AddMedicationChangeAsync(new MedicationChange
+            {
+                MedicationId = model.Id,
+                PatientUserId = scope.PatientId,
+                ActorUserId = scope.CurrentUser.Id,
+                ActorName = actor,
+                Summary = MedicationHistoryText.DoseChanged(_originalDose, model.Dosage)
+            });
+        }
+
+        if (!string.Equals(_originalTime.Trim(), newTime.Trim(), StringComparison.Ordinal))
+        {
+            await Records.AddMedicationChangeAsync(new MedicationChange
+            {
+                MedicationId = model.Id,
+                PatientUserId = scope.PatientId,
+                ActorUserId = scope.CurrentUser.Id,
+                ActorName = actor,
+                Summary = MedicationHistoryText.TimeChanged(_originalTime, newTime)
+            });
+        }
     }
 
     private async Task Delete()

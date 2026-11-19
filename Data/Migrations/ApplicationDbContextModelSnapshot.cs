@@ -502,6 +502,9 @@ namespace MedicalManager.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PrescribingDoctorUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Purpose")
                         .HasMaxLength(160)
                         .HasColumnType("TEXT");
@@ -518,6 +521,42 @@ namespace MedicalManager.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Medications");
+                });
+
+            modelBuilder.Entity("MedicalManager.Data.MedicationChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MedicationId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PatientUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MedicationId", "ChangedAt");
+
+                    b.HasIndex("PatientUserId", "ChangedAt");
+
+                    b.ToTable("MedicationChanges");
                 });
 
             modelBuilder.Entity("MedicalManager.Data.MedicationAdministration", b =>
@@ -1017,6 +1056,17 @@ namespace MedicalManager.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MedicalManager.Data.MedicationChange", b =>
+                {
+                    b.HasOne("MedicalManager.Data.Medication", "Medication")
+                        .WithMany("Changes")
+                        .HasForeignKey("MedicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Medication");
+                });
+
             modelBuilder.Entity("MedicalManager.Data.MedicationAdministration", b =>
                 {
                     b.HasOne("MedicalManager.Data.Medication", "Medication")
@@ -1221,6 +1271,8 @@ namespace MedicalManager.Migrations
 
             modelBuilder.Entity("MedicalManager.Data.Medication", b =>
                 {
+                    b.Navigation("Changes");
+
                     b.Navigation("Schedules");
                 });
 #pragma warning restore 612, 618

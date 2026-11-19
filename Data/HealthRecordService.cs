@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace MedicalManager.Data;
@@ -153,6 +155,206 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         else db.Medications.Update(medication);
         await db.SaveChangesAsync();
         await doctors.SyncDiscoveredDoctorsAsync(medication.UserId);
+    }
+
+    public async Task<int> AddPrescribedMedicationsAsync(
+        string patientUserId,
+        string doctorUserId,
+        string doctorName,
+        IReadOnlyList<MedicationOrder> orders)
+    {
+        var prepared = PrepareOrders(orders);
+        var actor = string.IsNullOrWhiteSpace(doctorName) ? "Doctor" : doctorName.Trim();
+        if (actor.Length > 120)
+            actor = actor[..120];
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var now = DateTime.UtcNow;
+        foreach (var order in prepared)
+        {
+            var medication = new Medication
+            {
+                UserId = patientUserId,
+                Name = order.Name,
+                Dosage = order.Dose,
+                Frequency = order.Schedule,
+                Purpose = order.Purpose,
+                PrescribedBy = actor,
+                PrescribingDoctorUserId = doctorUserId,
+                IsActive = true,
+                StartDate = DateOnly.FromDateTime(DateTime.Today),
+                Days = MedicationDays.All
+            };
+            foreach (var (slot, time) in SchedulesFor(order.Schedule))
+            {
+                medication.Schedules.Add(new MedicationSchedule
+                {
+                    TimeSlot = slot,
+                    AdministerAt = time
+                });
+            }
+
+            db.Medications.Add(medication);
+            db.MedicationChanges.Add(new MedicationChange
+            {
+                Medication = medication,
+                PatientUserId = patientUserId,
+                ActorUserId = doctorUserId,
+                ActorName = actor,
+                Summary = MedicationHistoryText.Added(order.Name, order.Dose, order.Schedule),
+                ChangedAt = now
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await doctors.SyncDiscoveredDoctorsAsync(patientUserId);
+        return prepared.Count;
+    }
+
+    public async Task<List<MedicationChange>> GetMedicationChangesAsync(string userId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.MedicationChanges.AsNoTracking()
+            .Where(change => change.PatientUserId == userId)
+            .OrderByDescending(change => change.ChangedAt)
+            .ThenByDescending(change => change.Id)
+            .ToListAsync();
+    }
+
+    public async Task AddMedicationChangeAsync(MedicationChange change)
+    {
+        change.ActorName = change.ActorName.Trim();
+        change.Summary = change.Summary.Trim();
+        if (string.IsNullOrWhiteSpace(change.ActorName))
+            change.ActorName = "Patient";
+        if (change.ChangedAt == default)
+            change.ChangedAt = DateTime.UtcNow;
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        db.MedicationChanges.Add(change);
+        await db.SaveChangesAsync();
+    }
+
+    private static List<MedicationOrder> PrepareOrders(IReadOnlyList<MedicationOrder> orders)
+    {
+        var prepared = new List<MedicationOrder>();
+        foreach (var order in orders)
+        {
+            var name = (order.Name ?? "").Trim();
+            var dose = (order.Dose ?? "").Trim();
+            var schedule = (order.Schedule ?? "").Trim();
+            var purpose = string.IsNullOrWhiteSpace(order.Purpose) ? null : order.Purpose.Trim();
+            if (name.Length == 0 && dose.Length == 0 && schedule.Length == 0 && purpose is null)
+                continue;
+            if (name.Length == 0 || dose.Length == 0 || schedule.Length == 0)
+                throw new InvalidOperationException("Each medication needs a name, dose, and time.");
+            if (name.Length > 120)
+                throw new InvalidOperationException("Medication name is too long.");
+            if (dose.Length > 80)
+                throw new InvalidOperationException("Dose is too long.");
+            if (schedule.Length > 80)
+                throw new InvalidOperationException("Time / schedule is too long.");
+            if (purpose is not null && purpose.Length > 160)
+                throw new InvalidOperationException("Purpose is too long.");
+            prepared.Add(new MedicationOrder(name, dose, schedule, purpose));
+        }
+
+        if (prepared.Count == 0)
+            throw new InvalidOperationException("Enter at least one medication.");
+        return prepared;
+    }
+
+    private static readonly Regex ClockWithMeridiem = new(
+        @"\b(?<hour>\d{1,2})(?::(?<minute>\d{2}))?\s*(?<meridiem>a\.?m\.?|p\.?m\.?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex Clock24 = new(
+        @"\b(?<hour>\d{1,2}):(?<minute>\d{2})\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static List<(MedicationTimeSlot Slot, TimeOnly Time)> SchedulesFor(string text)
+    {
+        var times = new List<TimeOnly>();
+        var covered = new List<(int Start, int Length)>();
+        foreach (Match match in ClockWithMeridiem.Matches(text))
+        {
+            if (!TryClock(match.Groups["hour"].Value, match.Groups["minute"].Value, match.Groups["meridiem"].Value, out var time))
+                continue;
+            times.Add(time);
+            covered.Add((match.Index, match.Length));
+        }
+
+        foreach (Match match in Clock24.Matches(text))
+        {
+            var insideMeridiem = false;
+            foreach (var span in covered)
+            {
+                if (match.Index >= span.Start && match.Index < span.Start + span.Length)
+                {
+                    insideMeridiem = true;
+                    break;
+                }
+            }
+
+            if (insideMeridiem)
+                continue;
+            if (TryClock(match.Groups["hour"].Value, match.Groups["minute"].Value, null, out var time))
+                times.Add(time);
+        }
+
+        var rows = new List<(MedicationTimeSlot, TimeOnly)>();
+        var used = new HashSet<MedicationTimeSlot>();
+        foreach (var time in times)
+        {
+            var slot = SlotFor(time);
+            if (slot is null || !used.Add(slot.Value))
+                continue;
+            rows.Add((slot.Value, time));
+        }
+
+        return rows;
+    }
+
+    private static MedicationTimeSlot? SlotFor(TimeOnly time)
+    {
+        foreach (var slot in MedicationScheduleRules.AllSlots)
+        {
+            if (time >= MedicationScheduleRules.GetWindowStart(slot) && time <= MedicationScheduleRules.GetWindowEnd(slot))
+                return slot;
+        }
+
+        return null;
+    }
+
+    private static bool TryClock(string hourText, string minuteText, string? meridiem, out TimeOnly time)
+    {
+        time = default;
+        if (!int.TryParse(hourText, NumberStyles.None, CultureInfo.InvariantCulture, out var hour))
+            return false;
+        var minute = 0;
+        if (!string.IsNullOrEmpty(minuteText)
+            && !int.TryParse(minuteText, NumberStyles.None, CultureInfo.InvariantCulture, out minute))
+            return false;
+        if (minute is < 0 or > 59)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(meridiem))
+        {
+            if (hour is < 1 or > 12)
+                return false;
+            var pm = meridiem.StartsWith('p') || meridiem.StartsWith('P');
+            if (hour == 12)
+                hour = pm ? 12 : 0;
+            else if (pm)
+                hour += 12;
+        }
+        else if (hour is < 0 or > 23)
+        {
+            return false;
+        }
+
+        time = new TimeOnly(hour, minute);
+        return true;
     }
 
     public async Task DeleteMedicationAsync(int id, string userId)

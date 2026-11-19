@@ -8,4 +8,8 @@ public interface IAppEmailSender : IEmailSender<ApplicationUser>
     Task SendWelcomeEmailAsync(ApplicationUser user, string email, bool forDoctor = false, CancellationToken cancellationToken = default);
 
     Task<bool> SendMonitorShareAsync(string email, string patientName, string link, string code, CancellationToken cancellationToken = default);
+
+    bool IsConfigured { get; }
+
+    Task<bool> TrySendPrescriptionAsync(string email, string html, string plainText, CancellationToken cancellationToken = default);
 }

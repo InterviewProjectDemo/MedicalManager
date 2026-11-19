@@ -17,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<BloodPressureReading> BloodPressureReadings => Set<BloodPressureReading>();
     public DbSet<SugarReading> SugarReadings => Set<SugarReading>();
     public DbSet<Medication> Medications => Set<Medication>();
+    public DbSet<MedicationChange> MedicationChanges => Set<MedicationChange>();
     public DbSet<MedicationSchedule> MedicationSchedules => Set<MedicationSchedule>();
     public DbSet<MedicationAdministration> MedicationAdministrations => Set<MedicationAdministration>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
@@ -83,6 +84,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<MedicationSchedule>()
             .HasIndex(x => new { x.MedicationId, x.TimeSlot })
             .IsUnique();
+
+        builder.Entity<MedicationChange>()
+            .HasOne(x => x.Medication)
+            .WithMany(x => x.Changes)
+            .HasForeignKey(x => x.MedicationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<MedicationChange>().HasIndex(x => new { x.MedicationId, x.ChangedAt });
+        builder.Entity<MedicationChange>().HasIndex(x => new { x.PatientUserId, x.ChangedAt });
 
         builder.Entity<MedicationAdministration>()
             .HasOne(x => x.User)
@@ -297,6 +306,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Medication>().Property(x => x.Purpose).HasConversion(optional).HasColumnType("text");
         builder.Entity<Medication>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
         builder.Entity<Medication>().Property(x => x.PrescribedBy).HasConversion(required).HasColumnType("text");
+        builder.Entity<MedicationChange>().Property(x => x.ActorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<MedicationChange>().Property(x => x.Summary).HasConversion(required).HasColumnType("text");
 
         builder.Entity<Appointment>().Property(x => x.Title).HasConversion(required).HasColumnType("text");
         builder.Entity<Appointment>().Property(x => x.ProviderName).HasConversion(required).HasColumnType("text");

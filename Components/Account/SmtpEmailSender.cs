@@ -48,6 +48,34 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         return true;
     }
 
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(_options.Smtp.Password)
+        && (!string.IsNullOrWhiteSpace(_options.FromAddress) || !string.IsNullOrWhiteSpace(_options.Smtp.User));
+
+    public async Task<bool> TrySendPrescriptionAsync(
+        string email,
+        string html,
+        string plainText,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured)
+        {
+            _logger.LogWarning("Email is not configured. A prescription email was not sent.");
+            return false;
+        }
+
+        try
+        {
+            await SendAsync(email, "Medical Manager prescription", html, plainText, cancellationToken, quietFailure: true);
+            return true;
+        }
+        catch (Exception)
+        {
+            _logger.LogError("A prescription email could not be sent.");
+            throw new InvalidOperationException("The prescription email could not be sent.");
+        }
+    }
+
     public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
     {
         var (html, plainText) = EmailTemplates.EmailConfirmation(confirmationLink);
@@ -75,7 +103,8 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         string subject,
         string htmlBody,
         string plainTextBody,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool quietFailure = false)
     {
         if (string.IsNullOrWhiteSpace(to))
         {
@@ -135,7 +164,10 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send an email with subject '{Subject}'.", subject);
+            if (quietFailure)
+                _logger.LogError("Failed to send an email with subject '{Subject}'.", subject);
+            else
+                _logger.LogError(ex, "Failed to send an email with subject '{Subject}'.", subject);
             throw;
         }
     }

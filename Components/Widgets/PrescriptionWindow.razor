@@ -20,7 +20,7 @@
         }
         else if (_desk.Patients.Count == 0)
         {
-            <p>No patient has approved lab update access.</p>
+            <p>No patient has approved lab update or medication access.</p>
             <p class="mb-0"><a href="patients">Patients → Request patient access</a></p>
         }
         else
@@ -40,27 +40,74 @@
                 <p class="muted">Patient: <strong>@_patientName</strong></p>
             }
 
-            <p class="muted rx-lead">Outpatient order sheet. A group checkbox selects every test in that group. CMP and BMP share the same chart columns, so overlapping analytes are ordered once.</p>
-
-            @foreach (var group in LabOrderCatalog.Groups)
+            <fieldset class="rx-choices">
+                <legend>Include</legend>
+                <label class="@(!LabAllowed ? "is-disabled" : null)">
+                    <input type="checkbox" disabled="@(!LabAllowed)" checked="@_orderLabs" @onchange="OnLabs" />
+                    Lab
+                </label>
+                <label class="@(!MedAllowed ? "is-disabled" : null)">
+                    <input type="checkbox" disabled="@(!MedAllowed)" checked="@_orderMeds" @onchange="OnMeds" />
+                    Medication
+                </label>
+                @if (MedPageAllowed)
+                {
+                    <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", _patientId)">Medication</a>
+                }
+            </fieldset>
+            @if (!LabAllowed)
             {
-                <section class="rx-group">
-                    <label class="rx-group-title">
-                        <input type="checkbox" checked="@GroupChecked(group)" @onchange="e => ToggleGroup(group, e)" />
-                        @group.Name
-                    </label>
-                    <div class="rx-items">
-                        @foreach (var item in group.Items)
-                        {
-                            <label class="rx-item">
-                                <input type="checkbox" checked="@_selected.Contains(item.Id)" @onchange="e => Toggle(item.Id, e)" />
-                                <span>
-                                    <strong>@item.Name</strong>
-                                    <small>@LabOrderCatalog.AnalyteLabel(item)</small>
-                                </span>
-                            </label>
-                        }
-                    </div>
+                <p class="muted rx-denied">Lab: This patient has not approved your access to this part of the chart.</p>
+            }
+            @if (!MedAllowed)
+            {
+                <p class="muted rx-denied">Medication: This patient has not approved your access to this part of the chart.</p>
+            }
+
+            @if (_orderLabs && LabAllowed)
+            {
+                <p class="muted rx-lead">Outpatient order sheet. A group checkbox selects every test in that group. CMP and BMP share the same chart columns, so overlapping analytes are ordered once.</p>
+                @foreach (var group in LabOrderCatalog.Groups)
+                {
+                    <section class="rx-group">
+                        <label class="rx-group-title">
+                            <input type="checkbox" checked="@GroupChecked(group)" @onchange="e => ToggleGroup(group, e)" />
+                            @group.Name
+                        </label>
+                        <div class="rx-items">
+                            @foreach (var item in group.Items)
+                            {
+                                <label class="rx-item">
+                                    <input type="checkbox" checked="@_selected.Contains(item.Id)" @onchange="e => Toggle(item.Id, e)" />
+                                    <span>
+                                        <strong>@item.Name</strong>
+                                        <small>@LabOrderCatalog.AnalyteLabel(item)</small>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    </section>
+                }
+            }
+
+            @if (_orderMeds && MedAllowed)
+            {
+                <section class="rx-meds">
+                    <p class="muted rx-lead">Medication order. Add one row for each medicine. A clock time such as 8:00 AM is saved with the schedule.</p>
+                    @foreach (var draft in _drafts)
+                    {
+                        <div class="rx-med-row">
+                            <input class="form-control" placeholder="Name" aria-label="Medication name" value="@draft.Name" @oninput="e => SetDraft(draft, e, nameof(MedDraft.Name))" />
+                            <input class="form-control" placeholder="Dose" aria-label="Dose" value="@draft.Dose" @oninput="e => SetDraft(draft, e, nameof(MedDraft.Dose))" />
+                            <input class="form-control" placeholder="Time / schedule" aria-label="Time or schedule" value="@draft.Schedule" @oninput="e => SetDraft(draft, e, nameof(MedDraft.Schedule))" />
+                            <input class="form-control" placeholder="Purpose" aria-label="Purpose" value="@draft.Purpose" @oninput="e => SetDraft(draft, e, nameof(MedDraft.Purpose))" />
+                            @if (_drafts.Count > 1)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => RemoveDraft(draft)">Remove</button>
+                            }
+                        </div>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-success" @onclick="AddDraft">Add another medication</button>
                 </section>
             }
 
@@ -72,13 +119,20 @@
             {
                 <div class="alert alert-success py-2" role="status">
                     @_saved
-                    <a href="@CareLinks.To("labs", _patientId)">Open lab chart</a>
+                    @if (_savedLabs)
+                    {
+                        <a href="@CareLinks.To("labs", _patientId)">Open lab chart</a>
+                    }
+                    @if (_savedMeds)
+                    {
+                        <a href="@CareLinks.To("medications", _patientId)">Open medication page</a>
+                    }
                 </div>
             }
 
             <div class="rx-foot">
                 <button type="button" class="btn btn-teal" disabled="@_saving" @onclick="SubmitAsync">Submit</button>
-                <span class="muted">@_selected.Count selected</span>
+                <span class="muted">@(_orderLabs ? $"{_selected.Count} labs" : "")@(_orderLabs && _orderMeds ? " · " : "")@(_orderMeds ? $"{FilledDrafts} medications" : "")</span>
             </div>
         }
     </div>
@@ -94,6 +148,25 @@
     private string? _error;
     private string? _saved;
     private bool _saving;
+    private bool _orderLabs;
+    private bool _orderMeds;
+    private bool _savedLabs;
+    private bool _savedMeds;
+    private readonly List<MedDraft> _drafts = [new()];
+
+    private DoctorGrantItem? Selected =>
+        _desk?.Patients.FirstOrDefault(patient => patient.PatientId == _patientId);
+
+    private bool LabAllowed => Selected?.Lab == ChartAccessLevel.Update;
+
+    private bool MedAllowed => Selected?.Medication == ChartAccessLevel.Update;
+
+    private bool MedPageAllowed => Selected?.Medication != ChartAccessLevel.None;
+
+    private int FilledDrafts => _drafts.Count(draft =>
+        !string.IsNullOrWhiteSpace(draft.Name)
+        || !string.IsNullOrWhiteSpace(draft.Dose)
+        || !string.IsNullOrWhiteSpace(draft.Schedule));
 
     private readonly string _modulePath = "./Components/Widgets/FloatPanel.razor.js";
     private IJSObjectReference? _module;
@@ -119,10 +192,23 @@
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        _desk = await Visits.OpenAsync(state.User, labUpdateOnly: true);
+        var access = await Visits.OpenAsync(state.User, labUpdateOnly: false);
+        if (access.IsDoctor)
+        {
+            var patients = access.Patients
+                .Where(patient => patient.Lab == ChartAccessLevel.Update || patient.Medication != ChartAccessLevel.None)
+                .ToList();
+            _desk = access with { Patients = patients };
+        }
+        else
+        {
+            _desk = access;
+        }
+
         var first = _desk.Patients.FirstOrDefault();
         _patientId = first?.PatientId;
         _patientName = first?.PatientName;
+        SyncChoices();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -144,6 +230,54 @@
     {
         _patientId = e.Value?.ToString();
         _patientName = _desk?.Patients.FirstOrDefault(patient => patient.PatientId == _patientId)?.PatientName;
+        _saved = null;
+        SyncChoices();
+    }
+
+    private void SyncChoices()
+    {
+        if (!LabAllowed)
+            _orderLabs = false;
+        if (!MedAllowed)
+            _orderMeds = false;
+    }
+
+    private void OnLabs(ChangeEventArgs e)
+    {
+        if (!LabAllowed)
+            return;
+        _orderLabs = e.Value is bool on && on;
+        _saved = null;
+    }
+
+    private void OnMeds(ChangeEventArgs e)
+    {
+        if (!MedAllowed)
+            return;
+        _orderMeds = e.Value is bool on && on;
+        _saved = null;
+    }
+
+    private static void SetDraft(MedDraft draft, ChangeEventArgs e, string field)
+    {
+        var value = e.Value?.ToString() ?? "";
+        if (field == nameof(MedDraft.Name))
+            draft.Name = value;
+        else if (field == nameof(MedDraft.Dose))
+            draft.Dose = value;
+        else if (field == nameof(MedDraft.Schedule))
+            draft.Schedule = value;
+        else
+            draft.Purpose = value;
+    }
+
+    private void AddDraft() => _drafts.Add(new MedDraft());
+
+    private void RemoveDraft(MedDraft draft)
+    {
+        _drafts.Remove(draft);
+        if (_drafts.Count == 0)
+            _drafts.Add(new MedDraft());
         _saved = null;
     }
 
@@ -181,15 +315,47 @@
         _saving = true;
         _error = null;
         _saved = null;
+        _savedLabs = false;
+        _savedMeds = false;
         try
         {
-            await Visits.PrescribeLabsAsync(_desk.ActorUserId, _patientId, _selected.ToArray());
-            _saved = $"Prescribed for {_patientName}.";
-            _selected.Clear();
+            if (!_orderLabs && !_orderMeds)
+                throw new InvalidOperationException("Choose Medication, Lab, or both.");
+            if (_orderLabs && _selected.Count == 0)
+                throw new InvalidOperationException("Select at least one lab.");
+
+            var notes = new List<string>();
+            if (_orderMeds)
+            {
+                var orders = _drafts
+                    .Where(draft => !string.IsNullOrWhiteSpace(draft.Name)
+                        || !string.IsNullOrWhiteSpace(draft.Dose)
+                        || !string.IsNullOrWhiteSpace(draft.Schedule)
+                        || !string.IsNullOrWhiteSpace(draft.Purpose))
+                    .Select(draft => new MedicationOrder(draft.Name, draft.Dose, draft.Schedule, draft.Purpose))
+                    .ToList();
+                var count = await Visits.PrescribeMedicationsAsync(_desk.ActorUserId, _patientId, orders);
+                notes.Add(count == 1 ? "1 medication prescribed." : $"{count} medications prescribed.");
+                _drafts.Clear();
+                _drafts.Add(new MedDraft());
+                _savedMeds = true;
+            }
+
+            if (_orderLabs)
+            {
+                await Visits.PrescribeLabsAsync(_desk.ActorUserId, _patientId, _selected.ToArray());
+                notes.Add($"Labs prescribed for {_patientName}.");
+                _selected.Clear();
+                _savedLabs = true;
+            }
+
+            _saved = string.Join(" ", notes);
         }
         catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
         {
-            _error = ex.Message;
+            _error = _savedMeds
+                ? $"Medications were saved. {ex.Message}"
+                : ex.Message;
         }
         finally
         {
@@ -258,6 +424,14 @@
         catch (JSDisconnectedException)
         {
         }
+    }
+
+    private sealed class MedDraft
+    {
+        public string Name { get; set; } = "";
+        public string Dose { get; set; } = "";
+        public string Schedule { get; set; } = "";
+        public string Purpose { get; set; } = "";
     }
 
     private sealed class FloatOrigin
