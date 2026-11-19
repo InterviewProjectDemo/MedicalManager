@@ -51,18 +51,44 @@ public sealed class VirtualVisitService(
         return await records.AddPrescribedMedicationsAsync(patientUserId, doctorUserId, doctor.DisplayName, orders);
     }
 
-    public async Task<IReadOnlyList<ClinicalNote>> ListNotesAsync(ClaimsPrincipal principal, string patientUserId)
+    public async Task<IReadOnlyList<ClinicalNote>> ListNotesAsync(
+        ClaimsPrincipal principal,
+        string patientUserId,
+        string? doctorUserId = null)
     {
         var actor = await RequireReaderAsync(principal, patientUserId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var query = db.ClinicalNotes.AsNoTracking().Where(note => note.PatientUserId == patientUserId);
         if (actor.IsDoctor)
         {
-            query = query.Where(note =>
-                note.Section == NoteSection.Patient || note.DoctorUserId == actor.UserId);
+            // A doctor's notes stay with that doctor and the selected patient.
+            // Patient-note rows are not part of this query, so their contents are never returned.
+            var doctorId = actor.UserId;
+            query = query.Where(note => note.Section == NoteSection.Doctor && note.DoctorUserId == doctorId);
+        }
+        else
+        {
+            var viewedDoctor = (doctorUserId ?? "").Trim();
+            if (viewedDoctor.Length == 0)
+            {
+                query = query.Where(note => note.Section == NoteSection.Patient);
+            }
+            else
+            {
+                var grant = await chartAccess.GetActiveGrantAsync(viewedDoctor, actor.UserId);
+                if (grant is null)
+                    throw new UnauthorizedAccessException("You can only read notes from a doctor you approved.");
+
+                query = query.Where(note =>
+                    note.Section == NoteSection.Patient
+                    || (note.Section == NoteSection.Doctor && note.DoctorUserId == viewedDoctor));
+            }
         }
 
-        return await query.OrderBy(note => note.CreatedAt).ToListAsync();
+        return await query
+            .OrderByDescending(note => note.CreatedAt)
+            .ThenByDescending(note => note.Id)
+            .ToListAsync();
     }
 
     public async Task AddNoteAsync(ClaimsPrincipal principal, string patientUserId, string body)

@@ -15,39 +15,68 @@ else if (_missingPatient)
 else
 {
     <div class="note-frame">
-        <div class="note-board">
-            <section class="note-column" aria-label="Patient notes">
-                <header>
-                    <h3>Patient</h3>
-                    <p>@(_isDoctor ? "Written by the patient. You can read this section." : "Your notes. Only you can add to this section.")</p>
-                </header>
-                @foreach (var note in PatientNotes)
-                {
-                    <article class="visit-entry">
-                        <header>
-                            <time datetime="@note.CreatedAt.ToString("o")">@FormatWhen(note.CreatedAt)</time>
-                            <span>Entry by @note.AuthorName · @Role(note)</span>
-                        </header>
-                        <p>@note.Body</p>
-                    </article>
-                }
-                @if (PatientNotes.Count == 0)
-                {
-                    <p class="muted">No patient notes yet.</p>
-                }
-                @if (!_isDoctor)
-                {
+        <div class="note-board @(_isDoctor ? "is-single" : null)">
+            @if (!_isDoctor)
+            {
+                <section class="note-column" aria-label="Patient notes">
+                    <header class="note-column-head">
+                        <div>
+                            <h3>Patient</h3>
+                            <p>Your notes. Only you can add to this section.</p>
+                        </div>
+                    </header>
+                    @foreach (var note in PatientNotes)
+                    {
+                        <article class="visit-entry">
+                            <header>
+                                <time datetime="@note.CreatedAt.ToString("o")">@FormatWhen(note.CreatedAt)</time>
+                                <span>Entry by @note.AuthorName · @Role(note)</span>
+                            </header>
+                            <p>@note.Body</p>
+                        </article>
+                    }
+                    @if (PatientNotes.Count == 0)
+                    {
+                        <p class="muted">No patient notes yet.</p>
+                    }
                     <form class="note-compose" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
                         <label class="form-label" for="@_patientField">Add a patient note</label>
                         <textarea id="@_patientField" class="form-control" rows="4" @bind="_draft" @bind:event="oninput"></textarea>
                         <button type="submit" class="btn btn-teal" disabled="@_saving">Save note</button>
                     </form>
+                </section>
+            }
+            <section class="note-column" id="@_doctorListId" aria-label="Doctor notes">
+                @if (!_isDoctor && _doctors.Count > 0)
+                {
+                    <div class="visit-tabs" role="tablist" aria-label="Doctors">
+                        @foreach (var doctor in _doctors)
+                        {
+                            <button type="button"
+                                    role="tab"
+                                    class="visit-tab @(_doctorId == doctor.DoctorUserId ? "is-active" : null)"
+                                    aria-selected="@(_doctorId == doctor.DoctorUserId)"
+                                    @onclick="() => ChooseDoctor(doctor.DoctorUserId)">
+                                @doctor.DoctorName
+                            </button>
+                        }
+                    </div>
                 }
-            </section>
-            <section class="note-column" aria-label="Doctor notes">
-                <header>
-                    <h3>Doctor</h3>
-                    <p>@(_isDoctor ? "Your clinical notes for this patient." : "Written by your doctors. You can read this section.")</p>
+                <header class="note-column-head">
+                    <div>
+                        <h3>Doctor</h3>
+                        <p>@DoctorSectionText</p>
+                    </div>
+                    @if (_isDoctor || !string.IsNullOrWhiteSpace(_doctorId))
+                    {
+                        <label class="note-sort">
+                            <span>Date</span>
+                            <select class="form-select form-select-sm" @bind="_dateOrder" aria-label="Sort doctor notes by date" aria-controls="@_doctorListId">
+                                <option value="newest">Newest first</option>
+                                <option value="oldest">Oldest first</option>
+                            </select>
+                        </label>
+                    }
                 </header>
                 @foreach (var note in DoctorNotes)
                 {
@@ -61,7 +90,7 @@ else
                 }
                 @if (DoctorNotes.Count == 0)
                 {
-                    <p class="muted">No doctor notes yet.</p>
+                    <p class="muted">@(_isDoctor || _doctors.Count > 0 ? "No doctor notes yet." : "No doctor is on your care team yet.")</p>
                 }
                 @if (_isDoctor)
                 {
@@ -85,9 +114,13 @@ else
 
     private readonly string _patientField = "patient-note-" + Guid.NewGuid().ToString("N")[..8];
     private readonly string _doctorField = "doctor-note-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _doctorListId = "doctor-notes-" + Guid.NewGuid().ToString("N")[..8];
     private readonly CancellationTokenSource _poll = new();
     private IReadOnlyList<ClinicalNote> _notes = [];
+    private IReadOnlyList<VisitDoctorOption> _doctors = [];
+    private string? _doctorId;
     private string _draft = "";
+    private string _dateOrder = "newest";
     private string? _error;
     private string? _loadedFor;
     private bool _hasLoaded;
@@ -97,11 +130,38 @@ else
     private bool _missingPatient;
     private int _generation;
 
-    private IReadOnlyList<ClinicalNote> PatientNotes =>
-        _notes.Where(note => note.Section == NoteSection.Patient).ToList();
+    private bool NewestFirst => _dateOrder != "oldest";
 
-    private IReadOnlyList<ClinicalNote> DoctorNotes =>
-        _notes.Where(note => note.Section != NoteSection.Patient).ToList();
+    private string DoctorSectionText =>
+        _isDoctor
+            ? "Your clinical notes for this patient."
+            : _doctors.Count == 0
+                ? "Doctor notes appear here when a doctor you approved writes them."
+                : "Written by this doctor. You can read this section.";
+
+    private IReadOnlyList<ClinicalNote> PatientNotes =>
+        _notes.Where(note => note.Section == NoteSection.Patient)
+            .OrderBy(note => note.CreatedAt)
+            .ThenBy(note => note.Id)
+            .ToList();
+
+    private IReadOnlyList<ClinicalNote> DoctorNotes
+    {
+        get
+        {
+            IEnumerable<ClinicalNote> notes = _notes.Where(note => note.Section == NoteSection.Doctor);
+            if (!_isDoctor)
+            {
+                notes = string.IsNullOrWhiteSpace(_doctorId)
+                    ? Array.Empty<ClinicalNote>()
+                    : notes.Where(note => note.DoctorUserId == _doctorId);
+            }
+
+            return NewestFirst
+                ? notes.OrderByDescending(note => note.CreatedAt).ThenByDescending(note => note.Id).ToList()
+                : notes.OrderBy(note => note.CreatedAt).ThenBy(note => note.Id).ToList();
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -112,6 +172,17 @@ else
         _hasLoaded = true;
         _loadedFor = key;
         _notes = [];
+        _doctors = [];
+        _doctorId = null;
+        await ReloadAsync();
+    }
+
+    private async Task ChooseDoctor(string doctorId)
+    {
+        if (_doctorId == doctorId)
+            return;
+
+        _doctorId = doctorId;
         await ReloadAsync();
     }
 
@@ -137,11 +208,30 @@ else
             if (string.IsNullOrWhiteSpace(patientId))
             {
                 _notes = [];
+                _doctors = [];
                 _error = null;
                 return;
             }
 
-            var notes = await Visits.ListNotesAsync(state.User, patientId);
+            if (_isDoctor)
+            {
+                _doctors = [];
+                _doctorId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            }
+            else
+            {
+                var access = await Visits.OpenAsync(state.User, labUpdateOnly: false);
+                if (generation != _generation)
+                    return;
+
+                _doctors = access.Doctors;
+                if (_doctors.Count == 0)
+                    _doctorId = null;
+                else if (string.IsNullOrWhiteSpace(_doctorId) || _doctors.All(doctor => doctor.DoctorUserId != _doctorId))
+                    _doctorId = _doctors[0].DoctorUserId;
+            }
+
+            var notes = await Visits.ListNotesAsync(state.User, patientId, _isDoctor ? null : _doctorId);
             if (generation != _generation)
                 return;
 
