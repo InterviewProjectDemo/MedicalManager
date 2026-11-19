@@ -1,0 +1,90 @@
+@page "/set-appointment"
+@attribute [Authorize(Roles = "Doctor")]
+@inject VirtualVisitService Visits
+
+<PageTitle>Set appointment</PageTitle>
+
+<div class="page-head accent-appt">
+    <div>
+        <p class="eyebrow">Virtual visit</p>
+        <h1>Set appointment</h1>
+        <p class="muted">Propose a date, time, and reason for a patient who approved access. It appears on that patient's appointment list.</p>
+    </div>
+</div>
+
+<VisitDesk EmptyMessage="No patient has approved access for an appointment." SelectionChanged="SelectAsync">
+    <ChildContent Context="choice">
+        <EditForm Model="_form" OnValidSubmit="() => SaveAsync(choice)" class="form-card">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="appt-day">Date</label>
+                    <InputDate id="appt-day" class="form-control" @bind-Value="_form.Day" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="appt-time">Time</label>
+                    <InputText id="appt-time" type="time" class="form-control" @bind-Value="_form.Time" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="appt-reason">Reason</label>
+                    <InputText id="appt-reason" class="form-control" @bind-Value="_form.Reason" placeholder="Follow-up, lab review, virtual visit" />
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <div class="alert alert-danger py-2 mt-3" role="alert">@_error</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_saved))
+            {
+                <div class="alert alert-success py-2 mt-3" role="status">@_saved</div>
+            }
+            <div class="form-actions">
+                <button type="submit" class="btn btn-purple" disabled="@_saving">Save appointment</button>
+            </div>
+        </EditForm>
+    </ChildContent>
+</VisitDesk>
+
+@code {
+    private readonly AppointmentForm _form = new();
+    private string? _error;
+    private string? _saved;
+    private bool _saving;
+
+    private Task SelectAsync(VisitChoice choice)
+    {
+        _error = null;
+        _saved = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync(VisitChoice choice)
+    {
+        _saving = true;
+        _error = null;
+        _saved = null;
+        try
+        {
+            if (!TimeOnly.TryParse(_form.Time, out var time))
+                throw new InvalidOperationException("Enter a time.");
+
+            await Visits.SetAppointmentAsync(choice.DoctorUserId, choice.PatientUserId, _form.Day, time, _form.Reason);
+            _saved = $"Saved. {choice.PatientName} will see this on their appointment list.";
+            _form.Reason = "";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class AppointmentForm
+    {
+        public DateOnly Day { get; set; } = DateOnly.FromDateTime(DateTime.Now.AddDays(1));
+        public string Time { get; set; } = "09:00";
+        public string Reason { get; set; } = "";
+    }
+}

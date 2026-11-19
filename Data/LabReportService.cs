@@ -67,6 +67,32 @@ public sealed class LabReportService(IDbContextFactory<ApplicationDbContext> dbF
         await db.SaveChangesAsync();
     }
 
+    public async Task<LabReport> PrescribeAsync(string patientUserId, string doctorName, IReadOnlyCollection<string> orderIds)
+    {
+        var codes = LabOrderCatalog.Expand(orderIds);
+        if (codes.Count == 0)
+            throw new InvalidOperationException("Select at least one lab.");
+
+        var name = doctorName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            name = "the doctor";
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var report = new LabReport
+        {
+            UserId = patientUserId,
+            ReportDate = DateOnly.FromDateTime(DateTime.Now),
+            CreatedAt = DateTime.UtcNow,
+            OrderedAt = DateTime.UtcNow,
+            OrderingDoctorName = name,
+            Status = $"Prescribed by {name}",
+            OrderedTestCodes = string.Join(',', codes)
+        };
+        db.LabReports.Add(report);
+        await db.SaveChangesAsync();
+        return report;
+    }
+
     public async Task DeleteReportAsync(int id, string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

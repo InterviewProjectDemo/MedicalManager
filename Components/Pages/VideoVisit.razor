@@ -1,0 +1,178 @@
+@page "/video-visit"
+@attribute [Authorize]
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Video visit</PageTitle>
+
+<div class="page-head accent-doctor">
+    <div>
+        <p class="eyebrow">Virtual visit</p>
+        <h1>Video visit</h1>
+        <p class="muted">A visit lobby for this doctor and patient. Camera and microphone stay on this device. This page records that the visit was scheduled or started.</p>
+    </div>
+</div>
+
+<VisitDesk NeedsDoctor="true" EmptyMessage="No patient has approved access for a video visit." SelectionChanged="LoadAsync">
+    <ChildContent Context="choice">
+        <div class="form-card">
+            <p class="visit-status">Status: <strong>@(_current?.Status ?? "Not scheduled")</strong></p>
+            @if (_current?.StartedAt is DateTime started)
+            {
+                <p class="muted">Started @started.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</p>
+            }
+            <video @ref="_video" class="visit-camera" autoplay playsinline muted></video>
+            @if (!string.IsNullOrWhiteSpace(_cameraNote))
+            {
+                <p class="muted">@_cameraNote</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_error</div>
+            }
+            <div class="form-actions">
+                @if (choice.IsDoctor)
+                {
+                    <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => ScheduleAsync(choice)">Schedule visit</button>
+                }
+                <button type="button" class="btn btn-teal" disabled="@(_busy || _current is null)" @onclick="() => StartAsync(choice)">Start visit</button>
+                <button type="button" class="btn btn-outline-secondary" disabled="@(_busy || _current is null || _current.Status != "In progress")" @onclick="() => EndAsync(choice)">End visit</button>
+            </div>
+        </div>
+    </ChildContent>
+</VisitDesk>
+
+@code {
+    private IReadOnlyList<VideoVisitSession> _visits = [];
+    private VideoVisitSession? _current;
+    private ElementReference _video;
+    private IJSObjectReference? _module;
+    private string? _error;
+    private string? _cameraNote;
+    private bool _busy;
+
+    private async Task LoadAsync(VisitChoice choice)
+    {
+        _error = null;
+        var state = await Auth.GetAuthenticationStateAsync();
+        _visits = await Visits.ListVideoVisitsAsync(state.User, choice.PatientUserId, choice.DoctorUserId);
+        _current = _visits.FirstOrDefault(visit => visit.Status != "Ended") ?? _visits.FirstOrDefault();
+    }
+
+    private async Task ScheduleAsync(VisitChoice choice)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Visits.ScheduleVideoVisitAsync(choice.DoctorUserId, choice.PatientUserId);
+            await LoadAsync(choice);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StartAsync(VisitChoice choice)
+    {
+        if (_current is null)
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            _current = await Visits.StartVideoVisitAsync(state.User, _current.Id, choice.PatientUserId, choice.DoctorUserId);
+            await LoadAsync(choice);
+            await StartCameraAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task EndAsync(VisitChoice choice)
+    {
+        if (_current is null)
+            return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            await StopCameraAsync();
+            var state = await Auth.GetAuthenticationStateAsync();
+            await Visits.EndVideoVisitAsync(state.User, _current.Id, choice.PatientUserId, choice.DoctorUserId);
+            await LoadAsync(choice);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StartCameraAsync()
+    {
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/VideoVisit.razor.js");
+            var result = await _module.InvokeAsync<string>("startPreview", _video);
+            _cameraNote = result switch
+            {
+                "live" => "Your camera is on for this device only.",
+                "blocked" => "Camera or microphone permission was not granted. The visit is still marked in progress.",
+                _ => "This browser cannot open the camera. The visit is still marked in progress."
+            };
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            _cameraNote = "The camera preview did not start. The visit is still marked in progress.";
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("stopPreview", _video);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopCameraAsync();
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

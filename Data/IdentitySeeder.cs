@@ -44,6 +44,7 @@ public static class IdentitySeeder
         await EnsureSmsConsentColumnsAsync(db);
         await EnsureDoctorCredentialColumnsAsync(db);
         await EnsureChartAccessSchemaAsync(db);
+        await EnsureVirtualVisitSchemaAsync(db);
         await EnsureMonitorColumnsAsync(db);
         await EnsureAppointmentReminderSchemaAsync(db);
         await EnsureCareReminderSchemaAsync(db);
@@ -103,7 +104,9 @@ public static class IdentitySeeder
 
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var patient = await EnsureUserAsync(users, DemoPatientEmail, DemoPatientPassword, "Alex Rivera", AppRoles.Patient);
-        await EnsureUserAsync(users, DemoDoctorEmail, DemoDoctorPassword, "Dr. Morgan Chen", AppRoles.Doctor);
+        var doctor = await EnsureUserAsync(users, DemoDoctorEmail, DemoDoctorPassword, "Dr. Morgan Chen", AppRoles.Doctor);
+        if (db.Database.IsSqlite())
+            await EnsureDemoVisitGrantAsync(db, doctor.Id, patient.Id);
 
         if (!await db.PatientProfiles.AnyAsync(x => x.UserId == patient.Id))
         {
@@ -1473,6 +1476,183 @@ public static class IdentitySeeder
             """ALTER TABLE "ChartAccessRequests" ADD COLUMN IF NOT EXISTS "Medication" integer NOT NULL DEFAULT 0;""");
         await db.Database.ExecuteSqlRawAsync(
             """ALTER TABLE "ChartAccessGrants" ADD COLUMN IF NOT EXISTS "Medication" integer NOT NULL DEFAULT 0;""");
+    }
+
+    private static async Task EnsureDemoVisitGrantAsync(ApplicationDbContext db, string doctorId, string patientId)
+    {
+        var exists = await db.ChartAccessGrants.AnyAsync(grant =>
+            grant.DoctorUserId == doctorId && grant.PatientUserId == patientId);
+        if (exists)
+            return;
+
+        db.ChartAccessGrants.Add(new ChartAccessGrant
+        {
+            DoctorUserId = doctorId,
+            PatientUserId = patientId,
+            Lab = ChartAccessLevel.Update,
+            BloodPressure = ChartAccessLevel.View,
+            Sugar = ChartAccessLevel.View,
+            Medication = ChartAccessLevel.View,
+            ApprovedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureVirtualVisitSchemaAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var columns = await ReadSqliteColumnsAsync(connection, "LabReports");
+                await TryAddColumnAsync(db, columns, "Status",
+                    """ALTER TABLE "LabReports" ADD COLUMN "Status" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "OrderingDoctorName",
+                    """ALTER TABLE "LabReports" ADD COLUMN "OrderingDoctorName" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "OrderedAt",
+                    """ALTER TABLE "LabReports" ADD COLUMN "OrderedAt" TEXT NULL""");
+                await TryAddColumnAsync(db, columns, "OrderedTestCodes",
+                    """ALTER TABLE "LabReports" ADD COLUMN "OrderedTestCodes" TEXT NULL""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            await CreateSqliteVisitTableAsync(db, "ClinicalNotes", """
+                "AuthorName" TEXT NOT NULL,
+                "Body" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL
+                """);
+            await CreateSqliteVisitTableAsync(db, "VisitMessages", """
+                "SenderUserId" TEXT NOT NULL,
+                "Body" TEXT NOT NULL,
+                "SentAt" TEXT NOT NULL
+                """);
+            await CreateSqliteVisitTableAsync(db, "VideoVisits", """
+                "DoctorName" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "StartedAt" TEXT NULL,
+                "EndedAt" TEXT NULL,
+                "Status" TEXT NOT NULL
+                """);
+            await CreateSqliteVisitTableAsync(db, "AfterVisitSummaries", """
+                "AuthorName" TEXT NOT NULL,
+                "Body" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL
+                """);
+            await CreateSqliteVisitTableAsync(db, "ReferralOrders", """
+                "AuthorName" TEXT NOT NULL,
+                "Specialty" TEXT NOT NULL,
+                "ClinicianName" TEXT NULL,
+                "Reason" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL
+                """);
+        }
+        else
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "LabReports" ADD COLUMN IF NOT EXISTS "Status" text NULL;""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "LabReports" ADD COLUMN IF NOT EXISTS "OrderingDoctorName" text NULL;""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "LabReports" ADD COLUMN IF NOT EXISTS "OrderedAt" timestamp without time zone NULL;""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "LabReports" ADD COLUMN IF NOT EXISTS "OrderedTestCodes" text NULL;""");
+
+            await CreatePostgresVisitTableAsync(db, "ClinicalNotes", """
+                "AuthorName" text NOT NULL,
+                "Body" text NOT NULL,
+                "CreatedAt" timestamp without time zone NOT NULL
+                """);
+            await CreatePostgresVisitTableAsync(db, "VisitMessages", """
+                "SenderUserId" text NOT NULL,
+                "Body" text NOT NULL,
+                "SentAt" timestamp without time zone NOT NULL
+                """);
+            await CreatePostgresVisitTableAsync(db, "VideoVisits", """
+                "DoctorName" text NOT NULL,
+                "CreatedAt" timestamp without time zone NOT NULL,
+                "StartedAt" timestamp without time zone NULL,
+                "EndedAt" timestamp without time zone NULL,
+                "Status" text NOT NULL
+                """);
+            await CreatePostgresVisitTableAsync(db, "AfterVisitSummaries", """
+                "AuthorName" text NOT NULL,
+                "Body" text NOT NULL,
+                "CreatedAt" timestamp without time zone NOT NULL
+                """);
+            await CreatePostgresVisitTableAsync(db, "ReferralOrders", """
+                "AuthorName" text NOT NULL,
+                "Specialty" text NOT NULL,
+                "ClinicianName" text NULL,
+                "Reason" text NOT NULL,
+                "CreatedAt" timestamp without time zone NOT NULL
+                """);
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ClinicalNotes_PatientUserId_CreatedAt" ON "ClinicalNotes" ("PatientUserId", "CreatedAt");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_VisitMessages_PatientUserId_DoctorUserId_SentAt" ON "VisitMessages" ("PatientUserId", "DoctorUserId", "SentAt");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_VideoVisits_PatientUserId_DoctorUserId_CreatedAt" ON "VideoVisits" ("PatientUserId", "DoctorUserId", "CreatedAt");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_AfterVisitSummaries_PatientUserId_CreatedAt" ON "AfterVisitSummaries" ("PatientUserId", "CreatedAt");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_ReferralOrders_PatientUserId_CreatedAt" ON "ReferralOrders" ("PatientUserId", "CreatedAt");""");
+    }
+
+    private static Task CreateSqliteVisitTableAsync(ApplicationDbContext db, string name, string extraColumns)
+    {
+        var sql = """
+            CREATE TABLE IF NOT EXISTS "
+            """ + name + """
+            " (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_
+            """ + name + """
+            " PRIMARY KEY AUTOINCREMENT,
+                "PatientUserId" TEXT NOT NULL,
+                "DoctorUserId" TEXT NOT NULL,
+            """ + extraColumns + """
+            ,
+                CONSTRAINT "FK_
+            """ + name + """
+            _AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_
+            """ + name + """
+            _AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT
+            );
+            """;
+        return db.Database.ExecuteSqlRawAsync(sql);
+    }
+
+    private static Task CreatePostgresVisitTableAsync(ApplicationDbContext db, string name, string extraColumns)
+    {
+        var sql = """
+            CREATE TABLE IF NOT EXISTS "
+            """ + name + """
+            " (
+                "Id" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                "PatientUserId" text NOT NULL,
+                "DoctorUserId" text NOT NULL,
+            """ + extraColumns + """
+            ,
+                CONSTRAINT "FK_
+            """ + name + """
+            _AspNetUsers_PatientUserId" FOREIGN KEY ("PatientUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_
+            """ + name + """
+            _AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT
+            );
+            """;
+        return db.Database.ExecuteSqlRawAsync(sql);
     }
 
     private static async Task TryAddColumnAsync(

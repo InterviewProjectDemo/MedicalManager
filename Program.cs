@@ -145,6 +145,7 @@ builder.Services.AddScoped<MedicationScheduleService>();
 builder.Services.AddScoped<ChartAccessService>();
 builder.Services.AddScoped<PatientAccessService>();
 builder.Services.AddScoped<LabReportService>();
+builder.Services.AddScoped<VirtualVisitService>();
 builder.Services.AddScoped<LabEditAuthorizationService>();
 builder.Services.AddHttpClient("OpenFda", client =>
 {

@@ -1,0 +1,108 @@
+@page "/referral"
+@attribute [Authorize]
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Referral</PageTitle>
+
+<div class="page-head accent-doctor">
+    <div>
+        <p class="eyebrow">Virtual visit</p>
+        <h1>Referral</h1>
+        <p class="muted">Send the patient to another specialty. The patient can read the referral from Notes.</p>
+    </div>
+</div>
+
+<VisitDesk EmptyMessage="No patient has approved access for a referral." SelectionChanged="LoadAsync">
+    <ChildContent Context="choice">
+        @if (choice.IsDoctor)
+        {
+            <EditForm Model="_form" OnValidSubmit="() => SaveAsync(choice)" class="form-card mb-3">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="ref-specialty">Specialty</label>
+                        <InputText id="ref-specialty" class="form-control" @bind-Value="_form.Specialty" placeholder="Cardiology" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="ref-clinician">Clinician</label>
+                        <InputText id="ref-clinician" class="form-control" @bind-Value="_form.Clinician" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="ref-reason">Reason</label>
+                        <InputTextArea id="ref-reason" class="form-control" rows="4" @bind-Value="_form.Reason" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="alert alert-danger py-2 mt-3" role="alert">@_error</div>
+                }
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-teal" disabled="@_saving">Save referral</button>
+                </div>
+            </EditForm>
+        }
+        <div class="table-card p-3">
+            @if (_items.Count == 0)
+            {
+                <p class="muted mb-0">No referral yet.</p>
+            }
+            else
+            {
+                @foreach (var item in _items)
+                {
+                    <article class="visit-entry">
+                        <header>
+                            <strong>@item.Specialty</strong>
+                            <time>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</time>
+                        </header>
+                        <p>@item.Reason</p>
+                        <p class="muted mb-0">@item.AuthorName@(string.IsNullOrWhiteSpace(item.ClinicianName) ? "" : $" · {item.ClinicianName}")</p>
+                    </article>
+                }
+            }
+        </div>
+    </ChildContent>
+</VisitDesk>
+
+@code {
+    private readonly ReferralForm _form = new();
+    private IReadOnlyList<ReferralOrder> _items = [];
+    private string? _error;
+    private bool _saving;
+
+    private async Task LoadAsync(VisitChoice choice)
+    {
+        _error = null;
+        var state = await Auth.GetAuthenticationStateAsync();
+        _items = await Visits.ListReferralsAsync(state.User, choice.PatientUserId);
+    }
+
+    private async Task SaveAsync(VisitChoice choice)
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Visits.AddReferralAsync(choice.DoctorUserId, choice.PatientUserId, _form.Specialty, _form.Clinician, _form.Reason);
+            _form.Specialty = "";
+            _form.Clinician = "";
+            _form.Reason = "";
+            await LoadAsync(choice);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class ReferralForm
+    {
+        public string Specialty { get; set; } = "";
+        public string Clinician { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+}

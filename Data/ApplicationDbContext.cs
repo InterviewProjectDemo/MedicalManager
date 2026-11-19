@@ -31,6 +31,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserDashboardLayout> UserDashboardLayouts => Set<UserDashboardLayout>();
     public DbSet<ChartAccessRequest> ChartAccessRequests => Set<ChartAccessRequest>();
     public DbSet<ChartAccessGrant> ChartAccessGrants => Set<ChartAccessGrant>();
+    public DbSet<ClinicalNote> ClinicalNotes => Set<ClinicalNote>();
+    public DbSet<VisitMessage> VisitMessages => Set<VisitMessage>();
+    public DbSet<VideoVisitSession> VideoVisitSessions => Set<VideoVisitSession>();
+    public DbSet<AfterVisitSummary> AfterVisitSummaries => Set<AfterVisitSummary>();
+    public DbSet<ReferralOrder> ReferralOrders => Set<ReferralOrder>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -191,7 +196,26 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .OnDelete(DeleteBehavior.Cascade);
         builder.Entity<ChartAccessGrant>().HasIndex(x => new { x.DoctorUserId, x.PatientUserId }).IsUnique();
 
+        ConfigureVisit<ClinicalNote>(builder);
+        builder.Entity<ClinicalNote>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
+        ConfigureVisit<VisitMessage>(builder);
+        builder.Entity<VisitMessage>().HasIndex(x => new { x.PatientUserId, x.DoctorUserId, x.SentAt });
+        builder.Entity<VideoVisitSession>().ToTable("VideoVisits");
+        ConfigureVisit<VideoVisitSession>(builder);
+        builder.Entity<VideoVisitSession>().HasIndex(x => new { x.PatientUserId, x.DoctorUserId, x.CreatedAt });
+        ConfigureVisit<AfterVisitSummary>(builder);
+        builder.Entity<AfterVisitSummary>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
+        ConfigureVisit<ReferralOrder>(builder);
+        builder.Entity<ReferralOrder>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
+
         ApplyPhiEncryption(builder);
+    }
+
+    private static void ConfigureVisit<T>(ModelBuilder builder)
+        where T : class
+    {
+        builder.Entity<T>().HasOne<ApplicationUser>().WithMany().HasForeignKey("PatientUserId").OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<T>().HasOne<ApplicationUser>().WithMany().HasForeignKey("DoctorUserId").OnDelete(DeleteBehavior.Restrict);
     }
 
     private void ApplyPhiEncryption(ModelBuilder builder)
@@ -285,6 +309,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Doctor>().Property(x => x.PhoneNumber).HasConversion(required).HasColumnType("text");
 
         builder.Entity<LabReport>().Property(x => x.Notes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<LabReport>().Property(x => x.Status).HasConversion(optional).HasColumnType("text");
+        builder.Entity<LabReport>().Property(x => x.OrderingDoctorName).HasConversion(optional).HasColumnType("text");
+        builder.Entity<LabReport>().Property(x => x.OrderedTestCodes).HasConversion(optional).HasColumnType("text");
+        builder.Entity<ClinicalNote>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<ClinicalNote>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
+        builder.Entity<VisitMessage>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
+        builder.Entity<VideoVisitSession>().Property(x => x.DoctorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<AfterVisitSummary>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<AfterVisitSummary>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
+        builder.Entity<ReferralOrder>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<ReferralOrder>().Property(x => x.Specialty).HasConversion(required).HasColumnType("text");
+        builder.Entity<ReferralOrder>().Property(x => x.ClinicianName).HasConversion(optional).HasColumnType("text");
+        builder.Entity<ReferralOrder>().Property(x => x.Reason).HasConversion(required).HasColumnType("text");
         builder.Entity<LabResult>().Property(x => x.TestCode).HasConversion(lookup).HasColumnType("text");
         builder.Entity<LabResult>().Property(x => x.Value).HasConversion(number).HasColumnType("text");
         builder.Entity<LabResult>().Property(x => x.Unit).HasConversion(optional).HasColumnType("text");

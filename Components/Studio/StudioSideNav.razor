@@ -15,47 +15,104 @@
     }
     else
     {
-        <button type="button" class="studio-nav-link" @onclick="OnEmergency">
-            @Mark("emergency", "Emergency")
-        </button>
-        <button type="button" class="studio-nav-link" @onclick="OnVoice">
-            @Mark("voice", "Say Call")
-        </button>
-        <NavLink class="studio-nav-link" href="@Href("dashboard-studio")" @onclick="OnNavigate">
-            @Mark("layout", "Layout")
-        </NavLink>
-        <NavLink class="studio-nav-link" href="@Href("profile")" @onclick="OnNavigate">
-            @Mark("profile", "Profile")
-        </NavLink>
-        <NavLink class="studio-nav-link" href="@Href("resource")" @onclick="OnNavigate">
-            @Mark("resource", "Resource")
-        </NavLink>
         <AuthorizeView Roles="@AppRoles.Doctor" Context="doctorNav">
-            <NavLink class="studio-nav-link" href="patients" @onclick="OnNavigate">
-                @Mark("patients", "Patients")
-            </NavLink>
+            <Authorized>
+                <NavLink class="studio-nav-link" href="@Href("")" Match="NavLinkMatch.All" @onclick="OnNavigate">
+                    @Mark("home", "Dashboard")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("profile")" @onclick="OnNavigate">
+                    @Mark("profile", "Profile")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="patients" @onclick="OnNavigate">
+                    @Mark("patients", "Patients")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("labs")" @onclick="OnNavigate">
+                    @Mark("labs", "Labs")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("blood-pressure")" @onclick="OnNavigate">
+                    @Mark("bp", "Blood pressure")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("sugar")" @onclick="OnNavigate">
+                    @Mark("sugar", "Sugar")
+                </NavLink>
+                <button type="button" class="studio-nav-link" @onclick="OpenPrescription">
+                    @Icon("bi-prescription-nav-menu", "Prescription")
+                </button>
+                <NavLink class="studio-nav-link" href="visit-notes" @onclick="OnNavigate">
+                    @Icon("bi-notes-nav-menu", "Notes")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="messages" @onclick="OnNavigate">
+                    @Icon("bi-message-nav-menu", "Message")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="set-appointment" @onclick="OnNavigate">
+                    @Icon("bi-appointment-nav-menu", "Set Appointment")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="video-visit" @onclick="OnNavigate">
+                    @Icon("bi-video-nav-menu", "Video Visit")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="after-visit" @onclick="OnNavigate">
+                    @Icon("bi-summary-nav-menu", "After-visit summary")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="referral" @onclick="OnNavigate">
+                    @Icon("bi-referral-nav-menu", "Referral")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
+                    @Mark("account", "Account")
+                </NavLink>
+                <form class="studio-nav-form" action="Account/Logout" method="post">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
+                    <button type="submit" class="studio-nav-link">
+                        @Mark("logout", "Log out")
+                    </button>
+                </form>
+            </Authorized>
+            <NotAuthorized>
+                <button type="button" class="studio-nav-link" @onclick="OnEmergency">
+                    @Mark("emergency", "Emergency")
+                </button>
+                <button type="button" class="studio-nav-link" @onclick="OnVoice">
+                    @Mark("voice", "Say Call")
+                </button>
+                <NavLink class="studio-nav-link" href="@Href("dashboard-studio")" @onclick="OnNavigate">
+                    @Mark("layout", "Layout")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("profile")" @onclick="OnNavigate">
+                    @Mark("profile", "Profile")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("resource")" @onclick="OnNavigate">
+                    @Mark("resource", "Resource")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="access-requests" @onclick="OnNavigate">
+                    @Mark("access", "Access")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="visit-notes" @onclick="OnNavigate">
+                    @Icon("bi-notes-nav-menu", "Notes")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="messages" @onclick="OnNavigate">
+                    @Icon("bi-message-nav-menu", "Message")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="video-visit" @onclick="OnNavigate">
+                    @Icon("bi-video-nav-menu", "Video Visit")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("medication-schedule")" title="Daily medication schedule" @onclick="OnNavigate">
+                    @Mark("schedule", "Schedule")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("medications")" title="Medication list" @onclick="OnNavigate">
+                    @Mark("meds", "Med list")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
+                    @Mark("account", "Account")
+                </NavLink>
+                <form class="studio-nav-form" action="Account/Logout" method="post">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
+                    <button type="submit" class="studio-nav-link">
+                        @Mark("logout", "Log out")
+                    </button>
+                </form>
+            </NotAuthorized>
         </AuthorizeView>
-        <AuthorizeView Roles="@AppRoles.Patient" Context="patientNav">
-            <NavLink class="studio-nav-link" href="access-requests" @onclick="OnNavigate">
-                @Mark("access", "Access")
-            </NavLink>
-        </AuthorizeView>
-        <NavLink class="studio-nav-link" href="@Href("medication-schedule")" title="Daily medication schedule" @onclick="OnNavigate">
-            @Mark("schedule", "Schedule")
-        </NavLink>
-        <NavLink class="studio-nav-link" href="@Href("medications")" title="Medication list" @onclick="OnNavigate">
-            @Mark("meds", "Med list")
-        </NavLink>
-        <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
-            @Mark("account", "Account")
-        </NavLink>
-        <form class="studio-nav-form" action="Account/Logout" method="post">
-            <AntiforgeryToken />
-            <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
-            <button type="submit" class="studio-nav-link">
-                @Mark("logout", "Log out")
-            </button>
-        </form>
     }
 </div>
 
@@ -67,11 +124,23 @@
     [Parameter] public EventCallback OnEmergency { get; set; }
     [Parameter] public EventCallback OnVoice { get; set; }
     [Parameter] public EventCallback OnNavigate { get; set; }
+    [Parameter] public EventCallback OnPrescription { get; set; }
+
+    private async Task OpenPrescription()
+    {
+        await OnNavigate.InvokeAsync();
+        await OnPrescription.InvokeAsync();
+    }
 
     private string Href(string path) => CareLinks.To(path, PatientUserId);
 
     private RenderFragment Mark(string scene, string label) => @<span class="studio-nav-mark">
         <span class="studio-nav-orb"><FeatureScene Scene="@scene" /></span>
+        <span class="studio-nav-name">@label</span>
+    </span>;
+
+    private RenderFragment Icon(string icon, string label) => @<span class="studio-nav-mark">
+        <span class="studio-nav-orb studio-nav-icon-orb"><span class="bi @icon" aria-hidden="true"></span></span>
         <span class="studio-nav-name">@label</span>
     </span>;
 }

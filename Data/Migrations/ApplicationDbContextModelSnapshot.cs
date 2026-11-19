@@ -408,7 +408,19 @@ namespace MedicalManager.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("OrderedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OrderedTestCodes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OrderingDoctorName")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateOnly>("ReportDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("UserId")

@@ -82,14 +82,19 @@
                                    AccountName="@authContext.User.Identity?.Name"
                                    OnEmergency="OpenEmergencyCall"
                                    OnVoice="OpenGuide"
+                                   OnPrescription="OpenPrescription"
                                    OnNavigate="CloseNav" />
                 }
                 else
                 {
                 <div class="nav-call-actions">
+                    <AuthorizeView Roles="@AppRoles.Doctor" Context="hideEmergency">
+                        <NotAuthorized>
                     <button type="button" class="nav-call-btn nav-call-emergency" @onclick="OpenEmergencyCall">
                         Emergency
                     </button>
+                        </NotAuthorized>
+                    </AuthorizeView>
                     <div class="family-slot">
                         <button type="button" class="nav-call-btn nav-call-family" data-family-dock @onclick="OpenFamilyCall">
                             Family
@@ -126,21 +131,29 @@
                         <span class="bi bi-flask-nav-menu" aria-hidden="true"></span> Labs
                     </NavLink>
                 </div>
+                <AuthorizeView Roles="@AppRoles.Doctor" Context="hideMeds">
+                    <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-meds" href="@Href("medications")">
                         <span class="bi bi-pill-nav-menu" aria-hidden="true"></span> Medications
                     </NavLink>
                 </div>
+                    </NotAuthorized>
+                </AuthorizeView>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-medcheck" href="@Href("med-check")">
                         <span class="bi bi-search-heart-nav-menu" aria-hidden="true"></span> Med Check
                     </NavLink>
                 </div>
+                <AuthorizeView Roles="@AppRoles.Doctor" Context="hideAppt">
+                    <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-appt" href="@Href("appointments")">
                         <span class="bi bi-calendar-nav-menu" aria-hidden="true"></span> Appointments
                     </NavLink>
                 </div>
+                    </NotAuthorized>
+                </AuthorizeView>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-todo" href="@Href("todos")">
                         <span class="bi bi-check2-square-nav-menu" aria-hidden="true"></span> To Do
@@ -162,11 +175,61 @@
                             <span class="bi bi-people-nav-menu" aria-hidden="true"></span> Patients
                         </NavLink>
                     </div>
+                    <div class="nav-item px-3">
+                        <button type="button" class="nav-link nav-rx" @onclick="OpenPrescription">
+                            <span class="bi bi-prescription-nav-menu" aria-hidden="true"></span> Prescription
+                        </button>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-notes" href="visit-notes">
+                            <span class="bi bi-notes-nav-menu" aria-hidden="true"></span> Notes
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-message" href="messages">
+                            <span class="bi bi-message-nav-menu" aria-hidden="true"></span> Message
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-setappt" href="set-appointment">
+                            <span class="bi bi-appointment-nav-menu" aria-hidden="true"></span> Set Appointment
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-video" href="video-visit">
+                            <span class="bi bi-video-nav-menu" aria-hidden="true"></span> Video Visit
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-summary" href="after-visit">
+                            <span class="bi bi-summary-nav-menu" aria-hidden="true"></span> After-visit summary
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-referral" href="referral">
+                            <span class="bi bi-referral-nav-menu" aria-hidden="true"></span> Referral
+                        </NavLink>
+                    </div>
                 </AuthorizeView>
                 <AuthorizeView Roles="@AppRoles.Patient" Context="patientNav">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link nav-doctor" href="access-requests">
                             <span class="bi bi-shield-lock-nav-menu" aria-hidden="true"></span> Access requests
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-notes" href="visit-notes">
+                            <span class="bi bi-notes-nav-menu" aria-hidden="true"></span> Notes
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-message" href="messages">
+                            <span class="bi bi-message-nav-menu" aria-hidden="true"></span> Message
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nav-video" href="video-visit">
+                            <span class="bi bi-video-nav-menu" aria-hidden="true"></span> Video Visit
                         </NavLink>
                     </div>
                 </AuthorizeView>
@@ -200,6 +263,8 @@
                     </form>
                 </div>
                 <div class="nav-guide-dock">
+                    <AuthorizeView Roles="@AppRoles.Doctor" Context="hideSayCall">
+                        <NotAuthorized>
                     <button type="button" class="nav-call-btn nav-call-guide" @onclick="OpenGuide">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.2.9c.5.2.8.7.8 1.3l-.3 2.2c-.1.5 0 1 .4 1.3l1.6 1.3a9 9 0 0 0 3.4 2l1.2-1.6c.3-.4.8-.6 1.3-.5l2.2.4c.6.1 1 .6 1.1 1.2l.3 2.3c.1.6-.2 1.2-.7 1.5-1.6 1-3.6 1.4-5.6.9A15 15 0 0 1 5.2 8.8c-.7-1.9-.5-4 .6-5.6z" />
@@ -207,6 +272,8 @@
                         <span>Voice Call</span>
                     </button>
                     <p class="nav-call-hint">Say Call</p>
+                        </NotAuthorized>
+                    </AuthorizeView>
                     <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4.5 7.2A2.2 2.2 0 0 1 6.7 5h7.1a2.2 2.2 0 0 1 2.2 2.2v1.1l2.8-1.6c.7-.4 1.7.1 1.7 1v8.6c0 .9-1 1.4-1.7 1l-2.8-1.6v1.1a2.2 2.2 0 0 1-2.2 2.2H6.7a2.2 2.2 0 0 1-2.2-2.2v-9.6z" />
@@ -265,14 +332,28 @@
         @if (StudioLayout.Enabled)
         {
             <nav class="mobile-tabbar" aria-label="Primary">
-                <button type="button" class="mobile-tab" @onclick="OpenEmergencyCall">
-                    <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="emergency" /></span>
-                    Emergency
-                </button>
-                <button type="button" class="mobile-tab" @onclick="OpenGuide">
-                    <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="voice" /></span>
-                    Say Call
-                </button>
+                <AuthorizeView Roles="@AppRoles.Doctor" Context="doctorTabs">
+                    <Authorized>
+                        <button type="button" class="mobile-tab" @onclick="OpenPrescription">
+                            <span class="bi bi-prescription-nav-menu" aria-hidden="true"></span>
+                            Prescription
+                        </button>
+                        <NavLink class="mobile-tab" href="video-visit">
+                            <span class="bi bi-video-nav-menu" aria-hidden="true"></span>
+                            Video Visit
+                        </NavLink>
+                    </Authorized>
+                    <NotAuthorized>
+                        <button type="button" class="mobile-tab" @onclick="OpenEmergencyCall">
+                            <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="emergency" /></span>
+                            Emergency
+                        </button>
+                        <button type="button" class="mobile-tab" @onclick="OpenGuide">
+                            <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="voice" /></span>
+                            Say Call
+                        </button>
+                    </NotAuthorized>
+                </AuthorizeView>
                 <button type="button"
                         class="mobile-tab @(_navOpen || IsMoreSection ? "active" : null)"
                         @onclick="ToggleNav">
@@ -372,6 +453,12 @@
                         CallerPhone="@_callerPhone" />
         <GuideCallModal Visible="_guideOpen" Seed="_guideSeed" VisibleChanged="OnGuideVisibleChanged" />
         <MonitorWindow Visible="_monitorOpen" VisibleChanged="OnMonitorVisibleChanged" LiveChanged="OnMonitorLiveChanged" />
+        <AuthorizeView Roles="@AppRoles.Doctor" Context="rxHost">
+            @if (_prescriptionOpen)
+            {
+                <PrescriptionWindow Closed="ClosePrescription" />
+            }
+        </AuthorizeView>
     </Authorized>
 </AuthorizeView>
 
@@ -382,6 +469,8 @@
     private string? _photoUrl;
     private bool _photoModalOpen;
     private bool _navOpen;
+    private bool _isDoctor;
+    private bool _prescriptionOpen;
     private bool _callOpen;
     private int _callSerial;
     private bool _guideOpen;
@@ -441,7 +530,7 @@
             }
         }
 
-        if (_wakeReady || string.IsNullOrWhiteSpace(_userId))
+        if (_wakeReady || _isDoctor || string.IsNullOrWhiteSpace(_userId))
             return;
 
         _wakeReady = true;
@@ -452,6 +541,7 @@
     {
         var state = await Auth.GetAuthenticationStateAsync();
         _userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
+        _isDoctor = state.User.IsInRole(AppRoles.Doctor);
         if (string.IsNullOrWhiteSpace(_userId))
         {
             _photoUrl = null;
@@ -582,7 +672,7 @@
 
     private async Task EnsureWakeAsync()
     {
-        if (_guideOpen || _callOpen || string.IsNullOrWhiteSpace(_userId))
+        if (_isDoctor || _guideOpen || _callOpen || string.IsNullOrWhiteSpace(_userId))
             return;
 
         try
@@ -635,6 +725,18 @@
         if (!visible)
             await EnsureWakeAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenPrescription()
+    {
+        _prescriptionOpen = true;
+        _navOpen = false;
+    }
+
+    private Task ClosePrescription()
+    {
+        _prescriptionOpen = false;
+        return Task.CompletedTask;
     }
 
     private void ToggleNav() => _navOpen = !_navOpen;

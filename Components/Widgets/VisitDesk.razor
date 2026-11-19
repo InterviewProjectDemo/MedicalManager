@@ -1,0 +1,114 @@
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+
+@if (_desk is null)
+{
+    <p class="muted">Loading...</p>
+}
+else if (_desk.IsDoctor && _desk.Patients.Count == 0)
+{
+    <div class="table-card p-3">
+        <p>@EmptyMessage</p>
+        <p class="mb-0"><a href="patients">Patients → Request patient access</a></p>
+    </div>
+}
+else if (!_desk.IsDoctor && NeedsDoctor && _desk.Doctors.Count == 0)
+{
+    <div class="table-card p-3">
+        <p class="mb-0">No doctor has an approved grant on your chart yet.</p>
+    </div>
+}
+else
+{
+    @if (_desk.IsDoctor && _desk.Patients.Count > 1)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="@_patientField">Patient</label>
+            <select id="@_patientField" class="form-select" value="@_patientId" @onchange="OnPatient">
+                @foreach (var patient in _desk.Patients)
+                {
+                    <option value="@patient.PatientId">@patient.PatientName</option>
+                }
+            </select>
+        </div>
+    }
+    else if (_desk.IsDoctor && _patientName is not null)
+    {
+        <p class="muted">Patient: <strong>@_patientName</strong></p>
+    }
+
+    @if (NeedsDoctor && !_desk.IsDoctor && _desk.Doctors.Count > 1)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="@_doctorField">Doctor</label>
+            <select id="@_doctorField" class="form-select" value="@_doctorId" @onchange="OnDoctor">
+                @foreach (var doctor in _desk.Doctors)
+                {
+                    <option value="@doctor.DoctorUserId">@doctor.DoctorName</option>
+                }
+            </select>
+        </div>
+    }
+
+    @if (Choice is VisitChoice choice)
+    {
+        @ChildContent?.Invoke(choice)
+    }
+}
+
+@code {
+    [Parameter] public bool LabUpdateOnly { get; set; }
+    [Parameter] public bool NeedsDoctor { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "No patient has approved access for this visit tool.";
+    [Parameter] public RenderFragment<VisitChoice>? ChildContent { get; set; }
+    [Parameter] public EventCallback<VisitChoice> SelectionChanged { get; set; }
+
+    private VisitAccess? _desk;
+    private string? _patientId;
+    private string? _patientName;
+    private string? _doctorId;
+    private readonly string _patientField = "visit-patient-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _doctorField = "visit-doctor-" + Guid.NewGuid().ToString("N")[..8];
+
+    private VisitChoice? Choice =>
+        _desk is null || string.IsNullOrWhiteSpace(_patientId) || (NeedsDoctor && string.IsNullOrWhiteSpace(_doctorId))
+            ? null
+            : new VisitChoice(_desk.IsDoctor, _desk.ActorUserId, _desk.ActorName, _patientId, _patientName ?? "Patient", _doctorId ?? _desk.ActorUserId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _desk = await Visits.OpenAsync(state.User, LabUpdateOnly);
+        if (_desk.IsDoctor)
+        {
+            var first = _desk.Patients.FirstOrDefault();
+            _patientId = first?.PatientId;
+            _patientName = first?.PatientName;
+            _doctorId = _desk.ActorUserId;
+        }
+        else
+        {
+            _patientId = _desk.ActorUserId;
+            _patientName = _desk.ActorName;
+            _doctorId = _desk.Doctors.FirstOrDefault()?.DoctorUserId ?? "";
+        }
+
+        if (Choice is VisitChoice choice)
+            await SelectionChanged.InvokeAsync(choice);
+    }
+
+    private async Task OnPatient(ChangeEventArgs e)
+    {
+        _patientId = e.Value?.ToString();
+        _patientName = _desk?.Patients.FirstOrDefault(patient => patient.PatientId == _patientId)?.PatientName ?? "Patient";
+        if (Choice is VisitChoice choice)
+            await SelectionChanged.InvokeAsync(choice);
+    }
+
+    private async Task OnDoctor(ChangeEventArgs e)
+    {
+        _doctorId = e.Value?.ToString();
+        if (Choice is VisitChoice choice)
+            await SelectionChanged.InvokeAsync(choice);
+    }
+}

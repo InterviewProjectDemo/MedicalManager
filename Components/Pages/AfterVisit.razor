@@ -1,0 +1,89 @@
+@page "/after-visit"
+@attribute [Authorize]
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>After-visit summary</PageTitle>
+
+<div class="page-head accent-doctor">
+    <div>
+        <p class="eyebrow">Virtual visit</p>
+        <h1>After-visit summary</h1>
+        <p class="muted">Write what the patient should know after this visit. The patient can read it from Notes.</p>
+    </div>
+</div>
+
+<VisitDesk EmptyMessage="No patient has approved access for an after-visit summary." SelectionChanged="LoadAsync">
+    <ChildContent Context="choice">
+        @if (choice.IsDoctor)
+        {
+            <EditForm Model="_form" OnValidSubmit="() => SaveAsync(choice)" class="form-card mb-3">
+                <label class="form-label" for="summary-body">Summary</label>
+                <InputTextArea id="summary-body" class="form-control mb-3" rows="5" @bind-Value="_form.Body" />
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="alert alert-danger py-2" role="alert">@_error</div>
+                }
+                <button type="submit" class="btn btn-teal" disabled="@_saving">Save summary</button>
+            </EditForm>
+        }
+        <div class="table-card p-3">
+            @if (_items.Count == 0)
+            {
+                <p class="muted mb-0">No after-visit summary yet.</p>
+            }
+            else
+            {
+                @foreach (var item in _items)
+                {
+                    <article class="visit-entry">
+                        <header>
+                            <strong>@item.AuthorName</strong>
+                            <time>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                        </header>
+                        <p>@item.Body</p>
+                    </article>
+                }
+            }
+        </div>
+    </ChildContent>
+</VisitDesk>
+
+@code {
+    private readonly TextForm _form = new();
+    private IReadOnlyList<AfterVisitSummary> _items = [];
+    private string? _error;
+    private bool _saving;
+
+    private async Task LoadAsync(VisitChoice choice)
+    {
+        _error = null;
+        var state = await Auth.GetAuthenticationStateAsync();
+        _items = await Visits.ListSummariesAsync(state.User, choice.PatientUserId);
+    }
+
+    private async Task SaveAsync(VisitChoice choice)
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Visits.AddSummaryAsync(choice.DoctorUserId, choice.PatientUserId, _form.Body);
+            _form.Body = "";
+            await LoadAsync(choice);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class TextForm
+    {
+        public string Body { get; set; } = "";
+    }
+}

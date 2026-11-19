@@ -55,6 +55,7 @@
                     <thead>
                         <tr>
                             <th class="lab-date-col">Collection date</th>
+                            <th class="lab-status-col">Status</th>
                             @foreach (var test in LabTestDefinitions.All)
                             {
                                 <th class="lab-test-col">
@@ -77,6 +78,9 @@
                                         <span class="lab-note-hint" title="@report.Notes">Notes</span>
                                     }
                                 </td>
+                                <td class="lab-status-col">
+                                    <LabStatusCell Report="report" />
+                                </td>
                                 @foreach (var test in LabTestDefinitions.All)
                                 {
                                     <td class="lab-value-col">
@@ -85,6 +89,10 @@
                                             <span class="lab-value @LabTestDefinitions.CssClass(test.Code, result.Value)">
                                                 @FormatValue(result.Value)
                                             </span>
+                                        }
+                                        else if (LabReportStatus.IsOrdered(report, test.Code))
+                                        {
+                                            <span class="lab-pending">Pending</span>
                                         }
                                         else
                                         {
@@ -125,6 +133,7 @@
                             {
                                 <p class="muted lab-note-hint mb-0">@report.Notes</p>
                             }
+                            <div class="lab-card-status"><LabStatusCell Report="report" /></div>
                         </div>
                         @if (scope.Allows(ChartSection.Lab, update: true))
                         {
@@ -145,6 +154,13 @@
                                     <span class="lab-value @LabTestDefinitions.CssClass(test.Code, result.Value)">
                                         @FormatValue(result.Value) <small>@test.Unit</small>
                                     </span>
+                                </div>
+                            }
+                            else if (LabReportStatus.IsOrdered(report, test.Code))
+                            {
+                                <div class="lab-result-chip">
+                                    <span>@test.Name</span>
+                                    <span class="lab-pending">Pending</span>
                                 </div>
                             }
                         }
@@ -277,7 +293,7 @@
     private string Link(string path) => CareLinks.To(path, PatientUserId);
 
     private static string FormatValue(decimal value) =>
-        value % 1 == 0 ? value.ToString("0") : value.ToString("0.#");
+        value % 1 == 0 ? value.ToString("0") : value.ToString("0.##");
 
     private sealed class PasswordForm
     {

@@ -1,0 +1,270 @@
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_panel" class="rx-window" style="@Style" role="dialog" aria-modal="false" aria-labelledby="rx-title">
+    <div @ref="_grip"
+         class="rx-titlebar"
+         @onpointerdown="BeginDrag"
+         @onpointermove="Drag"
+         @onpointerup="EndDrag"
+         @onpointercancel="EndDrag">
+        <strong id="rx-title">Prescription</strong>
+        <button type="button" class="rx-close" @onclick="Close" @onpointerdown:stopPropagation="true" aria-label="Close">&times;</button>
+    </div>
+    <div class="rx-body">
+        @if (_desk is null)
+        {
+            <p class="muted mb-0">Loading patients...</p>
+        }
+        else if (_desk.Patients.Count == 0)
+        {
+            <p>No patient has approved lab update access.</p>
+            <p class="mb-0"><a href="patients">Patients → Request patient access</a></p>
+        }
+        else
+        {
+            @if (_desk.Patients.Count > 1)
+            {
+                <label class="form-label" for="rx-patient">Patient</label>
+                <select id="rx-patient" class="form-select mb-3" value="@_patientId" @onchange="OnPatient">
+                    @foreach (var patient in _desk.Patients)
+                    {
+                        <option value="@patient.PatientId">@patient.PatientName</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <p class="muted">Patient: <strong>@_patientName</strong></p>
+            }
+
+            <p class="muted rx-lead">Outpatient order sheet. A group checkbox selects every test in that group. CMP and BMP share the same chart columns, so overlapping analytes are ordered once.</p>
+
+            @foreach (var group in LabOrderCatalog.Groups)
+            {
+                <section class="rx-group">
+                    <label class="rx-group-title">
+                        <input type="checkbox" checked="@GroupChecked(group)" @onchange="e => ToggleGroup(group, e)" />
+                        @group.Name
+                    </label>
+                    <div class="rx-items">
+                        @foreach (var item in group.Items)
+                        {
+                            <label class="rx-item">
+                                <input type="checkbox" checked="@_selected.Contains(item.Id)" @onchange="e => Toggle(item.Id, e)" />
+                                <span>
+                                    <strong>@item.Name</strong>
+                                    <small>@LabOrderCatalog.AnalyteLabel(item)</small>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_error</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_saved))
+            {
+                <div class="alert alert-success py-2" role="status">
+                    @_saved
+                    <a href="@CareLinks.To("labs", _patientId)">Open lab chart</a>
+                </div>
+            }
+
+            <div class="rx-foot">
+                <button type="button" class="btn btn-teal" disabled="@_saving" @onclick="SubmitAsync">Submit</button>
+                <span class="muted">@_selected.Count selected</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private VisitAccess? _desk;
+    private string? _patientId;
+    private string? _patientName;
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private string? _error;
+    private string? _saved;
+    private bool _saving;
+
+    private readonly string _modulePath = "./Components/Widgets/FloatPanel.razor.js";
+    private IJSObjectReference? _module;
+    private ElementReference _panel;
+    private ElementReference _grip;
+    private bool _dragging;
+    private bool _placed;
+    private int _dragToken;
+    private bool _disposed;
+    private double _startX;
+    private double _startY;
+    private double _originLeft;
+    private double _originTop;
+    private double _left;
+    private double _top;
+    private double _viewWidth = 1280;
+    private double _viewHeight = 800;
+
+    private string Style => _placed
+        ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;")
+        : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _desk = await Visits.OpenAsync(state.User, labUpdateOnly: true);
+        var first = _desk.Patients.FirstOrDefault();
+        _patientId = first?.PatientId;
+        _patientName = first?.PatientName;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            await _module.InvokeVoidAsync("layer", _panel);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private void OnPatient(ChangeEventArgs e)
+    {
+        _patientId = e.Value?.ToString();
+        _patientName = _desk?.Patients.FirstOrDefault(patient => patient.PatientId == _patientId)?.PatientName;
+        _saved = null;
+    }
+
+    private bool GroupChecked(LabOrderGroup group) =>
+        group.Items.Count > 0 && group.Items.All(item => _selected.Contains(item.Id));
+
+    private void ToggleGroup(LabOrderGroup group, ChangeEventArgs e)
+    {
+        var on = e.Value is bool value && value;
+        foreach (var item in group.Items)
+        {
+            if (on)
+                _selected.Add(item.Id);
+            else
+                _selected.Remove(item.Id);
+        }
+
+        _saved = null;
+    }
+
+    private void Toggle(string id, ChangeEventArgs e)
+    {
+        if (e.Value is bool on && on)
+            _selected.Add(id);
+        else
+            _selected.Remove(id);
+        _saved = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_desk is null || string.IsNullOrWhiteSpace(_patientId))
+            return;
+
+        _saving = true;
+        _error = null;
+        _saved = null;
+        try
+        {
+            await Visits.PrescribeLabsAsync(_desk.ActorUserId, _patientId, _selected.ToArray());
+            _saved = $"Prescribed for {_patientName}.";
+            _selected.Clear();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task Close() => await Closed.InvokeAsync();
+
+    private async Task BeginDrag(PointerEventArgs e)
+    {
+        if (e.Button != 0 || _module is null)
+            return;
+
+        var token = ++_dragToken;
+        FloatOrigin origin;
+        try
+        {
+            origin = await _module.InvokeAsync<FloatOrigin>("begin", _panel, _grip, e.PointerId);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        if (token != _dragToken)
+            return;
+
+        _startX = e.ClientX;
+        _startY = e.ClientY;
+        _originLeft = origin.Left;
+        _originTop = origin.Top;
+        _viewWidth = origin.ViewWidth;
+        _viewHeight = origin.ViewHeight;
+        _left = _originLeft;
+        _top = _originTop;
+        _placed = true;
+        _dragging = true;
+    }
+
+    private void Drag(PointerEventArgs e)
+    {
+        if (!_dragging)
+            return;
+
+        _left = Math.Clamp(_originLeft + e.ClientX - _startX, 8, Math.Max(8, _viewWidth - 120));
+        _top = Math.Clamp(_originTop + e.ClientY - _startY, 8, Math.Max(8, _viewHeight - 64));
+    }
+
+    private void EndDrag(PointerEventArgs _)
+    {
+        _dragToken++;
+        _dragging = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private sealed class FloatOrigin
+    {
+        public double Left { get; set; }
+        public double Top { get; set; }
+        public double ViewWidth { get; set; }
+        public double ViewHeight { get; set; }
+    }
+}

@@ -1,0 +1,21 @@
+@if (LabReportStatus.IsPrescribed(Report))
+{
+    <span class="lab-status lab-status-rx">@Report.Status</span>
+    <span class="lab-status-date">@Report.ReportDate.ToString("MMM d, yyyy")</span>
+}
+else if (LabReportStatus.ResultLabel(Report) == "Out of range")
+{
+    <span class="lab-status lab-status-bad">Out of range</span>
+}
+else if (LabReportStatus.ResultLabel(Report) == "In range")
+{
+    <span class="lab-status lab-status-ok">In range</span>
+}
+else
+{
+    <span class="lab-empty">—</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public LabReport Report { get; set; } = default!;
+}
