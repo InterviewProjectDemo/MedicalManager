@@ -36,9 +36,9 @@
                     <p class="muted">@row.Specialty</p>
                 }
                 <p>@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</p>
-                @if (row.WaitingForPhone)
+                @if (!string.IsNullOrWhiteSpace(row.TextNotSentReason))
                 {
-                    <p class="muted">Add a phone number on your profile, then ask the doctor to send a new code.</p>
+                    <p class="muted">@row.TextNotSentReason</p>
                 }
                 else if (row.CodeExpired)
                 {
@@ -50,9 +50,11 @@
                     <div class="access-code-row">
                         <input id="@($"code-{row.Id}")" class="form-control" inputmode="numeric" maxlength="6" autocomplete="one-time-code" @bind="codes[row.Id]" />
                         <button type="button" class="btn btn-primary" @onclick="() => Approve(row.Id)">Approve</button>
-                        <button type="button" class="btn btn-outline-secondary" @onclick="() => Deny(row.Id)">Deny</button>
                     </div>
                 }
+                <div class="access-code-row">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => Deny(row.Id)">Deny</button>
+                </div>
             </article>
         }
     }

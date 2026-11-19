@@ -17,7 +17,8 @@ public sealed record PatientAccessRequestItem(
     ChartAccessLevel Sugar,
     DateTime CreatedAt,
     bool WaitingForPhone,
-    bool CodeExpired);
+    bool CodeExpired,
+    string? TextNotSentReason);
 
 public sealed record PatientGrantItem(
     int Id,
@@ -36,7 +37,8 @@ public sealed record DoctorAccessRequestItem(
     ChartAccessLevel Sugar,
     AccessRequestStatus Status,
     DateTime CreatedAt,
-    bool WaitingForPhone);
+    bool WaitingForPhone,
+    string? TextNotSentReason);
 
 public sealed record DoctorGrantItem(
     int Id,
@@ -51,7 +53,6 @@ public sealed class ChartAccessService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     UserManager<ApplicationUser> users,
     TwilioNotificationSender twilio,
-    IHostEnvironment environment,
     ILogger<ChartAccessService> logger)
 {
     public const int CodeLifetimeMinutes = 15;
@@ -102,16 +103,51 @@ public sealed class ChartAccessService(
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync();
 
-        return rows.Select(x => new DoctorAccessRequestItem(
-            x.Id,
-            x.RequestedName,
-            x.RequestedDateOfBirth,
-            x.Lab,
-            x.BloodPressure,
-            x.Sugar,
-            x.Status,
-            x.CreatedAt,
-            WaitingForPhone: x.CodeHash is null)).ToList();
+        var patientIds = rows
+            .Select(x => x.PatientUserId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .ToHashSet();
+        var people = patientIds.Count == 0
+            ? new Dictionary<string, ApplicationUser>()
+            : await db.Users.AsNoTracking()
+                .Where(x => patientIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id);
+        var profiles = patientIds.Count == 0
+            ? new Dictionary<string, PatientProfile>()
+            : await db.PatientProfiles.AsNoTracking()
+                .Where(x => patientIds.Contains(x.UserId))
+                .ToDictionaryAsync(x => x.UserId);
+
+        return rows.Select(x =>
+        {
+            string? reason = null;
+            if (x.CodeHash is null)
+            {
+                if (x.PatientUserId is not null
+                    && people.TryGetValue(x.PatientUserId, out var person))
+                {
+                    profiles.TryGetValue(x.PatientUserId, out var profile);
+                    reason = NotSent(Classify(person, profile).Problem);
+                }
+                else
+                {
+                    reason = NotSent(TextDestinationProblem.NoPhone);
+                }
+            }
+
+            return new DoctorAccessRequestItem(
+                x.Id,
+                x.RequestedName,
+                x.RequestedDateOfBirth,
+                x.Lab,
+                x.BloodPressure,
+                x.Sugar,
+                x.Status,
+                x.CreatedAt,
+                WaitingForPhone: x.CodeHash is null,
+                TextNotSentReason: reason);
+        }).ToList();
     }
 
     public async Task<IReadOnlyList<PatientAccessRequestItem>> ListPendingForPatientAsync(string patientUserId)
@@ -128,6 +164,16 @@ public sealed class ChartAccessService(
         var doctors = await db.Users.AsNoTracking()
             .Where(x => doctorIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id);
+        string? patientReason = null;
+        if (rows.Any(x => x.CodeHash is null))
+        {
+            var patient = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == patientUserId);
+            var profile = await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == patientUserId);
+            var problem = patient is null
+                ? TextDestinationProblem.NoPhone
+                : Classify(patient, profile).Problem;
+            patientReason = PatientNotSent(problem);
+        }
 
         return rows.Select(x =>
         {
@@ -141,7 +187,8 @@ public sealed class ChartAccessService(
                 x.Sugar,
                 x.CreatedAt,
                 WaitingForPhone: x.CodeHash is null,
-                CodeExpired: x.CodeExpiresAt is not null && x.CodeExpiresAt < DateTime.UtcNow);
+                CodeExpired: x.CodeExpiresAt is not null && x.CodeExpiresAt < DateTime.UtcNow,
+                TextNotSentReason: x.CodeHash is null ? patientReason : null);
         }).ToList();
     }
 
@@ -202,7 +249,7 @@ public sealed class ChartAccessService(
             db.ChartAccessRequests.RemoveRange(pending);
         }
 
-        var (phone, smsConsent) = await PatientTextDestinationAsync(db, patient);
+        var destination = await ClassifyAsync(db, patient);
         var request = new ChartAccessRequest
         {
             DoctorUserId = doctorUserId,
@@ -217,7 +264,7 @@ public sealed class ChartAccessService(
         };
 
         string? code = null;
-        if (!string.IsNullOrWhiteSpace(phone) && smsConsent)
+        if (destination.Problem == TextDestinationProblem.None)
         {
             code = NewCode();
             var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -229,28 +276,14 @@ public sealed class ChartAccessService(
         db.ChartAccessRequests.Add(request);
         await db.SaveChangesAsync();
 
-        if (code is null)
-        {
-            var waiting = string.IsNullOrWhiteSpace(phone)
-                ? "The request is waiting. A confirmation code can be sent only to the phone already saved on that patient's account."
-                : "The request is waiting. A confirmation code can be sent only after the patient checks the text-message consent box on their profile.";
-            return new AccessRequestResult(true, waiting, false);
-        }
+        if (code is null || destination.E164 is null)
+            return new AccessRequestResult(true, NotSent(destination.Problem), false);
 
-        var body = SmsCopy.ApprovalCode(code);
-        var sent = await twilio.TextAsync(phone!, body, CancellationToken.None, confirmDelivery: true);
-        if (environment.IsDevelopment())
-        {
-            logger.LogInformation("Access approval code for request {RequestId} is {Code}.", request.Id, code);
-        }
-
-        if (!sent.Ok)
-        {
-            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", request.Id, sent.Detail ?? "unknown");
-            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
-        }
-
-        return new AccessRequestResult(true, "A confirmation code was sent to the phone on the patient's account. You can open a chart after they enter that code.");
+        return await DeliverCodeAsync(
+            request.Id,
+            destination.E164,
+            code,
+            "A confirmation code was sent to the phone on the patient's account. You can open a chart after they enter that code.");
     }
 
     public async Task<AccessRequestResult> ResendAsync(string doctorUserId, int requestId)
@@ -264,11 +297,9 @@ public sealed class ChartAccessService(
         if (patient is null)
             return new AccessRequestResult(false, "That request is no longer waiting.");
 
-        var (phone, smsConsent) = await PatientTextDestinationAsync(db, patient);
-        if (string.IsNullOrWhiteSpace(phone))
-            return new AccessRequestResult(false, "A code can be sent only to the phone already saved on that patient's account.");
-        if (!smsConsent)
-            return new AccessRequestResult(false, "A code can be sent only after the patient checks the text-message consent box on their profile.");
+        var destination = await ClassifyAsync(db, patient);
+        if (destination.Problem != TextDestinationProblem.None || destination.E164 is null)
+            return new AccessRequestResult(true, NotSent(destination.Problem), false);
 
         var code = NewCode();
         var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -278,20 +309,11 @@ public sealed class ChartAccessService(
         request.CodeAttempts = 0;
         await db.SaveChangesAsync();
 
-        var body = SmsCopy.ApprovalCode(code);
-        var sent = await twilio.TextAsync(phone, body, CancellationToken.None, confirmDelivery: true);
-        if (environment.IsDevelopment())
-        {
-            logger.LogInformation("Access approval code for request {RequestId} is {Code}.", request.Id, code);
-        }
-
-        if (!sent.Ok)
-        {
-            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", request.Id, sent.Detail ?? "unknown");
-            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
-        }
-
-        return new AccessRequestResult(true, "A new confirmation code was sent to the phone on the patient's account.");
+        return await DeliverCodeAsync(
+            request.Id,
+            destination.E164,
+            code,
+            "A new confirmation code was sent to the phone on the patient's account.");
     }
 
     public async Task<AccessRequestResult> ApproveAsync(string patientUserId, int requestId, string code)
@@ -307,7 +329,7 @@ public sealed class ChartAccessService(
         if (request.DoctorUserId == patientUserId)
             return new AccessRequestResult(false, "You cannot approve your own request.");
         if (request.CodeHash is null || request.CodeSalt is null)
-            return new AccessRequestResult(false, "Add a phone number on your profile, then ask the doctor to send a new code.");
+            return new AccessRequestResult(false, "A confirmation code has not been sent for this request. Ask the doctor to send a new code.");
         if (request.CodeExpiresAt is null || request.CodeExpiresAt < DateTime.UtcNow)
             return new AccessRequestResult(false, "That code has expired. Ask the doctor to send a new one.");
         if (request.CodeAttempts >= MaxCodeAttempts)
@@ -399,30 +421,107 @@ public sealed class ChartAccessService(
         return match;
     }
 
-    private static async Task<(string? Phone, bool SmsConsent)> PatientTextDestinationAsync(ApplicationDbContext db, ApplicationUser patient)
+    private async Task<AccessRequestResult> DeliverCodeAsync(int requestId, string e164, string code, string sentMessage)
+    {
+        OutboundResult sent;
+        try
+        {
+            sent = await twilio.TextAsync(e164, SmsCopy.ApprovalCode(code), CancellationToken.None, confirmDelivery: true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            logger.LogWarning(ex, "Access approval text for request {RequestId} was not sent.", requestId);
+            return new AccessRequestResult(true, NotSent(TextDestinationProblem.None), false);
+        }
+
+        if (!sent.Ok)
+        {
+            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", requestId, sent.Detail ?? "unknown");
+            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
+        }
+
+        return new AccessRequestResult(true, sentMessage);
+    }
+
+    private static async Task<TextDestination> ClassifyAsync(ApplicationDbContext db, ApplicationUser patient)
     {
         var profile = await db.PatientProfiles.AsNoTracking()
             .FirstOrDefaultAsync(x => x.UserId == patient.Id);
-        var phone = string.IsNullOrWhiteSpace(profile?.Phone) ? patient.PhoneNumber : profile.Phone;
-        if (PhoneNumbers.ToE164(phone) is null)
-            return (null, false);
-
-        return (phone!.Trim(), SmsConsent.IsGranted(profile, phone));
+        return Classify(patient, profile);
     }
+
+    private static TextDestination Classify(ApplicationUser patient, PatientProfile? profile)
+    {
+        var profilePhone = profile?.Phone;
+        var raw = string.IsNullOrWhiteSpace(profilePhone) ? patient.PhoneNumber : profilePhone;
+        if (string.IsNullOrWhiteSpace(raw))
+            return new TextDestination(null, TextDestinationProblem.NoPhone);
+
+        var e164 = PhoneNumbers.ToE164(raw);
+        if (!PhoneNumbers.IsUsE164(e164))
+            return new TextDestination(null, TextDestinationProblem.InvalidPhone);
+
+        if (!SmsConsent.IsGranted(profile, raw))
+            return new TextDestination(null, TextDestinationProblem.NoConsent);
+
+        return new TextDestination(e164, TextDestinationProblem.None);
+    }
+
+    private static string NotSent(TextDestinationProblem problem) => problem switch
+    {
+        TextDestinationProblem.NoPhone =>
+            "The request is saved, but the confirmation text was not sent. No phone number is saved on that account.",
+        TextDestinationProblem.InvalidPhone =>
+            "The request is saved, but the confirmation text was not sent. The phone number saved on that account is not a valid US number.",
+        TextDestinationProblem.NoConsent =>
+            "The request is saved, but the confirmation text was not sent. The text-message consent box on that patient's profile is not checked.",
+        _ =>
+            "The request is saved, but the confirmation text was not sent. Use Send a new code to try again."
+    };
+
+    private static string PatientNotSent(TextDestinationProblem problem) => problem switch
+    {
+        TextDestinationProblem.NoPhone =>
+            "The confirmation text was not sent. Add a mobile number on your profile, then ask the doctor to send a new code.",
+        TextDestinationProblem.InvalidPhone =>
+            "The confirmation text was not sent. The phone number on your profile is not a valid US number. Correct it, then ask the doctor to send a new code.",
+        TextDestinationProblem.NoConsent =>
+            "The confirmation text was not sent. Check the text-message consent box on your profile, then ask the doctor to send a new code.",
+        _ =>
+            "The confirmation text was not sent. Ask the doctor to send a new code."
+    };
 
     private static string DeliveryProblem(string? detail)
     {
         if (!string.IsNullOrWhiteSpace(detail)
-            && (detail.Contains("30034", StringComparison.Ordinal) || detail.Contains("30032", StringComparison.Ordinal)))
+            && (detail.Contains("21211", StringComparison.Ordinal)
+                || detail.Contains("21614", StringComparison.Ordinal)
+                || detail.Contains("not a valid US number", StringComparison.OrdinalIgnoreCase)))
         {
-            return "The request is saved, but the confirmation text was not delivered. This sending number is not registered for US text messages yet.";
+            return NotSent(TextDestinationProblem.InvalidPhone);
         }
 
-        if (string.Equals(detail, "waiting", StringComparison.OrdinalIgnoreCase))
-            return "The request is saved, but the confirmation text has not reached the phone yet. Use Send a new code if it does not arrive.";
+        if (!string.IsNullOrWhiteSpace(detail) && detail.Contains("21610", StringComparison.Ordinal))
+            return "The request is saved, but the confirmation text was not sent. That number has opted out of text messages.";
 
-        return "The request is saved, but the confirmation text was not delivered. Use Send a new code to try again.";
+        if (!string.IsNullOrWhiteSpace(detail)
+            && (detail.Contains("30034", StringComparison.Ordinal) || detail.Contains("30032", StringComparison.Ordinal)))
+        {
+            return "The request is saved, but the confirmation text was not sent. The carrier rejected the message.";
+        }
+
+        return NotSent(TextDestinationProblem.None);
     }
+
+    private enum TextDestinationProblem
+    {
+        None,
+        NoPhone,
+        InvalidPhone,
+        NoConsent
+    }
+
+    private readonly record struct TextDestination(string? E164, TextDestinationProblem Problem);
 
     private static string NewCode() =>
         RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");

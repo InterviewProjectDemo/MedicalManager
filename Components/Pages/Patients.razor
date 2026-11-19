@@ -43,9 +43,9 @@
                         </td>
                         <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</td>
                         <td class="text-end">
-                            @if (row.WaitingForPhone)
+                            @if (!string.IsNullOrWhiteSpace(row.TextNotSentReason))
                             {
-                                <span class="muted">Waiting for a phone on the patient's account</span>
+                                <span class="muted">@row.TextNotSentReason</span>
                             }
                             <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => Resend(row.Id)">Send a new code</button>
                         </td>

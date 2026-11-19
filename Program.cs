@@ -220,6 +220,7 @@ builder.Services.AddScoped<ApplicationVoiceReminderService>();
 builder.Services.AddHostedService<AppointmentReminderWorker>();
 
 var app = builder.Build();
+SmsCopy.SelfCheck();
 if (app.Environment.IsDevelopment())
 {
     NameSpeaker.SelfCheck();

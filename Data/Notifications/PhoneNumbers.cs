@@ -23,4 +23,18 @@ public static class PhoneNumbers
 
         return "+" + digits;
     }
+
+    public static bool IsUsE164(string? value)
+    {
+        if (value is not { Length: 12 } || !value.StartsWith("+1", StringComparison.Ordinal))
+            return false;
+
+        for (var i = 1; i < value.Length; i++)
+        {
+            if (!char.IsDigit(value[i]))
+                return false;
+        }
+
+        return true;
+    }
 }

@@ -10,6 +10,8 @@ public sealed class TwilioNotificationSender(
     IOptions<NotificationOptions> options,
     ILogger<TwilioNotificationSender> logger)
 {
+    private const string VerifiedMessagingServiceSid = "MG52b2c7abc809d9000dd16feaa28031c1";
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTime _checkedAt = DateTime.MinValue;
     private bool _ready;
@@ -67,8 +69,7 @@ public sealed class TwilioNotificationSender(
                 return false;
             }
 
-            var messagingServiceSid = await MessagingServiceForSenderAsync(from, twilio, cancellationToken);
-            Remember(true, accountSid, from, messagingServiceSid);
+            Remember(true, accountSid, from, VerifiedMessagingServiceSid);
             logger.LogInformation("Twilio is ready to send reminder texts and calls.");
             return true;
         }
@@ -175,21 +176,21 @@ public sealed class TwilioNotificationSender(
         {
             ["To"] = destination
         };
-        if (!voice && !string.IsNullOrWhiteSpace(_messagingServiceSid))
-            fields["MessagingServiceSid"] = _messagingServiceSid;
-        else
-            fields["From"] = _fromNumber;
-
-        if (voice)
+        if (!voice)
         {
+            if (string.IsNullOrWhiteSpace(_messagingServiceSid))
+                return new OutboundResult(false, false, null, "Twilio is not ready to send.");
+
+            fields["MessagingServiceSid"] = _messagingServiceSid;
+            fields["Body"] = payload;
+        }
+        else
+        {
+            fields["From"] = _fromNumber;
             var voiceName = string.IsNullOrWhiteSpace(pollyVoice)
                 ? options.Value.Voice.PollyVoice
                 : pollyVoice;
             fields["Twiml"] = ToTwiml(payload, voiceName, options.Value.Voice.Language);
-        }
-        else
-        {
-            fields["Body"] = payload;
         }
 
         var path = voice ? "Calls.json" : "Messages.json";
@@ -235,8 +236,7 @@ public sealed class TwilioNotificationSender(
                 return new OutboundResult(false, failure.Permanent, sid, failure.Detail);
         }
 
-        logger.LogWarning("Twilio text was still waiting to leave.");
-        return new OutboundResult(false, false, sid, "waiting");
+        return new OutboundResult(true, false, sid, null);
     }
 
     private async Task<string?> FetchMessageAsync(string sid, CancellationToken cancellationToken)
@@ -357,69 +357,6 @@ public sealed class TwilioNotificationSender(
     }
 
     private bool Fresh() => _checkedAt > DateTime.UtcNow.AddMinutes(-2);
-
-    private async Task<string?> MessagingServiceForSenderAsync(
-        string fromE164,
-        TwilioOptions twilio,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://messaging.twilio.com/v1/Services?PageSize=20");
-            request.Headers.Authorization = Basic(twilio);
-            using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-                return null;
-
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            if (!document.RootElement.TryGetProperty("services", out var services))
-                return null;
-
-            foreach (var service in services.EnumerateArray())
-            {
-                var sid = service.TryGetProperty("sid", out var sidValue) ? sidValue.GetString() : null;
-                if (string.IsNullOrWhiteSpace(sid))
-                    continue;
-
-                if (await ServiceSendsFromAsync(sid, fromE164, twilio, cancellationToken))
-                    return sid;
-            }
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            logger.LogInformation("Twilio messaging service could not be listed, so texts use the configured sending number.");
-        }
-
-        return null;
-    }
-
-    private async Task<bool> ServiceSendsFromAsync(
-        string serviceSid,
-        string fromE164,
-        TwilioOptions twilio,
-        CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"https://messaging.twilio.com/v1/Services/{Uri.EscapeDataString(serviceSid)}/PhoneNumbers?PageSize=20");
-        request.Headers.Authorization = Basic(twilio);
-        using var response = await httpClientFactory.CreateClient("Twilio").SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            return false;
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        if (!document.RootElement.TryGetProperty("phone_numbers", out var numbers))
-            return false;
-
-        foreach (var number in numbers.EnumerateArray())
-        {
-            var phone = number.TryGetProperty("phone_number", out var phoneValue) ? phoneValue.GetString() : null;
-            if (string.Equals(PhoneNumbers.ToE164(phone), fromE164, StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
-    }
 
     private void Remember(bool ready, string? accountSid, string? fromNumber, string? messagingServiceSid = null)
     {
