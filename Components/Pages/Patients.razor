@@ -41,7 +41,7 @@
                             <strong>@row.RequestedName</strong>
                             <div class="muted">@row.DateOfBirth?.ToString("MMMM d, yyyy")</div>
                         </td>
-                        <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</td>
+                        <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication)</td>
                         <td class="text-end">
                             @if (!string.IsNullOrWhiteSpace(row.TextNotSentReason))
                             {
@@ -70,9 +70,9 @@
             {
                 <tr>
                     <td data-label="Patient"><strong>@row.PatientName</strong></td>
-                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</td>
+                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication)</td>
                     <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
-                        @if (row.BloodPressure != ChartAccessLevel.None || row.Sugar != ChartAccessLevel.None)
+                        @if (row.BloodPressure != ChartAccessLevel.None || row.Sugar != ChartAccessLevel.None || row.Medication != ChartAccessLevel.None)
                         {
                             <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.PatientId)">Dashboard</a>
                         }
@@ -87,6 +87,10 @@
                         @if (row.Lab != ChartAccessLevel.None)
                         {
                             <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("labs", row.PatientId)">Labs</a>
+                        }
+                        @if (row.Medication != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", row.PatientId)">Medications</a>
                         }
                     </td>
                 </tr>
@@ -128,6 +132,7 @@
                     <ScopeRow Title="Labs" @bind-Selected="labOn" @bind-Level="labLevel" />
                     <ScopeRow Title="Blood pressure chart and list" @bind-Selected="bpOn" @bind-Level="bpLevel" />
                     <ScopeRow Title="Sugar chart and list" @bind-Selected="sugarOn" @bind-Level="sugarLevel" />
+                    <ScopeRow Title="Medication chart and list" @bind-Selected="medicationOn" @bind-Level="medicationLevel" />
                 </fieldset>
                 <p class="muted">You do not choose the phone number. The code goes only to the number the patient already saved.</p>
                 <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@busy">Send approval request</button>
@@ -148,9 +153,11 @@
     private bool labOn;
     private bool bpOn;
     private bool sugarOn;
+    private bool medicationOn;
     private ChartAccessLevel labLevel = ChartAccessLevel.View;
     private ChartAccessLevel bpLevel = ChartAccessLevel.View;
     private ChartAccessLevel sugarLevel = ChartAccessLevel.View;
+    private ChartAccessLevel medicationLevel = ChartAccessLevel.View;
     private string? doctorId;
 
     protected override async Task OnInitializedAsync()
@@ -189,7 +196,8 @@
             patientDob,
             labOn ? labLevel : ChartAccessLevel.None,
             bpOn ? bpLevel : ChartAccessLevel.None,
-            sugarOn ? sugarLevel : ChartAccessLevel.None);
+            sugarOn ? sugarLevel : ChartAccessLevel.None,
+            medicationOn ? medicationLevel : ChartAccessLevel.None);
         status = result.Message;
         statusOk = result.Accepted && result.CodeSent;
         busy = false;
@@ -198,7 +206,7 @@
             dialogOpen = false;
             patientName = "";
             patientDob = null;
-            labOn = bpOn = sugarOn = false;
+            labOn = bpOn = sugarOn = medicationOn = false;
             await Reload();
         }
     }

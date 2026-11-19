@@ -15,6 +15,7 @@ public sealed record PatientAccessRequestItem(
     ChartAccessLevel Lab,
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
+    ChartAccessLevel Medication,
     DateTime CreatedAt,
     bool WaitingForPhone,
     bool CodeExpired,
@@ -26,6 +27,7 @@ public sealed record PatientGrantItem(
     ChartAccessLevel Lab,
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
+    ChartAccessLevel Medication,
     DateTime ApprovedAt);
 
 public sealed record DoctorAccessRequestItem(
@@ -35,6 +37,7 @@ public sealed record DoctorAccessRequestItem(
     ChartAccessLevel Lab,
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
+    ChartAccessLevel Medication,
     AccessRequestStatus Status,
     DateTime CreatedAt,
     bool WaitingForPhone,
@@ -47,6 +50,7 @@ public sealed record DoctorGrantItem(
     ChartAccessLevel Lab,
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
+    ChartAccessLevel Medication,
     DateTime ApprovedAt);
 
 public sealed class ChartAccessService(
@@ -91,6 +95,7 @@ public sealed class ChartAccessService(
                 x.Lab,
                 x.BloodPressure,
                 x.Sugar,
+                x.Medication,
                 x.ApprovedAt))
             .ToList();
     }
@@ -143,6 +148,7 @@ public sealed class ChartAccessService(
                 x.Lab,
                 x.BloodPressure,
                 x.Sugar,
+                x.Medication,
                 x.Status,
                 x.CreatedAt,
                 WaitingForPhone: x.CodeHash is null,
@@ -185,6 +191,7 @@ public sealed class ChartAccessService(
                 x.Lab,
                 x.BloodPressure,
                 x.Sugar,
+                x.Medication,
                 x.CreatedAt,
                 WaitingForPhone: x.CodeHash is null,
                 CodeExpired: x.CodeExpiresAt is not null && x.CodeExpiresAt < DateTime.UtcNow,
@@ -213,6 +220,7 @@ public sealed class ChartAccessService(
             x.Lab,
             x.BloodPressure,
             x.Sugar,
+            x.Medication,
             x.ApprovedAt)).ToList();
     }
 
@@ -222,7 +230,8 @@ public sealed class ChartAccessService(
         DateOnly? dateOfBirth,
         ChartAccessLevel lab,
         ChartAccessLevel bloodPressure,
-        ChartAccessLevel sugar)
+        ChartAccessLevel sugar,
+        ChartAccessLevel medication)
     {
         var doctor = await users.FindByIdAsync(doctorUserId);
         if (doctor is null || !await users.IsInRoleAsync(doctor, AppRoles.Doctor))
@@ -233,7 +242,10 @@ public sealed class ChartAccessService(
             return new AccessRequestResult(false, "Enter the patient's full name.");
         if (dateOfBirth is null || dateOfBirth > DateOnly.FromDateTime(DateTime.Today) || dateOfBirth < new DateOnly(1900, 1, 1))
             return new AccessRequestResult(false, "Enter the patient's date of birth.");
-        if (lab == ChartAccessLevel.None && bloodPressure == ChartAccessLevel.None && sugar == ChartAccessLevel.None)
+        if (lab == ChartAccessLevel.None
+            && bloodPressure == ChartAccessLevel.None
+            && sugar == ChartAccessLevel.None
+            && medication == ChartAccessLevel.None)
             return new AccessRequestResult(false, "Choose at least one record, and View or Update for each record you select.");
 
         var patient = await MatchPatientAsync(name, dateOfBirth.Value);
@@ -259,6 +271,7 @@ public sealed class ChartAccessService(
             Lab = lab,
             BloodPressure = bloodPressure,
             Sugar = sugar,
+            Medication = medication,
             Status = AccessRequestStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -357,6 +370,7 @@ public sealed class ChartAccessService(
         grant.Lab = request.Lab;
         grant.BloodPressure = request.BloodPressure;
         grant.Sugar = request.Sugar;
+        grant.Medication = request.Medication;
         grant.ApprovedAt = DateTime.UtcNow;
         grant.RevokedAt = null;
 

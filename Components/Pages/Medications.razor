@@ -16,7 +16,10 @@
             <h1>Medications</h1>
             <p class="muted">Set the days and the time of day for each dose so reminders call when the medicine is due.</p>
         </div>
-        <a class="btn btn-success" href="@Link("medications/edit")">Add medication</a>
+        @if (scope.Allows(ChartSection.Medication, update: true))
+        {
+            <a class="btn btn-success" href="@Link("medications/edit")">Add medication</a>
+        }
     </div>
 
     <div class="table-card">
@@ -95,7 +98,10 @@
                             <StatusPill Label="@(item.IsActive ? "Active" : "Stopped")" CssClass="@(item.IsActive ? "status-ok" : "status-muted")" />
                         </td>
                         <td class="text-end">
-                            <a class="btn btn-sm btn-outline-success" href="@Link($"medications/edit/{item.Id}")">Update</a>
+                            @if (scope.Allows(ChartSection.Medication, update: true))
+                            {
+                                <a class="btn btn-sm btn-outline-success" href="@Link($"medications/edit/{item.Id}")">Update</a>
+                            }
                         </td>
                     </tr>
                 }
@@ -224,7 +230,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = (await Access.ResolveAsync(state.User, PatientUserId)).BlockDoctorChart();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Medication, update: false);
         if (scope.PatientId is string id)
         {
             items = await Records.GetMedicationsAsync(id);

@@ -4,7 +4,8 @@ public enum ChartSection
 {
     Lab,
     BloodPressure,
-    Sugar
+    Sugar,
+    Medication
 }
 
 public enum ChartAccessLevel
@@ -43,6 +44,8 @@ public class ChartAccessRequest
 
     public ChartAccessLevel Sugar { get; set; }
 
+    public ChartAccessLevel Medication { get; set; }
+
     public AccessRequestStatus Status { get; set; } = AccessRequestStatus.Pending;
 
     public string? CodeSalt { get; set; }
@@ -76,6 +79,8 @@ public class ChartAccessGrant
 
     public ChartAccessLevel Sugar { get; set; }
 
+    public ChartAccessLevel Medication { get; set; }
+
     public DateTime ApprovedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? RevokedAt { get; set; }
@@ -87,6 +92,7 @@ public class ChartAccessGrant
             ChartSection.Lab => Lab,
             ChartSection.BloodPressure => BloodPressure,
             ChartSection.Sugar => Sugar,
+            ChartSection.Medication => Medication,
             _ => ChartAccessLevel.None
         };
 
@@ -96,12 +102,17 @@ public class ChartAccessGrant
 
 public static class ChartAccessText
 {
-    public static string Describe(ChartAccessLevel lab, ChartAccessLevel bloodPressure, ChartAccessLevel sugar)
+    public static string Describe(
+        ChartAccessLevel lab,
+        ChartAccessLevel bloodPressure,
+        ChartAccessLevel sugar,
+        ChartAccessLevel medication)
     {
         var parts = new List<string>();
         Add(parts, "Labs", lab);
         Add(parts, "Blood pressure chart and list", bloodPressure);
         Add(parts, "Sugar chart and list", sugar);
+        Add(parts, "Medication chart and list", medication);
         return parts.Count == 0 ? "No records" : string.Join("; ", parts);
     }
 

@@ -35,7 +35,7 @@
                 {
                     <p class="muted">@row.Specialty</p>
                 }
-                <p>@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar)</p>
+                <p>@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication)</p>
                 @if (!string.IsNullOrWhiteSpace(row.TextNotSentReason))
                 {
                     <p class="muted">@row.TextNotSentReason</p>
@@ -81,7 +81,7 @@
                 {
                     <tr>
                         <td data-label="Doctor"><strong>@grant.DoctorName</strong></td>
-                        <td data-label="Access">@ChartAccessText.Describe(grant.Lab, grant.BloodPressure, grant.Sugar)</td>
+                        <td data-label="Access">@ChartAccessText.Describe(grant.Lab, grant.BloodPressure, grant.Sugar, grant.Medication)</td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Revoke(grant.Id)">Revoke</button>
                         </td>

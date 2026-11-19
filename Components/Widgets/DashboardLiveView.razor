@@ -100,6 +100,7 @@ else if (snapshot is not null && scope.Patient is not null)
                                 <MedicationSchedulePanel Schedule="dailySchedule"
                                                        PatientUserId="@scope.PatientId"
                                                        ManageHref="@Link("medications")"
+                                                       CanRecord="scope.Allows(ChartSection.Medication, true)"
                                                        ScheduleChanged="OnScheduleChanged" />
                                 break;
                             case DashboardWidgetIds.DailyBp:
@@ -353,9 +354,18 @@ else if (snapshot is not null && scope.Patient is not null)
                 return;
             }
 
-            snapshot = await Records.GetDashboardAsync(scope.PatientId!);
-            dailySchedule = await MedSchedule.GetDailyScheduleAsync(scope.PatientId!, DateOnly.FromDateTime(DateTime.Today));
-            medicationOverview = await MedSchedule.GetMedicationOverviewAsync(scope.PatientId!);
+            var canViewMedications = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.Medication, false);
+            snapshot = await Records.GetDashboardAsync(scope.PatientId!, canViewMedications);
+            if (canViewMedications)
+            {
+                dailySchedule = await MedSchedule.GetDailyScheduleAsync(scope.PatientId!, DateOnly.FromDateTime(DateTime.Today));
+                medicationOverview = await MedSchedule.GetMedicationOverviewAsync(scope.PatientId!);
+            }
+            else
+            {
+                dailySchedule = null;
+                medicationOverview = null;
+            }
             printPatientName = scope.Patient?.DisplayName;
             var profile = await Access.GetProfileAsync(scope.PatientId!);
             printDateOfBirth = profile?.DateOfBirth?.ToString("MMMM d, yyyy");
@@ -575,6 +585,7 @@ else if (snapshot is not null && scope.Patient is not null)
         {
             DashboardWidgetIds.DailyBp or DashboardWidgetIds.TrendBp => scope.Allows(ChartSection.BloodPressure, false),
             DashboardWidgetIds.DailySugar or DashboardWidgetIds.TrendSugar => scope.Allows(ChartSection.Sugar, false),
+            DashboardWidgetIds.MedSchedule or DashboardWidgetIds.MedOverview => scope.Allows(ChartSection.Medication, false),
             _ => false
         };
     }

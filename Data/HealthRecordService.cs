@@ -282,13 +282,15 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         await db.SaveChangesAsync();
     }
 
-    public async Task<DashboardSnapshot> GetDashboardAsync(string userId)
+    public async Task<DashboardSnapshot> GetDashboardAsync(string userId, bool includeMedications = true)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         await ApplyAutoMissedAsync(db, userId);
         var bp = await GetBloodPressureAsync(db, userId, 30);
         var sugar = await GetSugarAsync(db, userId, 30);
-        var meds = await GetMedicationsAsync(db, userId, activeOnly: true);
+        var meds = includeMedications
+            ? await GetMedicationsAsync(db, userId, activeOnly: true)
+            : [];
         var upcoming = await GetUpcomingAppointmentsAsync(db, userId);
         var missedThisMonth = await GetMissedAppointmentsThisMonthAsync(db, userId);
         var openToDos = await GetOpenToDosAsync(db, userId);

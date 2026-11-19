@@ -1359,6 +1359,7 @@ public static class IdentitySeeder
                     "Lab" INTEGER NOT NULL,
                     "BloodPressure" INTEGER NOT NULL,
                     "Sugar" INTEGER NOT NULL,
+                    "Medication" INTEGER NOT NULL DEFAULT 0,
                     "Status" INTEGER NOT NULL,
                     "CodeSalt" TEXT NULL,
                     "CodeHash" TEXT NULL,
@@ -1379,6 +1380,7 @@ public static class IdentitySeeder
                     "Lab" INTEGER NOT NULL,
                     "BloodPressure" INTEGER NOT NULL,
                     "Sugar" INTEGER NOT NULL,
+                    "Medication" INTEGER NOT NULL DEFAULT 0,
                     "ApprovedAt" TEXT NOT NULL,
                     "RevokedAt" TEXT NULL,
                     CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
@@ -1399,6 +1401,7 @@ public static class IdentitySeeder
                     "Lab" integer NOT NULL,
                     "BloodPressure" integer NOT NULL,
                     "Sugar" integer NOT NULL,
+                    "Medication" integer NOT NULL DEFAULT 0,
                     "Status" integer NOT NULL,
                     "CodeSalt" text NULL,
                     "CodeHash" text NULL,
@@ -1419,6 +1422,7 @@ public static class IdentitySeeder
                     "Lab" integer NOT NULL,
                     "BloodPressure" integer NOT NULL,
                     "Sugar" integer NOT NULL,
+                    "Medication" integer NOT NULL DEFAULT 0,
                     "ApprovedAt" timestamp without time zone NOT NULL,
                     "RevokedAt" timestamp without time zone NULL,
                     CONSTRAINT "FK_ChartAccessGrants_AspNetUsers_DoctorUserId" FOREIGN KEY ("DoctorUserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE,
@@ -1435,6 +1439,40 @@ public static class IdentitySeeder
             """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ChartAccessGrants_DoctorUserId_PatientUserId" ON "ChartAccessGrants" ("DoctorUserId", "PatientUserId");""");
         await db.Database.ExecuteSqlRawAsync(
             """CREATE INDEX IF NOT EXISTS "IX_ChartAccessGrants_PatientUserId" ON "ChartAccessGrants" ("PatientUserId");""");
+        await EnsureChartAccessMedicationColumnAsync(db);
+    }
+
+    private static async Task EnsureChartAccessMedicationColumnAsync(ApplicationDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            var connection = db.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
+                await connection.OpenAsync();
+
+            try
+            {
+                var requests = await ReadSqliteColumnsAsync(connection, "ChartAccessRequests");
+                await TryAddColumnAsync(db, requests, "Medication",
+                    """ALTER TABLE "ChartAccessRequests" ADD COLUMN "Medication" INTEGER NOT NULL DEFAULT 0""");
+                var grants = await ReadSqliteColumnsAsync(connection, "ChartAccessGrants");
+                await TryAddColumnAsync(db, grants, "Medication",
+                    """ALTER TABLE "ChartAccessGrants" ADD COLUMN "Medication" INTEGER NOT NULL DEFAULT 0""");
+            }
+            finally
+            {
+                if (!wasOpen)
+                    await connection.CloseAsync();
+            }
+
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "ChartAccessRequests" ADD COLUMN IF NOT EXISTS "Medication" integer NOT NULL DEFAULT 0;""");
+        await db.Database.ExecuteSqlRawAsync(
+            """ALTER TABLE "ChartAccessGrants" ADD COLUMN IF NOT EXISTS "Medication" integer NOT NULL DEFAULT 0;""");
     }
 
     private static async Task TryAddColumnAsync(

@@ -48,7 +48,7 @@
                                     <div class="med-dose-head-row" role="row">
                                         <div class="med-dose-med-col" role="columnheader">Medication</div>
                                         <div class="med-dose-status-col" role="columnheader">Status</div>
-                                        <div class="med-dose-action-col" role="columnheader">Action</div>
+                                        <div class="med-dose-action-col" role="columnheader">@(CanRecord ? "Action" : "")</div>
                                     </div>
                                 </div>
                                 <div class="med-dose-tbody" role="rowgroup">
@@ -131,6 +131,9 @@
     public string? ManageHref { get; set; }
 
     [Parameter]
+    public bool CanRecord { get; set; } = true;
+
+    [Parameter]
     public EventCallback<DailyMedicationSchedule> ScheduleChanged { get; set; }
 
     private PendingDoseUpdate? _pendingUpdate;
@@ -146,6 +149,9 @@
 
     private RenderFragment RenderActions(MedicationDoseItem dose) => __builder =>
     {
+        if (!CanRecord)
+            return;
+
         if (dose.Status == AdministrationStatus.Pending)
         {
             __builder.OpenElement(0, "button");
