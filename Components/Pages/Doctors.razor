@@ -16,7 +16,10 @@
             <h1>Doctors</h1>
             <p class="muted">Your providers from appointments and medications appear here automatically. Add or update contact details anytime.</p>
         </div>
-        <a class="btn btn-teal" href="@Link("doctors/edit")">Add doctor</a>
+        @if (scope.Allows(ChartSection.Doctors, update: true))
+        {
+            <a class="btn btn-teal" href="@Link("doctors/edit")">Add doctor</a>
+        }
     </div>
 
     <div class="table-card">
@@ -103,7 +106,10 @@
                         </td>
                         <td data-label="Source"><StatusPill Label="@SourceLabel(item.Source)" CssClass="@SourceCss(item.Source)" /></td>
                         <td class="text-end">
-                            <a class="btn btn-sm btn-outline-teal" href="@Link($"doctors/edit/{item.Id}")">Update</a>
+                            @if (scope.Allows(ChartSection.Doctors, update: true))
+                            {
+                                <a class="btn btn-sm btn-outline-teal" href="@Link($"doctors/edit/{item.Id}")">Update</a>
+                            }
                         </td>
                     </tr>
                 }
@@ -247,7 +253,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = (await Access.ResolveAsync(state.User, PatientUserId)).BlockDoctorChart();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Doctors, update: false);
         if (scope.PatientId is string id)
         {
             items = await DoctorRecords.GetDoctorsAsync(id);

@@ -251,6 +251,46 @@ html, body {
 }
 .patient-banner a { font-weight: 700; color: #7a4100; }
 
+.identity-row {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+.identity-row > div { min-width: 0; }
+.person-photo {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    background: #d5dde6;
+    flex: 0 0 auto;
+}
+.person-photo img,
+.person-photo-fallback {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.person-photo-fallback {
+    background-color: #d5dde6;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%235b6b7c' d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4Zm-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center 42%;
+    background-size: 62%;
+}
+.person-photo-sm { width: 2.35rem; height: 2.35rem; }
+.person-photo-md { width: 3.4rem; height: 3.4rem; }
+.person-photo-lg { width: 4.6rem; height: 4.6rem; }
+.page-head .person-photo-lg,
+.dash-hero .person-photo-lg { box-shadow: 0 0 0 2px rgba(255,255,255,.88); }
+.person-photo.scene-img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; }
+.doctor-chart-head { margin-bottom: 0.8rem; }
+.doctor-chart-head h2 { margin: 0; }
+.doctor-chart-patient { margin: 0.35rem 0 0; color: #0f3d5c; font-weight: 700; }
+.picker-card .person-photo-md { margin-bottom: 0.35rem; }
+
 .picker-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

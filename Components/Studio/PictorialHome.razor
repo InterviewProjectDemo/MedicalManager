@@ -1,6 +1,10 @@
 @namespace MedicalManager.Components.Studio
+@using System.Security.Claims
 @inject NavigationManager Navigation
 @inject FamilyCallCoordinator FamilyCalls
+@inject AuthenticationStateProvider Auth
+@inject ProfilePhotoService Photos
+@inject GrantedPatientSelection Selection
 
 <section class="studio-home">
     <header class="studio-intro">
@@ -40,9 +44,15 @@
                     @PortraitCard(item)
                 </a>
             }
-            @foreach (var item in Reach)
+            @foreach (var item in ReachItems)
             {
-                @if (SignedIn && item.Scene == "family")
+                @if (SignedIn && item.Scene == "patient-call")
+                {
+                    <button type="button" class="portrait" data-family-dock @onclick="OpenPatientCall">
+                        @CallerCard(item)
+                    </button>
+                }
+                else if (SignedIn && item.Scene == "family")
                 {
                     <button type="button" class="portrait" data-family-dock @onclick="() => OpenReachAsync(item.Scene)">
                         @PortraitCard(item)
@@ -78,7 +88,31 @@
     [Parameter] public string? PatientUserId { get; set; }
     [Parameter] public string Hello { get; set; } = "there";
 
-    private string ChartBoard => CareLinks.To("chart-board", PatientUserId);
+    private bool _isDoctor;
+    private string? _doctorPhotoUrl;
+
+    private string? ChartPatientId =>
+        !string.IsNullOrWhiteSpace(PatientUserId)
+            ? PatientUserId
+            : _isDoctor ? Selection.PatientUserId : null;
+
+    private string ChartBoard => CareLinks.To("chart-board", ChartPatientId);
+
+    private Portrait[] ReachItems => _isDoctor
+        ? [new("patient-call", "Call patient", "Call the patient who approved access", "")]
+        : Reach;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+        if (!_isDoctor)
+            return;
+
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrWhiteSpace(userId))
+            _doctorPhotoUrl = await Photos.GetPhotoUrlForUserAsync(userId);
+    }
 
     private static readonly Portrait[] Vitals =
     [
@@ -120,8 +154,32 @@
         <span class="portrait-hint">@item.Hint</span>
     </span>;
 
+    private RenderFragment CallerCard(Portrait item) => @<span class="portrait-figure-wrap">
+        <span class="portrait-figure">
+            <span class="portrait-orb has-caller">
+                <PersonPhoto Url="@_doctorPhotoUrl" CssClass="scene-img" Alt="" />
+                <span class="caller-badge" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.2.9c.5.2.8.7.8 1.3l-.3 2.2c-.1.5 0 1 .4 1.3l1.6 1.3a9 9 0 0 0 3.4 2l1.2-1.6c.3-.4.8-.6 1.3-.5l2.2.4c.6.1 1 .6 1.1 1.2l.3 2.3c.1.6-.2 1.2-.7 1.5-1.6 1-3.6 1.4-5.6.9A15 15 0 0 1 5.2 8.8c-.7-1.9-.5-4 .6-5.6z" /></svg>
+                </span>
+            </span>
+            <span class="portrait-pedestal" aria-hidden="true"></span>
+        </span>
+        <span class="portrait-stem" aria-hidden="true"></span>
+        <span class="portrait-dot" aria-hidden="true"></span>
+        <span class="portrait-name">@item.Label</span>
+        <span class="portrait-hint">@item.Hint</span>
+    </span>;
+
+    private Task OpenPatientCall() => FamilyCalls.RequestPatientCallAsync();
+
     private async Task OpenReachAsync(string scene)
     {
+        if (_isDoctor)
+        {
+            await OpenPatientCall();
+            return;
+        }
+
         if (scene == "monitor")
             await FamilyCalls.RequestMonitorAsync();
         else
@@ -137,7 +195,7 @@
                 new Dictionary<string, object?> { ["ReturnUrl"] = "/" + path });
         }
 
-        return CareLinks.To(path, PatientUserId);
+        return CareLinks.To(path, ChartPatientId);
     }
 
     private sealed record Portrait(string Scene, string Label, string Hint, string Path);

@@ -484,7 +484,7 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         await db.SaveChangesAsync();
     }
 
-    public async Task<DashboardSnapshot> GetDashboardAsync(string userId, bool includeMedications = true)
+    public async Task<DashboardSnapshot> GetDashboardAsync(string userId, bool includeMedications = true, bool includeToDos = true)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         await ApplyAutoMissedAsync(db, userId);
@@ -495,7 +495,9 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
             : [];
         var upcoming = await GetUpcomingAppointmentsAsync(db, userId);
         var missedThisMonth = await GetMissedAppointmentsThisMonthAsync(db, userId);
-        var openToDos = await GetOpenToDosAsync(db, userId);
+        var openToDos = includeToDos
+            ? await GetOpenToDosAsync(db, userId)
+            : [];
         return new DashboardSnapshot(bp, sugar, meds, upcoming, missedThisMonth, openToDos);
     }
 

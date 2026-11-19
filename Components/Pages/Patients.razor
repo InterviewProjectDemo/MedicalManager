@@ -3,16 +3,20 @@
 @rendermode InteractiveServer
 @inject PatientAccessService Access
 @inject ChartAccessService ChartAccess
+@inject ProfilePhotoService Photos
 @inject AuthenticationStateProvider Auth
 @inject GrantedPatientSelection Selection
 
 <PageTitle>Patients</PageTitle>
 
 <div class="page-head accent-doctor">
-    <div>
-        <p class="eyebrow">Doctor workspace</p>
-        <h1>Patients</h1>
-        <p class="muted">Request access first. A patient approves with a code sent to the phone on their account. You never see that code.</p>
+    <div class="identity-row">
+        <PersonPhoto Url="@_doctorPhotoUrl" Size="lg" Alt="" />
+        <div>
+            <p class="eyebrow">Doctor workspace</p>
+            <h1>Patients</h1>
+            <p class="muted">Request access first. A patient approves with a code sent to the phone on their account. You never see that code.</p>
+        </div>
     </div>
     <button type="button" class="btn btn-light" @onclick="OpenRequest">Request patient access</button>
 </div>
@@ -42,7 +46,7 @@
                             <strong>@row.RequestedName</strong>
                             <div class="muted">@row.DateOfBirth?.ToString("MMMM d, yyyy")</div>
                         </td>
-                        <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication)</td>
+                        <td data-label="Requested">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication, row.ToDo, row.Doctors)</td>
                         <td class="text-end">
                             @if (!string.IsNullOrWhiteSpace(row.TextNotSentReason))
                             {
@@ -70,8 +74,13 @@
             @foreach (var row in grants)
             {
                 <tr class="@(row.PatientId == _selectedPatientId ? "is-selected" : null)" @onclick="() => SelectPatient(row)">
-                    <td data-label="Patient"><strong>@row.PatientName</strong></td>
-                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication)</td>
+                    <td data-label="Patient">
+                        <span class="identity-row">
+                            <PersonPhoto Url="@PhotoUrl(row)" Size="sm" Alt="" />
+                            <strong>@row.PatientName</strong>
+                        </span>
+                    </td>
+                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication, row.ToDo, row.Doctors)</td>
                     <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
                         @if (row.BloodPressure != ChartAccessLevel.None || row.Sugar != ChartAccessLevel.None || row.Medication != ChartAccessLevel.None)
                         {
@@ -92,6 +101,14 @@
                         @if (row.Medication != ChartAccessLevel.None)
                         {
                             <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", row.PatientId)">Medication</a>
+                        }
+                        @if (row.ToDo != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("todos", row.PatientId)">To Do</a>
+                        }
+                        @if (row.Doctors != ChartAccessLevel.None)
+                        {
+                            <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("doctors", row.PatientId)">Doctors</a>
                         }
                     </td>
                 </tr>
@@ -136,6 +153,8 @@
                     <ScopeRow Title="Blood pressure chart and list" @bind-Selected="bpOn" @bind-Level="bpLevel" />
                     <ScopeRow Title="Sugar chart and list" @bind-Selected="sugarOn" @bind-Level="sugarLevel" />
                     <ScopeRow Title="Medication chart and list" @bind-Selected="medicationOn" @bind-Level="medicationLevel" />
+                    <ScopeRow Title="To Do" @bind-Selected="todoOn" @bind-Level="todoLevel" />
+                    <ScopeRow Title="Doctors" @bind-Selected="doctorsOn" @bind-Level="doctorsLevel" />
                 </fieldset>
                 <p class="muted">You do not choose the phone number. The code goes only to the number the patient already saved.</p>
                 <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@busy">Send approval request</button>
@@ -157,11 +176,16 @@
     private bool bpOn;
     private bool sugarOn;
     private bool medicationOn;
+    private bool todoOn;
+    private bool doctorsOn;
     private ChartAccessLevel labLevel = ChartAccessLevel.View;
     private ChartAccessLevel bpLevel = ChartAccessLevel.View;
     private ChartAccessLevel sugarLevel = ChartAccessLevel.View;
     private ChartAccessLevel medicationLevel = ChartAccessLevel.View;
+    private ChartAccessLevel todoLevel = ChartAccessLevel.View;
+    private ChartAccessLevel doctorsLevel = ChartAccessLevel.View;
     private string? doctorId;
+    private string? _doctorPhotoUrl;
     private string? _selectedPatientId;
     private string? _selectedPatientName;
 
@@ -169,6 +193,8 @@
     {
         var state = await Auth.GetAuthenticationStateAsync();
         doctorId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(doctorId))
+            _doctorPhotoUrl = await Photos.GetPhotoUrlForUserAsync(doctorId);
         _selectedPatientId = Selection.PatientUserId;
         _selectedPatientName = Selection.PatientName;
         await Reload();
@@ -221,7 +247,9 @@
             labOn ? labLevel : ChartAccessLevel.None,
             bpOn ? bpLevel : ChartAccessLevel.None,
             sugarOn ? sugarLevel : ChartAccessLevel.None,
-            medicationOn ? medicationLevel : ChartAccessLevel.None);
+            medicationOn ? medicationLevel : ChartAccessLevel.None,
+            todoOn ? todoLevel : ChartAccessLevel.None,
+            doctorsOn ? doctorsLevel : ChartAccessLevel.None);
         status = result.Message;
         statusOk = result.Accepted && result.CodeSent;
         busy = false;
@@ -230,10 +258,12 @@
             dialogOpen = false;
             patientName = "";
             patientDob = null;
-            labOn = bpOn = sugarOn = medicationOn = false;
+            labOn = bpOn = sugarOn = medicationOn = todoOn = doctorsOn = false;
             await Reload();
         }
     }
+
+    private string? PhotoUrl(DoctorGrantItem row) => Photos.GetPhotoUrl(row.PatientId, row.PhotoUpdatedAt);
 
     private async Task Resend(int requestId)
     {

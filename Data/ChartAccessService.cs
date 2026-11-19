@@ -16,6 +16,8 @@ public sealed record PatientAccessRequestItem(
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
     ChartAccessLevel Medication,
+    ChartAccessLevel ToDo,
+    ChartAccessLevel Doctors,
     DateTime CreatedAt,
     bool WaitingForPhone,
     bool CodeExpired,
@@ -28,6 +30,8 @@ public sealed record PatientGrantItem(
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
     ChartAccessLevel Medication,
+    ChartAccessLevel ToDo,
+    ChartAccessLevel Doctors,
     DateTime ApprovedAt);
 
 public sealed record DoctorAccessRequestItem(
@@ -38,6 +42,8 @@ public sealed record DoctorAccessRequestItem(
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
     ChartAccessLevel Medication,
+    ChartAccessLevel ToDo,
+    ChartAccessLevel Doctors,
     AccessRequestStatus Status,
     DateTime CreatedAt,
     bool WaitingForPhone,
@@ -51,7 +57,10 @@ public sealed record DoctorGrantItem(
     ChartAccessLevel BloodPressure,
     ChartAccessLevel Sugar,
     ChartAccessLevel Medication,
-    DateTime ApprovedAt);
+    ChartAccessLevel ToDo,
+    ChartAccessLevel Doctors,
+    DateTime ApprovedAt,
+    DateTime? PhotoUpdatedAt);
 
 public sealed class ChartAccessService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -86,6 +95,10 @@ public sealed class ChartAccessService(
         var names = await db.Users.AsNoTracking()
             .Where(x => patientIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.DisplayName);
+        var photos = await db.PatientProfiles.AsNoTracking()
+            .Where(x => patientIds.Contains(x.UserId) && x.ProfilePhotoData != null)
+            .Select(x => new { x.UserId, x.ProfilePhotoUpdatedAt })
+            .ToDictionaryAsync(x => x.UserId, x => x.ProfilePhotoUpdatedAt);
 
         return grants
             .Select(x => new DoctorGrantItem(
@@ -96,7 +109,10 @@ public sealed class ChartAccessService(
                 x.BloodPressure,
                 x.Sugar,
                 x.Medication,
-                x.ApprovedAt))
+                x.ToDo,
+                x.Doctors,
+                x.ApprovedAt,
+                photos.GetValueOrDefault(x.PatientUserId)))
             .ToList();
     }
 
@@ -149,6 +165,8 @@ public sealed class ChartAccessService(
                 x.BloodPressure,
                 x.Sugar,
                 x.Medication,
+                x.ToDo,
+                x.Doctors,
                 x.Status,
                 x.CreatedAt,
                 WaitingForPhone: x.CodeHash is null,
@@ -192,6 +210,8 @@ public sealed class ChartAccessService(
                 x.BloodPressure,
                 x.Sugar,
                 x.Medication,
+                x.ToDo,
+                x.Doctors,
                 x.CreatedAt,
                 WaitingForPhone: x.CodeHash is null,
                 CodeExpired: x.CodeExpiresAt is not null && x.CodeExpiresAt < DateTime.UtcNow,
@@ -221,6 +241,8 @@ public sealed class ChartAccessService(
             x.BloodPressure,
             x.Sugar,
             x.Medication,
+            x.ToDo,
+            x.Doctors,
             x.ApprovedAt)).ToList();
     }
 
@@ -231,7 +253,9 @@ public sealed class ChartAccessService(
         ChartAccessLevel lab,
         ChartAccessLevel bloodPressure,
         ChartAccessLevel sugar,
-        ChartAccessLevel medication)
+        ChartAccessLevel medication,
+        ChartAccessLevel toDo,
+        ChartAccessLevel doctors)
     {
         var doctor = await users.FindByIdAsync(doctorUserId);
         if (doctor is null || !await users.IsInRoleAsync(doctor, AppRoles.Doctor))
@@ -245,7 +269,9 @@ public sealed class ChartAccessService(
         if (lab == ChartAccessLevel.None
             && bloodPressure == ChartAccessLevel.None
             && sugar == ChartAccessLevel.None
-            && medication == ChartAccessLevel.None)
+            && medication == ChartAccessLevel.None
+            && toDo == ChartAccessLevel.None
+            && doctors == ChartAccessLevel.None)
             return new AccessRequestResult(false, "Choose at least one record, and View or Update for each record you select.");
 
         var patient = await MatchPatientAsync(name, dateOfBirth.Value);
@@ -272,6 +298,8 @@ public sealed class ChartAccessService(
             BloodPressure = bloodPressure,
             Sugar = sugar,
             Medication = medication,
+            ToDo = toDo,
+            Doctors = doctors,
             Status = AccessRequestStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
@@ -371,6 +399,8 @@ public sealed class ChartAccessService(
         grant.BloodPressure = request.BloodPressure;
         grant.Sugar = request.Sugar;
         grant.Medication = request.Medication;
+        grant.ToDo = request.ToDo;
+        grant.Doctors = request.Doctors;
         grant.ApprovedAt = DateTime.UtcNow;
         grant.RevokedAt = null;
 

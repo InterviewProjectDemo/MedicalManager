@@ -48,6 +48,29 @@ public sealed class FamilyVoiceCallService(
         return await IssueAsync(userId, destination, cancellationToken);
     }
 
+    public async Task<FamilyTalkSetup> PreparePatientCallAsync(
+        string doctorUserId,
+        string patientUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var chart = scope.ServiceProvider.GetRequiredService<ChartAccessService>();
+        var grant = await chart.GetActiveGrantAsync(doctorUserId, patientUserId);
+        if (grant is null)
+            return new FamilyTalkSetup(false, null, null, "Select a patient who approved access.");
+
+        var userStore = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var access = scope.ServiceProvider.GetRequiredService<PatientAccessService>();
+        var patient = await userStore.FindByIdAsync(patientUserId);
+        var profile = await access.GetProfileAsync(patientUserId);
+        var raw = string.IsNullOrWhiteSpace(profile?.Phone) ? patient?.PhoneNumber : profile.Phone;
+        var destination = PhoneNumbers.ToE164(raw);
+        if (destination is null)
+            return new FamilyTalkSetup(false, null, null, "That patient has no phone number saved.");
+
+        return await IssueAsync(doctorUserId, destination, cancellationToken);
+    }
+
     private async Task<string?> ResolveDirectoryNumberAsync(string userId, string kind, string name)
     {
         await using var scope = scopes.CreateAsyncScope();

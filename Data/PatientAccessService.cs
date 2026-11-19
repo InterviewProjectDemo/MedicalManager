@@ -377,6 +377,25 @@ public sealed class PatientAccessService(
         return space > 0 ? name[..space] : name;
     }
 
+    public async Task<PatientCallTarget> DescribePatientCallAsync(string doctorUserId, string? patientUserId)
+    {
+        if (string.IsNullOrWhiteSpace(patientUserId))
+            return new PatientCallTarget(null, null, "Select a patient who approved access.");
+
+        var grant = await chartAccess.GetActiveGrantAsync(doctorUserId, patientUserId);
+        if (grant is null)
+            return new PatientCallTarget(null, null, "Select a patient who approved access.");
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var patient = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == patientUserId);
+        var profile = await db.PatientProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == patientUserId);
+        var raw = string.IsNullOrWhiteSpace(profile?.Phone) ? patient?.PhoneNumber : profile.Phone;
+        if (Notifications.PhoneNumbers.ToE164(raw) is null)
+            return new PatientCallTarget(patient?.DisplayName, null, "That patient has no phone number saved.");
+
+        return new PatientCallTarget(patient?.DisplayName ?? "Patient", raw!.Trim(), null);
+    }
+
     public async Task CompleteOnboardingAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -395,6 +414,8 @@ public sealed class PatientAccessService(
 public sealed record MonitorSetup(string? Code, string? Token, string FirstName);
 
 public sealed record MonitorLink(string UserId, string FirstName, string? Code);
+
+public sealed record PatientCallTarget(string? Name, string? Phone, string? BlockedReason);
 
 public sealed record FamilyContactSummary(string? Name, string? Phone, DateTime? PhotoUpdatedAt);
 

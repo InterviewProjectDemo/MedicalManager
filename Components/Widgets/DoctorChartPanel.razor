@@ -1,10 +1,23 @@
 @inject VirtualVisitService Visits
 @inject HealthRecordService Records
+@inject ProfilePhotoService Photos
 @inject AuthenticationStateProvider Auth
 
 <section class="doctor-chart-block">
     <div class="table-card doctor-chart-card">
-        <h2>Doctor chart</h2>
+        <div class="identity-row doctor-chart-head">
+            <PersonPhoto Url="@_doctorPhotoUrl" Size="lg" Alt="" />
+            <div>
+                <h2>Doctor chart</h2>
+                @if (!string.IsNullOrWhiteSpace(_patientName) && !_denied && !string.IsNullOrWhiteSpace(PatientUserId))
+                {
+                    <p class="identity-row doctor-chart-patient">
+                        <PersonPhoto Url="@_patientPhotoUrl" Size="sm" Alt="" />
+                        <span>@_patientName</span>
+                    </p>
+                }
+            </div>
+        </div>
         @if (string.IsNullOrWhiteSpace(PatientUserId))
         {
             <p class="mb-0">Select a patient who approved access. The chart and the visit tools below stay with that one patient.</p>
@@ -15,7 +28,6 @@
         }
         else
         {
-            <p class="muted">@_patientName</p>
             @if (!_showBp && !_showSugar)
             {
                 <p>This patient approved access. Blood pressure and sugar are not included in that approval.</p>
@@ -55,6 +67,8 @@
 
     private string? _loadedFor;
     private string? _patientName;
+    private string? _doctorPhotoUrl;
+    private string? _patientPhotoUrl;
     private bool _denied;
     private bool _showBp;
     private bool _showSugar;
@@ -71,6 +85,14 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (string.IsNullOrWhiteSpace(_doctorPhotoUrl))
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            var doctorId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrWhiteSpace(doctorId))
+                _doctorPhotoUrl = await Photos.GetPhotoUrlForUserAsync(doctorId);
+        }
+
         if (_loadedFor == PatientUserId)
             return;
 
@@ -86,12 +108,16 @@
         _denied = false;
         _showBp = false;
         _showSugar = false;
+        _patientPhotoUrl = null;
         _bpSeries = [];
         _sugarSeries = [];
+        var state = await Auth.GetAuthenticationStateAsync();
+        var doctorId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(doctorId))
+            _doctorPhotoUrl = await Photos.GetPhotoUrlForUserAsync(doctorId);
         if (string.IsNullOrWhiteSpace(PatientUserId))
             return;
 
-        var state = await Auth.GetAuthenticationStateAsync();
         var desk = await Visits.OpenAsync(state.User, labUpdateOnly: false);
         var grant = desk.Patients.FirstOrDefault(patient => patient.PatientId == PatientUserId);
         if (grant is null)
@@ -101,6 +127,7 @@
         }
 
         _patientName = grant.PatientName;
+        _patientPhotoUrl = await Photos.GetPhotoUrlForUserAsync(PatientUserId);
         _showBp = grant.BloodPressure != ChartAccessLevel.None;
         _showSugar = grant.Sugar != ChartAccessLevel.None;
         if (_showBp)

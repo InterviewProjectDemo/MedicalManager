@@ -1,0 +1,27 @@
+@namespace MedicalManager.Components.Widgets
+
+<span class="person-photo @SizeClass @CssClass">
+    @if (!string.IsNullOrWhiteSpace(Url))
+    {
+        <img src="@Url" alt="@Alt" draggable="false" />
+    }
+    else
+    {
+        <span class="person-photo-fallback" aria-hidden="true"></span>
+    }
+</span>
+
+@code {
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public string Alt { get; set; } = "";
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public string Size { get; set; } = "";
+
+    private string SizeClass => Size switch
+    {
+        "sm" => "person-photo-sm",
+        "md" => "person-photo-md",
+        "lg" => "person-photo-lg",
+        _ => ""
+    };
+}

@@ -5,6 +5,8 @@
 @inject AuthenticationStateProvider Auth
 @inject ProfilePhotoService PhotoService
 @inject PatientAccessService Access
+@inject ChartAccessService ChartAccess
+@inject GrantedPatientSelection Selection
 @inject IJSRuntime JS
 @inject FamilyCallCoordinator FamilyCalls
 
@@ -35,6 +37,10 @@
                         @if (!string.IsNullOrWhiteSpace(_photoUrl))
                         {
                             <img src="@_photoUrl" alt="" class="nav-avatar-img" />
+                        }
+                        else if (_isDoctor)
+                        {
+                            <span class="nav-avatar-icon" aria-hidden="true"></span>
                         }
                         else
                         {
@@ -80,6 +86,8 @@
                     <StudioSideNav PatientUserId="@selectedPatientId"
                                    CurrentUrl="@currentUrl"
                                    AccountName="@authContext.User.Identity?.Name"
+                                   DoctorPhotoUrl="@_photoUrl"
+                                   PatientPhotoUrl="@_patientPhotoUrl"
                                    OnEmergency="OpenEmergencyCall"
                                    OnVoice="OpenGuide"
                                    OnPrescription="OpenPrescription"
@@ -259,6 +267,8 @@
                     <p class="nav-call-hint">Say Call</p>
                         </NotAuthorized>
                     </AuthorizeView>
+                    <AuthorizeView Roles="@AppRoles.Doctor" Context="hideMonitor">
+                        <NotAuthorized>
                     <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4.5 7.2A2.2 2.2 0 0 1 6.7 5h7.1a2.2 2.2 0 0 1 2.2 2.2v1.1l2.8-1.6c.7-.4 1.7.1 1.7 1v8.6c0 .9-1 1.4-1.7 1l-2.8-1.6v1.1a2.2 2.2 0 0 1-2.2 2.2H6.7a2.2 2.2 0 0 1-2.2-2.2v-9.6z" />
@@ -266,6 +276,8 @@
                         <span>Monitor</span>
                     </button>
                     <p class="nav-call-hint">@(_monitorLive ? "Camera is on" : "Family can watch")</p>
+                        </NotAuthorized>
+                    </AuthorizeView>
                 </div>
                 }
             </Authorized>
@@ -353,7 +365,11 @@
             <button type="button" class="mobile-tab mobile-tab-emergency" @onclick="OpenEmergencyCall">Emergency</button>
             <button type="button" class="mobile-tab mobile-tab-family" @onclick="OpenFamilyCall">Family</button>
             <button type="button" class="mobile-tab mobile-tab-guide" @onclick="OpenGuide">Voice Call</button>
+            <AuthorizeView Roles="@AppRoles.Doctor" Context="hideMonitorTab">
+                <NotAuthorized>
             <button type="button" class="mobile-tab mobile-tab-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">Monitor</button>
+                </NotAuthorized>
+            </AuthorizeView>
             <NavLink class="mobile-tab" href="@Href("")" Match="NavLinkMatch.All">
                 <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
                 Home
@@ -433,7 +449,8 @@
                         Kind="@_callKind"
                         ContactName="@_familyName"
                         ContactPhone="@_familyPhone"
-                        PhotoUrl="@_familyPhotoUrl"
+                        PhotoUrl="@(_callKind == "patient" ? _photoUrl : _familyPhotoUrl)"
+                        PatientUserId="@_callPatientId"
                         CallerName="@_callerName"
                         CallerPhone="@_callerPhone" />
         <GuideCallModal Visible="_guideOpen" Seed="_guideSeed" VisibleChanged="OnGuideVisibleChanged" />
@@ -472,6 +489,8 @@
     private string? _familyName;
     private string? _familyPhone;
     private string? _familyPhotoUrl;
+    private string? _patientPhotoUrl;
+    private string? _callPatientId;
     private string? _callerName;
     private string? _callerPhone;
 
@@ -495,14 +514,17 @@
         UpdateFromUri();
         NavigationManager.LocationChanged += OnLocationChanged;
         FamilyCalls.OpenFamilyCallRequested += OpenFamilyCall;
+        FamilyCalls.OpenPatientCallRequested += OpenPatientCall;
         FamilyCalls.OpenMonitorRequested += OpenMonitorFromHome;
+        Selection.Changed += OnPatientSelected;
         await LoadPhotoAsync();
+        await LoadSelectedPatientPhotoAsync();
         await LoadFamilyContactAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_cameraGestureReady)
+        if (!_isDoctor && !_cameraGestureReady)
         {
             _cameraGestureReady = true;
             try
@@ -534,6 +556,34 @@
         }
 
         _photoUrl = await PhotoService.GetPhotoUrlForUserAsync(_userId);
+        await LoadSelectedPatientPhotoAsync();
+    }
+
+    private async Task LoadSelectedPatientPhotoAsync()
+    {
+        var patientId = Selection.PatientUserId ?? selectedPatientId;
+        if (!_isDoctor || string.IsNullOrWhiteSpace(_userId) || string.IsNullOrWhiteSpace(patientId))
+        {
+            _patientPhotoUrl = null;
+            return;
+        }
+
+        if (await ChartAccess.GetActiveGrantAsync(_userId, patientId) is null)
+        {
+            _patientPhotoUrl = null;
+            return;
+        }
+
+        _patientPhotoUrl = await PhotoService.GetPhotoUrlForUserAsync(patientId);
+    }
+
+    private void OnPatientSelected()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadSelectedPatientPhotoAsync();
+            StateHasChanged();
+        });
     }
 
     private async Task LoadFamilyContactAsync()
@@ -577,6 +627,9 @@
 
     private void OpenMonitor()
     {
+        if (_isDoctor)
+            return;
+
         _monitorOpen = true;
         _navOpen = false;
     }
@@ -692,8 +745,47 @@
         return string.Join(' ', words);
     }
 
+    private async Task OpenPatientCall()
+    {
+        _callKind = "patient";
+        _callPatientId = Selection.PatientUserId ?? selectedPatientId;
+        _familyName = Selection.PatientName;
+        _familyPhone = null;
+        if (!string.IsNullOrWhiteSpace(_userId) && !string.IsNullOrWhiteSpace(_callPatientId))
+        {
+            var target = await Access.DescribePatientCallAsync(_userId, _callPatientId);
+            if (target.BlockedReason is not null && target.Name is null)
+            {
+                _callPatientId = null;
+                _familyName = null;
+            }
+            else
+            {
+                _familyName = target.Name ?? _familyName;
+                _familyPhone = target.Phone;
+            }
+        }
+        else
+        {
+            _callPatientId = null;
+        }
+
+        _callSerial++;
+        _callOpen = true;
+        _navOpen = false;
+        _ = StopWakeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task OpenFamilyCall()
     {
+        if (_isDoctor)
+        {
+            await OpenPatientCall();
+            return;
+        }
+
+        _callPatientId = null;
         await LoadFamilyContactAsync();
         await LoadCallerAsync();
         _callKind = "family";
@@ -799,7 +891,9 @@
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
         FamilyCalls.OpenFamilyCallRequested -= OpenFamilyCall;
+        FamilyCalls.OpenPatientCallRequested -= OpenPatientCall;
         FamilyCalls.OpenMonitorRequested -= OpenMonitorFromHome;
+        Selection.Changed -= OnPatientSelected;
         _ = StopWakeAsync();
         _wakeSelf?.Dispose();
     }

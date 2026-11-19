@@ -29,7 +29,7 @@ else
         <div>
             <p class="eyebrow">Your account</p>
             <h1>Patient profile</h1>
-            <p class="muted">Manage your photo, family contact, monitor code, and health profile details.</p>
+            <p class="muted">@(_isDoctor ? "Manage your photo and account details." : "Manage your photo, family contact, monitor code, and health profile details.")</p>
         </div>
     </div>
 
@@ -42,6 +42,10 @@ else
                 @if (!string.IsNullOrWhiteSpace(_photoUrl))
                 {
                     <img src="@_photoUrl" alt="" class="profile-page-photo" />
+                }
+                else if (_isDoctor)
+                {
+                    <span class="person-photo-fallback profile-page-photo" aria-hidden="true"></span>
                 }
                 else
                 {
@@ -294,6 +298,8 @@ else
         }
     </div>
 
+    @if (!_isDoctor)
+    {
     <div class="profile-page-card">
         <h2 class="reminder-settings-title">Monitor Access Code</h2>
         <p class="muted">Family uses this 4-digit code with your private monitor link. Change it anytime. The previous code stops working right away.</p>
@@ -330,6 +336,7 @@ else
             <p class="muted mb-0">@_monitorMessage</p>
         }
     </div>
+    }
 
     <div class="profile-page-card">
         <h2 class="reminder-settings-title">Notification services</h2>
@@ -393,6 +400,7 @@ else
     private static readonly string[] SexOptions = ["Female", "Male", "Intersex", "Prefer not to say"];
 
     private bool _loading = true;
+    private bool _isDoctor;
     private bool _editingDetails;
     private bool _smsConsent;
     private bool _savingDetails;
@@ -445,6 +453,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
+        _isDoctor = state.User.IsInRole(AppRoles.Doctor);
         var claimUserId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
         if (string.IsNullOrWhiteSpace(claimUserId))
         {

@@ -21,6 +21,15 @@
                 {
                     <img src="/images/emergency-crew.svg" alt="Ambulance and an EMT" />
                 }
+                else if (IsPatient)
+                {
+                    <span class="caller-mark">
+                        <PersonPhoto Url="@PhotoUrl" Alt="" />
+                        <span class="caller-badge" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.2.9c.5.2.8.7.8 1.3l-.3 2.2c-.1.5 0 1 .4 1.3l1.6 1.3a9 9 0 0 0 3.4 2l1.2-1.6c.3-.4.8-.6 1.3-.5l2.2.4c.6.1 1 .6 1.1 1.2l.3 2.3c.1.6-.2 1.2-.7 1.5-1.6 1-3.6 1.4-5.6.9A15 15 0 0 1 5.2 8.8c-.7-1.9-.5-4 .6-5.6z" /></svg>
+                        </span>
+                    </span>
+                }
                 else if (!string.IsNullOrWhiteSpace(PhotoUrl))
                 {
                     <img src="@PhotoUrl" alt="" />
@@ -77,7 +86,11 @@
                 {
                     <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Add your phone number</a>
                 }
-                else if (!IsEmergency && !HasFamilyPhone)
+                else if (IsPatient && string.IsNullOrWhiteSpace(PatientUserId))
+                {
+                    <p class="quick-call-error">Select a patient who approved access.</p>
+                }
+                else if (!IsEmergency && !IsPatient && !HasFamilyPhone)
                 {
                     <a class="quick-call-setup" href="profile" @onclick="CloseAsync">Set up family contact</a>
                 }
@@ -102,6 +115,14 @@
             {
                 <p class="quick-call-note">This call rings your phone and includes your name and live GPS location. It does not dial 911.</p>
             }
+            else if (IsPatient && string.IsNullOrWhiteSpace(PatientUserId))
+            {
+                <p class="quick-call-note">Select a patient who approved access. Call Patient uses that patient's saved phone.</p>
+            }
+            else if (IsPatient)
+            {
+                <p class="quick-call-note">This call rings the phone saved on this patient's profile.</p>
+            }
             else if (!HasFamilyPhone)
             {
                 <p class="quick-call-note">Add this person’s name and phone on your Profile page. A photo is optional.</p>
@@ -125,6 +146,7 @@
     [Parameter] public string? ContactName { get; set; }
     [Parameter] public string? ContactPhone { get; set; }
     [Parameter] public string? PhotoUrl { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
     [Parameter] public string? CallerName { get; set; }
     [Parameter] public string? CallerPhone { get; set; }
 
@@ -158,22 +180,34 @@
 
     private bool IsEmergency => string.Equals(Kind, "emergency", StringComparison.OrdinalIgnoreCase);
 
+    private bool IsPatient => string.Equals(Kind, "patient", StringComparison.OrdinalIgnoreCase);
+
     private bool HasUserPhone => PhoneNumbers.ToE164(CallerPhone) is not null;
 
     private bool HasFamilyPhone => PhoneNumbers.ToE164(ContactPhone) is not null;
 
-    private bool CanPlaceCall => IsEmergency ? HasUserPhone : HasFamilyPhone;
+    private bool CanPlaceCall => IsEmergency
+        ? HasUserPhone
+        : IsPatient
+            ? !string.IsNullOrWhiteSpace(PatientUserId)
+            : HasFamilyPhone;
 
-    private string KindClass => IsEmergency ? "is-emergency" : "is-family";
-    private string Kicker => IsEmergency ? "Emergency" : "Family";
+    private string KindClass => IsEmergency ? "is-emergency" : IsPatient ? "is-patient" : "is-family";
+    private string Kicker => IsEmergency ? "Emergency" : IsPatient ? "Patient" : "Family";
 
     private string Title => IsEmergency
         ? "Emergency services"
-        : (string.IsNullOrWhiteSpace(ContactName) ? "No family contact yet" : ContactName.Trim());
+        : IsPatient
+            ? (string.IsNullOrWhiteSpace(ContactName) ? "Call patient" : ContactName.Trim())
+            : (string.IsNullOrWhiteSpace(ContactName) ? "No family contact yet" : ContactName.Trim());
 
     private string? Detail => IsEmergency
         ? "Ambulance and EMT"
-        : (HasFamilyPhone ? ContactPhone!.Trim() : null);
+        : IsPatient
+            ? (string.IsNullOrWhiteSpace(PatientUserId)
+                ? "Select a patient who approved access."
+                : (HasFamilyPhone ? ContactPhone!.Trim() : "No phone number saved"))
+            : (HasFamilyPhone ? ContactPhone!.Trim() : null);
 
     private string Initials => InitialsFrom(ContactName);
 
@@ -210,6 +244,12 @@
         var session = ++_session;
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
+        if (IsPatient)
+        {
+            await StartPatientTalkAsync(session);
+            return;
+        }
+
         if (!IsEmergency)
         {
             await StartFamilyTalkAsync(session);
@@ -286,6 +326,30 @@
             return;
 
         var setup = await FamilyCalls.PrepareAsync(userId, CancellationToken.None);
+        await BeginTalkAsync(session, setup);
+    }
+
+    private async Task StartPatientTalkAsync(int session)
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(PatientUserId) || _disposed || session != _session)
+        {
+            if (!_disposed && session == _session && string.IsNullOrWhiteSpace(PatientUserId))
+            {
+                _callError = "Select a patient who approved access.";
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        var setup = await FamilyCalls.PreparePatientCallAsync(userId, PatientUserId, CancellationToken.None);
+        await BeginTalkAsync(session, setup);
+    }
+
+    private async Task BeginTalkAsync(int session, FamilyTalkSetup setup)
+    {
         if (_disposed || session != _session || !Visible)
             return;
         if (!setup.Ok || setup.Token is null || setup.Ticket is null)

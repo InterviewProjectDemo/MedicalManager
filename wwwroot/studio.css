@@ -286,6 +286,34 @@ article.content > .home-mark {
     object-fit: contain;
 }
 
+.studio-nav-orb .person-photo.scene-img,
+.portrait-orb .person-photo.scene-img,
+.studio-nav-orb .person-photo.scene-img img,
+.portrait-orb .person-photo.scene-img img,
+.portrait-orb .person-photo-fallback {
+    object-fit: cover;
+}
+
+.portrait-orb.has-caller { overflow: visible; }
+.portrait-orb.has-caller .person-photo { border-radius: 50%; overflow: hidden; }
+.caller-badge {
+    position: absolute;
+    z-index: 3;
+    right: -0.15rem;
+    bottom: -0.15rem;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    background: #0f766e;
+    border: 2px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(15, 61, 92, 0.28);
+}
+.caller-badge svg { width: 58%; height: 58%; fill: #fff; }
+.family-float-host .caller-badge { width: 1.35rem; height: 1.35rem; }
+
 .studio-nav a.studio-nav-link.active .studio-nav-orb {
     box-shadow: 0 0 0 3px #fff, 0 8px 16px rgba(0, 0, 0, 0.22);
 }

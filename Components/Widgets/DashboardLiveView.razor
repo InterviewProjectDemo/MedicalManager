@@ -1,6 +1,7 @@
 @inject HealthRecordService Records
 @inject MedicationScheduleService MedSchedule
 @inject PatientAccessService Access
+@inject ProfilePhotoService Photos
 @inject AuthenticationStateProvider Auth
 @inject GrantedPatientSelection ChartSelection
 
@@ -25,10 +26,13 @@ else if (scope.NeedsPatientSelection)
     else
     {
         <div class="dash-hero">
-            <div>
-                <p class="eyebrow">Doctor workspace</p>
-                <h1>Choose a patient to review</h1>
-                <p class="muted">Open a chart only after that patient approves the records you requested.</p>
+            <div class="identity-row">
+                <PersonPhoto Url="@_heroPhotoUrl" Size="lg" Alt="" />
+                <div>
+                    <p class="eyebrow">Doctor workspace</p>
+                    <h1>Choose a patient to review</h1>
+                    <p class="muted">Open a chart only after that patient approves the records you requested.</p>
+                </div>
             </div>
             <a class="btn btn-outline-light" href="patients">Patient list</a>
         </div>
@@ -36,8 +40,8 @@ else if (scope.NeedsPatientSelection)
             @foreach (var row in patientRows)
             {
                 <a class="picker-card" href="@CareLinks.To("", row.Id)">
+                    <PersonPhoto Url="@row.PhotoUrl" Size="md" Alt="" />
                     <strong>@row.Name</strong>
-                    <span>@row.Email</span>
                     <span class="muted">Blood pressure @(row.Bp is null ? "—" : $"{row.Bp.Systolic}/{row.Bp.Diastolic}") · Blood sugar @(row.Sugar is null ? "—" : $"{row.Sugar.Value:0}")</span>
                 </a>
             }
@@ -59,10 +63,16 @@ else if (snapshot is not null && scope.Patient is not null)
         @if (Layout.ShowHero)
         {
             <div class="dash-hero">
-                <div>
-                    <p class="eyebrow">@(scope.IsDoctorViewingPatient ? "Doctor review" : "My health")</p>
-                    <h1>@(scope.IsDoctorViewingPatient ? $"{scope.Patient.DisplayName}'s dashboard" : $"Hello, {scope.CurrentUser.DisplayName}")</h1>
-                    <p class="muted">Today's doses and readings first, then appointments, your regimen, and trends. Customize this layout anytime.</p>
+                <div class="identity-row">
+                    @if (scope.IsDoctorViewingPatient)
+                    {
+                        <PersonPhoto Url="@_heroPhotoUrl" Size="lg" Alt="" />
+                    }
+                    <div>
+                        <p class="eyebrow">@(scope.IsDoctorViewingPatient ? "Doctor review" : "My health")</p>
+                        <h1>@(scope.IsDoctorViewingPatient ? $"{scope.Patient.DisplayName}'s dashboard" : $"Hello, {scope.CurrentUser.DisplayName}")</h1>
+                        <p class="muted">Today's doses and readings first, then appointments, your regimen, and trends. Customize this layout anytime.</p>
+                    </div>
                 </div>
                 @if (!IsPreview)
                 {
@@ -298,6 +308,7 @@ else if (snapshot is not null && scope.Patient is not null)
     private DailyMedicationSchedule? dailySchedule;
     private MedicationOverview? medicationOverview;
     private string? error;
+    private string? _heroPhotoUrl;
     private List<PatientRow> patientRows = [];
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
@@ -344,6 +355,7 @@ else if (snapshot is not null && scope.Patient is not null)
                 patientRows.Clear();
                 if (!IsPreview)
                 {
+                _heroPhotoUrl = await Photos.GetPhotoUrlForUserAsync(scope.CurrentUser.Id);
                 foreach (var patient in await Access.ListGrantedPatientsAsync(scope.CurrentUser.Id))
                 {
                     var bp = patient.BloodPressure == ChartAccessLevel.None
@@ -352,7 +364,12 @@ else if (snapshot is not null && scope.Patient is not null)
                     var sugar = patient.Sugar == ChartAccessLevel.None
                         ? null
                         : (await Records.GetSugarAsync(patient.PatientId, 1)).FirstOrDefault();
-                    patientRows.Add(new PatientRow(patient.PatientId, patient.PatientName, "", bp, sugar));
+                    patientRows.Add(new PatientRow(
+                        patient.PatientId,
+                        patient.PatientName,
+                        Photos.GetPhotoUrl(patient.PatientId, patient.PhotoUpdatedAt),
+                        bp,
+                        sugar));
                 }
                 }
                 error = null;
@@ -363,7 +380,11 @@ else if (snapshot is not null && scope.Patient is not null)
                 ChartSelection.Select(scope.Patient.Id, scope.Patient.DisplayName);
 
             var canViewMedications = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.Medication, false);
-            snapshot = await Records.GetDashboardAsync(scope.PatientId!, canViewMedications);
+            var canViewToDos = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.ToDo, false);
+            _heroPhotoUrl = scope.IsDoctorViewingPatient
+                ? await Photos.GetPhotoUrlForUserAsync(scope.PatientId!)
+                : null;
+            snapshot = await Records.GetDashboardAsync(scope.PatientId!, canViewMedications, canViewToDos);
             if (canViewMedications)
             {
                 dailySchedule = await MedSchedule.GetDailyScheduleAsync(scope.PatientId!, DateOnly.FromDateTime(DateTime.Today));
@@ -576,7 +597,9 @@ else if (snapshot is not null && scope.Patient is not null)
         {
             await Records.UpdateAppointmentStatusAsync(appointmentId, scope.PatientId, status);
             selectedDayAppointments = await Records.GetAppointmentsForDateAsync(scope.PatientId, selectedDate);
-            snapshot = await Records.GetDashboardAsync(scope.PatientId);
+            var canViewMedications = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.Medication, false);
+            var canViewToDos = !scope.IsDoctorViewingPatient || scope.Allows(ChartSection.ToDo, false);
+            snapshot = await Records.GetDashboardAsync(scope.PatientId, canViewMedications, canViewToDos);
         }
         finally
         {
@@ -594,6 +617,7 @@ else if (snapshot is not null && scope.Patient is not null)
             DashboardWidgetIds.DailyBp or DashboardWidgetIds.TrendBp => scope.Allows(ChartSection.BloodPressure, false),
             DashboardWidgetIds.DailySugar or DashboardWidgetIds.TrendSugar => scope.Allows(ChartSection.Sugar, false),
             DashboardWidgetIds.MedSchedule or DashboardWidgetIds.MedOverview => scope.Allows(ChartSection.Medication, false),
+            DashboardWidgetIds.ToDo => scope.Allows(ChartSection.ToDo, false),
             _ => false
         };
     }
@@ -603,5 +627,5 @@ else if (snapshot is not null && scope.Patient is not null)
 
     private string Link(string path) => CareLinks.To(path, PatientUserId);
 
-    private sealed record PatientRow(string Id, string Name, string Email, BloodPressureReading? Bp, SugarReading? Sugar);
+    private sealed record PatientRow(string Id, string Name, string? PhotoUrl, BloodPressureReading? Bp, SugarReading? Sugar);
 }

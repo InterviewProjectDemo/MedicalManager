@@ -46,6 +46,7 @@
 
 .is-emergency .quick-call-kicker { color: #dc2626; }
 .is-family .quick-call-kicker { color: #15803d; }
+.is-patient .quick-call-kicker { color: #0f766e; }
 
 .quick-call-portrait {
     width: 9rem;
@@ -64,6 +65,19 @@
 .is-family .quick-call-portrait {
     background: linear-gradient(160deg, #16a34a, #166534);
 }
+
+.is-patient .quick-call-portrait {
+    overflow: visible;
+    background: #d5dde6;
+    position: relative;
+}
+.is-patient .caller-mark {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+.is-patient .caller-mark .person-photo { width: 100%; height: 100%; border-radius: 1.4rem; }
+.is-patient .caller-badge { right: -0.35rem; bottom: -0.35rem; }
 
 .quick-call-portrait img {
     width: 100%;

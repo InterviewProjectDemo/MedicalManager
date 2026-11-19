@@ -16,7 +16,10 @@
             <h1>To Do</h1>
             <p class="muted">Track tasks by due date and priority. Overdue items stay highlighted until they are finished or rescheduled.</p>
         </div>
-        <a class="btn btn-todo" href="@Link("todos/edit")">Add to-do</a>
+        @if (scope.Allows(ChartSection.ToDo, update: true))
+        {
+            <a class="btn btn-todo" href="@Link("todos/edit")">Add to-do</a>
+        }
     </div>
 
     <div class="table-card">
@@ -128,15 +131,21 @@
                             <span class="todo-notes" title="@item.Notes">@Truncate(item.Notes)</span>
                         </td>
                         <td data-label="Reschedule">
-                            <button type="button"
-                                    class="btn btn-sm btn-outline-secondary"
-                                    disabled="@item.IsDone"
-                                    @onclick="() => OpenReschedule(item)">
-                                Reschedule
-                            </button>
+                            @if (scope.Allows(ChartSection.ToDo, update: true))
+                            {
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        disabled="@item.IsDone"
+                                        @onclick="() => OpenReschedule(item)">
+                                    Reschedule
+                                </button>
+                            }
                         </td>
                         <td class="text-end" data-label="Update">
-                            <a class="btn btn-sm btn-outline-todo" href="@Link($"todos/edit/{item.Id}")">Update</a>
+                            @if (scope.Allows(ChartSection.ToDo, update: true))
+                            {
+                                <a class="btn btn-sm btn-outline-todo" href="@Link($"todos/edit/{item.Id}")">Update</a>
+                            }
                         </td>
                     </tr>
                 }
@@ -342,7 +351,7 @@
     protected override async Task OnParametersSetAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
-        scope = (await Access.ResolveAsync(state.User, PatientUserId)).BlockDoctorChart();
+        scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.ToDo, update: false);
         if (scope.PatientId is string id)
         {
             items = await Records.GetToDosAsync(id);
@@ -363,7 +372,7 @@
 
     private async Task SaveRescheduleAsync()
     {
-        if (_rescheduleItem is null || scope?.PatientId is null) return;
+        if (_rescheduleItem is null || scope?.PatientId is null || scope.Allows(ChartSection.ToDo, true) != true) return;
         _saving = true;
         await Records.RescheduleToDoAsync(_rescheduleItem.Id, scope.PatientId, _rescheduleForm.FinishBy);
         items = await Records.GetToDosAsync(scope.PatientId);

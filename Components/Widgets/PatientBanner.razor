@@ -1,13 +1,32 @@
 @namespace MedicalManager.Components.Widgets
+@inject ProfilePhotoService Photos
 
 @if (Scope?.IsDoctorViewingPatient == true && Scope.Patient is not null)
 {
     <div class="patient-banner">
-        <span>Reviewing <strong>@Scope.Patient.DisplayName</strong></span>
+        <span class="identity-row">
+            <PersonPhoto Url="@_photoUrl" Size="sm" Alt="" />
+            <span>Reviewing <strong>@Scope.Patient.DisplayName</strong></span>
+        </span>
         <a href="patients">Change patient</a>
     </div>
 }
 
 @code {
     [Parameter] public PatientScope? Scope { get; set; }
+
+    private string? _photoUrl;
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var patientId = Scope?.IsDoctorViewingPatient == true ? Scope.PatientId : null;
+        if (_loadedFor == patientId)
+            return;
+
+        _loadedFor = patientId;
+        _photoUrl = string.IsNullOrWhiteSpace(patientId)
+            ? null
+            : await Photos.GetPhotoUrlForUserAsync(patientId);
+    }
 }
