@@ -23,18 +23,20 @@
     width: 100%;
     min-width: 0;
     padding: 0.65rem 0.75rem 0;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: hidden;
     flex: 0 0 auto;
 }
 
 .a11y-tab {
-    display: inline-flex;
+    position: relative;
+    display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.35rem;
-    max-width: 14rem;
+    min-width: 0;
+    min-height: 3.1rem;
     margin: 0;
-    padding: 0.45rem 0.7rem;
+    padding: 0.4rem 0.7rem 0.45rem;
     border: 1px solid #d7e1ea;
     border-bottom: 0;
     border-radius: 12px 12px 0 0;
@@ -45,13 +47,18 @@
     font-weight: 700;
     line-height: 1.2;
     cursor: grab;
-    white-space: nowrap;
-    flex: 0 0 auto;
+    text-align: center;
+    white-space: normal;
+    flex: 1 1 0;
+    touch-action: none;
 }
 
-.a11y-tab span {
+.a11y-tab-label {
+    min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .a11y-tab.active {
@@ -78,30 +85,42 @@
     line-height: 1;
 }
 
+.a11y-tab-resize {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0.55rem;
+    height: 100%;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 2;
+}
+
+.a11y-tab-resize::after {
+    content: "";
+    position: absolute;
+    top: 0.45rem;
+    bottom: 0.45rem;
+    right: 0.12rem;
+    width: 2px;
+    border-radius: 2px;
+    background: #d0d5dd;
+}
+
 .a11y-tab-add,
-.a11y-add button,
-.a11y-tools button,
-.a11y-reset {
+.a11y-add button {
     border: 1px dashed #98a2b3;
     border-radius: 12px;
-    background: transparent;
+    background: #f6f8fb;
     color: #0f3d5c;
     font: inherit;
     font-weight: 700;
     cursor: pointer;
 }
 
-.a11y-tab-add,
-.a11y-add {
-    position: sticky;
-    right: 0;
-    z-index: 1;
-    background: #f6f8fb;
-}
-
 .a11y-tab-add {
     border-bottom: 1px dashed #98a2b3;
-    cursor: pointer;
+    background: #f6f8fb;
 }
 
 .a11y-add {
@@ -130,12 +149,46 @@
 .a11y-panel {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     margin: 0 0.75rem 0.75rem;
     padding: 0.9rem 1rem 1rem;
     border: 1px solid #d7e1ea;
     border-radius: 0 14px 14px 14px;
     background: #fff;
+}
+
+.a11y-board {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.a11y-tile-fill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0.55rem 0.65rem 1rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    cursor: grab;
+    box-sizing: border-box;
+}
+
+.a11y-tile-fill:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .a11y-panel h3 {
@@ -187,10 +240,11 @@
 
 .a11y-option {
     display: flex;
-    align-items: flex-start;
-    gap: 0.7rem;
-    margin: 0 0 0.7rem;
-    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    margin: 0;
+    cursor: grab;
 }
 
 .a11y-option input {

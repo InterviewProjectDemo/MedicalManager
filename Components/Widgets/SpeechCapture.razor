@@ -2,8 +2,39 @@
 @implements IAsyncDisposable
 
 <div class="voice-capture">
-    <p class="voice-lead">Read any everyday line below. A few clear seconds is enough. The app learns your voice and speaks every accessibility message in it, including Help, Family, Pain, Breathing, and Blood.</p>
-    <p class="voice-note">You do not record those help lines. The recording stays on this device and is not sent anywhere.</p>
+    <p class="voice-lead">Each picture speaks the line beside it. The line stays as written until you choose Update. Save keeps the new words.</p>
+
+    @if (_buttons.Count == 0)
+    {
+        <p class="muted">Loading pictures…</p>
+    }
+    else
+    {
+        <ul class="voice-config">
+            @foreach (var button in _buttons)
+            {
+                var editing = _editing.Contains(button.Id);
+                <li class="voice-config-row">
+                    <img class="voice-config-logo" src="@button.Image" alt="" />
+                    <div class="voice-config-copy">
+                        <span class="voice-config-name">@button.Label</span>
+                        <input class="voice-config-text"
+                               maxlength="180"
+                               readonly="@(!editing)"
+                               aria-label="@($"{button.Label} words")"
+                               value="@Draft(button)"
+                               @oninput="e => SetDraft(button.Id, e.Value?.ToString())" />
+                    </div>
+                    <div class="voice-config-actions">
+                        <button type="button" class="voice-config-update" disabled="@editing" @onclick="() => BeginEdit(button.Id)">Update</button>
+                        <button type="button" class="voice-config-save" disabled="@(!editing)" @onclick="() => SaveLine(button.Id)">Save</button>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+
+    <p class="voice-note">Read any everyday line below. A few clear seconds is enough. The app learns your voice and speaks the picture lines in it. You do not record those lines. The recording stays on this device.</p>
 
     @if (_status.Prompts.Count == 0)
     {
@@ -81,6 +112,7 @@
         {
             _loaded = true;
             await JS.InvokeVoidAsync("mmVoice.bindUser", UserId);
+            await LoadButtons();
             await Reload();
             return;
         }
@@ -92,6 +124,54 @@
             await JS.InvokeVoidAsync("mmVoice.bindRecord", _recordButton, UserId, _self);
         else
             await JS.InvokeVoidAsync("mmVoice.bindPreview", _previewButton, UserId);
+    }
+
+    private readonly HashSet<string> _editing = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _drafts = new(StringComparer.Ordinal);
+    private List<SpeechButton> _buttons = [];
+
+    private string Draft(SpeechButton button) =>
+        _drafts.TryGetValue(button.Id, out var draft) ? draft : button.Phrase;
+
+    private void SetDraft(string id, string? value) => _drafts[id] = value ?? "";
+
+    private void BeginEdit(string id) => _editing.Add(id);
+
+    private async Task LoadButtons()
+    {
+        try
+        {
+            var lines = await JS.InvokeAsync<SpeechButton[]>("mmVoice.lines");
+            _buttons = lines?.ToList() ?? [];
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            _buttons = [];
+        }
+
+        foreach (var button in _buttons)
+        {
+            if (!_editing.Contains(button.Id))
+                _drafts[button.Id] = button.Phrase;
+        }
+    }
+
+    private async Task SaveLine(string id)
+    {
+        var text = _drafts.TryGetValue(id, out var draft) ? draft : "";
+        try
+        {
+            var lines = await JS.InvokeAsync<SpeechButton[]>("mmVoice.saveLine", id, text);
+            _buttons = lines?.ToList() ?? _buttons;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+
+        _editing.Remove(id);
+        var saved = _buttons.FirstOrDefault(button => button.Id == id);
+        if (saved is not null)
+            _drafts[id] = saved.Phrase;
     }
 
     private async Task Reload()
@@ -167,6 +247,14 @@
         public string Id { get; set; } = "";
         public string Label { get; set; } = "";
         public string Phrase { get; set; } = "";
+    }
+
+    private sealed class SpeechButton
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Phrase { get; set; } = "";
+        public string Image { get; set; } = "";
     }
 
     public sealed class TakeResult

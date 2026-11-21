@@ -4,8 +4,8 @@
 @if (Visible)
 {
     <StudioFloat Visible="true" VisibleChanged="HandleClose" Title="Accessibility" Place="access">
-        <div class="a11y-window">
-            <p class="a11y-hint">Drag a tab to reorder it, or move the group left and right. Drag the title bar to reposition this window, and the corner to resize it.</p>
+        <div class="a11y-window" @ref="_layoutRoot">
+            <p class="a11y-hint">Drag any button to move it, and the corner mark to resize it. The tabs start the same size and fill this bar. Drag the title bar to move this window, and its corner to resize it.</p>
             <div class="a11y-tabs" role="tablist" aria-label="Accessibility groups">
                 @for (var i = 0; i < _tabs.Count; i++)
                 {
@@ -14,6 +14,7 @@
                     <button type="button"
                             id="@TabButtonId(tab)"
                             role="tab"
+                            data-a11y-tab="@tab.Id"
                             class="a11y-tab @(selected ? "active" : null) @(_dropId == tab.Id ? "drop-target" : null)"
                             draggable="true"
                             aria-selected="@(selected ? "true" : "false")"
@@ -27,11 +28,12 @@
                             @ondrop:preventDefault
                             @onkeydown="e => OnTabKey(e, tab)"
                             @onclick="() => Select(tab.Id)">
-                        <span>@tab.Title</span>
+                        <span class="a11y-tab-label">@tab.Title</span>
                         @if (!tab.BuiltIn)
                         {
                             <span class="a11y-tab-x" role="presentation" title="Remove group" @onclick:stopPropagation="true" @onclick="() => Remove(tab)">&times;</span>
                         }
+                        <span class="a11y-tab-resize" data-tab-resize aria-hidden="true"></span>
                     </button>
                 }
                 @if (_adding)
@@ -45,7 +47,10 @@
                 }
                 else
                 {
-                    <button type="button" class="a11y-tab a11y-tab-add" @onclick="BeginAdd">+ Tab</button>
+                    <button type="button" class="a11y-tab a11y-tab-add" data-a11y-tab="add" @onclick="BeginAdd">
+                        <span class="a11y-tab-label">+ Tab</span>
+                        <span class="a11y-tab-resize" data-tab-resize aria-hidden="true"></span>
+                    </button>
                 }
             </div>
 
@@ -54,25 +59,12 @@
                 <div id="a11y-panel" class="a11y-panel" role="tabpanel" aria-labelledby="@TabButtonId(Active)">
                     <h3>@Active.Title</h3>
                     <p class="a11y-lead">@Lead(Active.Kind)</p>
-                    <div class="a11y-tools">
-                        <button type="button" disabled="@IsFirst" @onclick="() => MoveActive(-1)">Move left</button>
-                        <button type="button" disabled="@IsLast" @onclick="() => MoveActive(1)">Move right</button>
-                    </div>
-
-                    @if (Active.Kind == "general")
+                    @if (Active.Kind == "dialysis")
                     {
-                        <fieldset class="a11y-sizes">
-                            <legend>Text size</legend>
-                            @foreach (var size in Sizes)
-                            {
-                                <label>
-                                    <input type="radio" name="a11y-text-size" checked="@(_textSize == size.Id)" @onchange="() => SetSize(size.Id)" />
-                                    @size.Label
-                                </label>
-                            }
-                        </fieldset>
+                        <DialysisHelpCalls />
                     }
-
+                    else
+                    {
                     @if (Active.Kind == "custom")
                     {
                         <label class="form-label" for="a11y-rename">Group name</label>
@@ -81,30 +73,52 @@
                         <textarea id="a11y-note" class="form-control" rows="4" value="@Active.Note" @onchange="EditNote"></textarea>
                         <p class="a11y-note">Custom groups stay in this browser with the other accessibility choices.</p>
                     }
-                    else
-                    {
-                        @if (Active.Kind == "dialysis")
+                    <div class="a11y-board" data-a11y-board="@Active.Id">
+                        <div class="a11y-tile" data-a11y-tile="move-left">
+                            <button type="button" class="a11y-tile-fill" disabled="@IsFirst" @onclick="() => MoveActive(-1)">Move left</button>
+                            <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                        </div>
+                        <div class="a11y-tile" data-a11y-tile="move-right">
+                            <button type="button" class="a11y-tile-fill" disabled="@IsLast" @onclick="() => MoveActive(1)">Move right</button>
+                            <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                        </div>
+                        @if (Active.Kind == "general")
                         {
-                            <DialysisHelpCalls />
+                            @foreach (var size in Sizes)
+                            {
+                                <div class="a11y-tile" data-a11y-tile="@("size-" + size.Id)">
+                                    <label class="a11y-tile-fill">
+                                        <input type="radio" name="a11y-text-size" checked="@(_textSize == size.Id)" @onchange="() => SetSize(size.Id)" />
+                                        <span>@size.Label</span>
+                                    </label>
+                                    <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                                </div>
+                            }
                         }
-                        @if (Active.Kind == "dialysis" && _dialysisSpeak)
+                        @if (Active.Kind != "custom")
                         {
-                            <button type="button" class="a11y-voice" @onclick="TestVoice">Test voice</button>
-                        }
-                        @foreach (var option in OptionsFor(Active.Kind))
-                        {
-                            <label class="a11y-option">
-                                <input type="checkbox" checked="@option.Get()" @onchange="e => SetOption(option, e.Value is true)" />
-                                <span>
-                                    <strong>@option.Label</strong>
-                                    <small>@option.Hint</small>
-                                </span>
-                            </label>
+                            @foreach (var option in OptionsFor(Active.Kind))
+                            {
+                                <div class="a11y-tile" data-a11y-tile="@TileId(option.Label)">
+                                    <label class="a11y-option a11y-tile-fill">
+                                        <input type="checkbox" checked="@option.Get()" @onchange="e => SetOption(option, e.Value is true)" />
+                                        <span>
+                                            <strong>@option.Label</strong>
+                                            <small>@option.Hint</small>
+                                        </span>
+                                    </label>
+                                    <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                                </div>
+                            }
                         }
                         @if (Active.Kind == "general")
                         {
-                            <button type="button" class="a11y-reset" @onclick="ResetAll">Reset all choices</button>
+                            <div class="a11y-tile" data-a11y-tile="reset">
+                                <button type="button" class="a11y-tile-fill" @onclick="ResetAll">Reset all choices</button>
+                                <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                            </div>
                         }
+                    </div>
                     }
                 </div>
             }
@@ -167,6 +181,7 @@
     private string _newTitle = "";
     private string? _dragId;
     private string? _dropId;
+    private ElementReference _layoutRoot;
 
     private A11yTab? Active => _tabs.FirstOrDefault(tab => tab.Id == _activeId);
     private bool IsFirst => _tabs.FindIndex(tab => tab.Id == _activeId) <= 0;
@@ -181,8 +196,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!Visible || _loaded)
+        if (!Visible)
             return;
+
+        if (_loaded)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("mmAccessibility.watchLayout", _layoutRoot);
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+            {
+            }
+            return;
+        }
 
         A11yState? saved = null;
         try
@@ -450,7 +477,7 @@
     private static string Lead(string kind) => kind switch
     {
         "general" => "Choices here apply everywhere in Medical Manager.",
-        "dialysis" => "Makes treatment numbers and readings easier to see and hear.",
+        "dialysis" => "Tap a picture. Drag it to move it, and the corner mark to resize it.",
         "authorization" => "Makes approval and consent steps easier to read and harder to send by mistake.",
         "social" => "Makes resource and contact information easier to read.",
         "government" => "Makes agency forms and official pages easier to follow.",
@@ -459,6 +486,12 @@
     };
 
     private static string TabButtonId(A11yTab tab) => "a11y-tab-" + tab.Id;
+
+    private static string TileId(string label)
+    {
+        var chars = label.Trim().ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray();
+        return "opt-" + new string(chars).Trim('-');
+    }
 
     private void EnsureBuiltIns()
     {

@@ -812,6 +812,55 @@ article.content > .home-mark {
     padding: 0;
 }
 
+.studio-float.place-access .studio-float-resize {
+    width: 1.8rem;
+    height: 1.8rem;
+}
+
+.a11y-board {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.a11y-tile {
+    position: absolute;
+    box-sizing: border-box;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid #d7e1ea;
+    border-radius: 14px;
+    background: #f8fafc;
+    color: #1b2838;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    container-type: size;
+}
+
+.a11y-tile-resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 1.15rem;
+    height: 1.15rem;
+    cursor: nwse-resize;
+    touch-action: none;
+    z-index: 3;
+}
+
+.a11y-tile-resize::after {
+    content: "";
+    position: absolute;
+    right: 0.22rem;
+    bottom: 0.22rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-right: 2px solid #98a2b3;
+    border-bottom: 2px solid #98a2b3;
+}
+
 .studio-float-head {
     display: flex;
     align-items: center;

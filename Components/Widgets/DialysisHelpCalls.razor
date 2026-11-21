@@ -2,25 +2,27 @@
 @inject AuthenticationStateProvider Auth
 @implements IDisposable
 
-<section class="dialysis-calls" aria-label="Call for help">
-    <p class="dialysis-calls-lead">Tap a picture once. It keeps saying that need, as clearly as this device can, and the picture blinks. Tap Attended when someone is with you.</p>
-    <div class="dialysis-call-row">
-        @foreach (var call in Calls)
+<div class="dialysis-host">
+    <div class="a11y-board" data-a11y-board="dialysis-logos" data-a11y-fill="row">
+        @foreach (var call in _calls)
         {
             var calling = call.Id == _activeId;
-            <button type="button"
-                    class="dialysis-call @(calling ? "is-calling" : null)"
-                    aria-pressed="@(calling ? "true" : "false")"
-                    @onclick="() => Start(call)">
-                <span class="dialysis-call-logo">
-                    <img src="@call.Image" alt="" draggable="false" />
-                </span>
-                <span>@call.Label</span>
-                @if (calling)
-                {
-                    <span class="dialysis-call-state">Calling</span>
-                }
-            </button>
+            <div class="a11y-tile" data-a11y-tile="@call.Id">
+                <button type="button"
+                        class="dialysis-call @(calling ? "is-calling" : null)"
+                        aria-pressed="@(calling ? "true" : "false")"
+                        @onclick="() => Start(call)">
+                    <span class="dialysis-call-logo">
+                        <img src="@call.Image" alt="" draggable="false" />
+                    </span>
+                    <span>@call.Label</span>
+                    @if (calling)
+                    {
+                        <span class="dialysis-call-state">Calling</span>
+                    }
+                </button>
+                <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+            </div>
         }
     </div>
 
@@ -31,7 +33,7 @@
             <p class="dialysis-attended-hint">@Hint()</p>
             @if (_speechMissing)
             {
-                <p class="dialysis-attended-hint">This browser cannot speak, so the words stay on the screen in large type.</p>
+                <p class="dialysis-attended-hint">Record your voice on Profile so this sounds like you. Until then, the words stay on the screen.</p>
             }
             <button type="button" class="dialysis-attended-btn" @onclick="Attend">Attended</button>
         </div>
@@ -40,10 +42,10 @@
     {
         <p class="dialysis-ack" role="status">Attended. The voice has stopped.</p>
     }
-</section>
+</div>
 
 @code {
-    private static readonly Call[] Calls =
+    private static readonly Call[] Defaults =
     [
         new("help", "Help", "Please help.", "/studio/dialysis-help.jpg"),
         new("family", "Family", "Please call my family.", "/studio/dialysis-family.jpg"),
@@ -51,6 +53,8 @@
         new("breathing", "Breathing", "I am having a breathing issue. Please help.", "/studio/dialysis-breathing.jpg"),
         new("blood", "Blood", "I am bleeding. Please help.", "/studio/dialysis-blood.jpg")
     ];
+
+    private List<Call> _calls = Defaults.ToList();
 
     private string? _activeId;
     private bool _acknowledged;
@@ -60,14 +64,14 @@
     private bool _synced;
     private DotNetObjectReference<DialysisHelpCalls>? _self;
 
-    private Call? Active => Calls.FirstOrDefault(call => call.Id == _activeId);
+    private Call? Active => _calls.FirstOrDefault(call => call.Id == _activeId);
 
     private string Hint() =>
         _ownVoice
             ? "This is your voice, repeating. Tap Attended when someone is here."
             : _voiceComing
-                ? "This keeps repeating. Your saved voice takes over as soon as it is ready. Tap Attended when someone is here."
-                : "This keeps repeating. Tap Attended when someone is here. That stops the voice.";
+                ? "Your own voice is being prepared. You will hear yourself, not a computer voice."
+                : "Tap Attended when someone is here. That stops the voice.";
 
     protected override void OnInitialized() => _self = DotNetObjectReference.Create(this);
 
@@ -77,6 +81,8 @@
             return;
 
         _synced = true;
+        await LoadLines();
+        StateHasChanged();
         try
         {
             if (_self is not null)
@@ -88,7 +94,7 @@
                 await JS.InvokeVoidAsync("mmVoice.bindUser", userId);
 
             var phrase = await JS.InvokeAsync<string>("mmAccessibility.helpCallPhrase");
-            var match = Calls.FirstOrDefault(call => call.Phrase == phrase);
+            var match = _calls.FirstOrDefault(call => call.Phrase == phrase);
             if (match is null)
                 return;
 
@@ -100,9 +106,24 @@
         }
     }
 
+    private async Task LoadLines()
+    {
+        try
+        {
+            var lines = await JS.InvokeAsync<SpeechLine[]>("mmVoice.lines");
+            if (lines is { Length: > 0 })
+                _calls = lines.Select(line => new Call(line.Id, line.Label, line.Phrase, line.Image)).ToList();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
     private async Task Start(Call call)
     {
         _acknowledged = false;
+        await LoadLines();
+        call = _calls.FirstOrDefault(item => item.Id == call.Id) ?? call;
         _activeId = call.Id;
         try
         {
@@ -147,6 +168,14 @@
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
         {
         }
+    }
+
+    private sealed class SpeechLine
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Phrase { get; set; } = "";
+        public string Image { get; set; } = "";
     }
 
     private sealed record Call(string Id, string Label, string Phrase, string Image);

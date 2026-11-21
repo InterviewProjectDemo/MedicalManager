@@ -73,7 +73,12 @@ function synthesize(referenceBlob, text, revision) {
         }
         return referencePromise.then(function (reference) {
             note("Speaking that line in your voice…");
-            return tts.synthesize(String(text), reference, { language: "en" }).then(function (pcm) {
+            return tts.synthesize(String(text), reference, {
+                language: "en",
+                temperature: 0.62,
+                topP: 0.9,
+                topK: 40
+            }).then(function (pcm) {
                 note("");
                 return wavBlob(pcm, tts.sampleRate);
             });

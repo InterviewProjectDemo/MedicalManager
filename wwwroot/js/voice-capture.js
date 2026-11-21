@@ -5,13 +5,14 @@
         { id: "water", label: "Water", phrase: "I would like a glass of water." },
         { id: "weather", label: "Weather", phrase: "The weather is nice today." }
     ];
-    var HELP_LINES = [
-        "Please help.",
-        "Please call my family.",
-        "I am in pain. Please help.",
-        "I am having a breathing issue. Please help.",
-        "I am bleeding. Please help."
+    var BUTTONS = [
+        { id: "help", label: "Help", phrase: "Please help.", image: "/studio/dialysis-help.jpg" },
+        { id: "family", label: "Family", phrase: "Please call my family.", image: "/studio/dialysis-family.jpg" },
+        { id: "pain", label: "Pain", phrase: "I am in pain. Please help.", image: "/studio/dialysis-pain.jpg" },
+        { id: "breathing", label: "Breathing", phrase: "I am having a breathing issue. Please help.", image: "/studio/dialysis-breathing.jpg" },
+        { id: "blood", label: "Blood", phrase: "I am bleeding. Please help.", image: "/studio/dialysis-blood.jpg" }
     ];
+    var PHRASE_KEY = "mm-speech-lines";
     var NEEDED = 4;
     var boundUser = "";
     var voiceReady = false;
@@ -33,6 +34,51 @@
     var synthChain = Promise.resolve();
     var prewarmToken = 0;
     var resetGeneration = 0;
+
+    function speechLines() {
+        var saved = {};
+        try {
+            saved = JSON.parse(localStorage.getItem(PHRASE_KEY) || "{}") || {};
+        } catch (e) {
+            saved = {};
+        }
+        return BUTTONS.map(function (button) {
+            var custom = typeof saved[button.id] === "string" ? saved[button.id].trim() : "";
+            return {
+                id: button.id,
+                label: button.label,
+                image: button.image,
+                phrase: custom || button.phrase
+            };
+        });
+    }
+
+    function saveSpeechLine(id, phrase) {
+        var button = BUTTONS.filter(function (item) { return item.id === id; })[0];
+        if (!button)
+            return speechLines();
+        var text = String(phrase || "").replace(/\s+/g, " ").trim();
+        if (!text || text.length > 180)
+            text = text ? text.slice(0, 180) : button.phrase;
+        var saved = {};
+        try {
+            saved = JSON.parse(localStorage.getItem(PHRASE_KEY) || "{}") || {};
+        } catch (e) {
+            saved = {};
+        }
+        if (text === button.phrase)
+            delete saved[id];
+        else
+            saved[id] = text;
+        try { localStorage.setItem(PHRASE_KEY, JSON.stringify(saved)); } catch (e) { /* this browser may block storage */ }
+        if (boundUser && voiceReady)
+            speakPhrase(text);
+        return speechLines();
+    }
+
+    function helpLines() {
+        return speechLines().map(function (line) { return line.phrase; });
+    }
 
     function openDb() {
         if (!dbPromise) {
@@ -204,8 +250,23 @@
                 merged.set(buffer.getChannelData(0), offset);
                 offset += buffer.length;
             });
+            var start = 0;
+            var end = merged.length;
+            while (start < end && Math.abs(merged[start]) < 0.012)
+                start++;
+            while (end > start && Math.abs(merged[end - 1]) < 0.012)
+                end--;
+            var voice = merged.subarray(start, Math.max(start + 1, end));
+            var peak = 0;
+            for (var i = 0; i < voice.length; i++)
+                peak = Math.max(peak, Math.abs(voice[i]));
+            if (peak > 0.02 && peak < 0.92) {
+                var gain = 0.9 / peak;
+                for (var j = 0; j < voice.length; j++)
+                    voice[j] *= gain;
+            }
             return ctx.close().catch(function () { }).then(function () {
-                return writeWav(merged, rate);
+                return writeWav(voice, rate);
             });
         });
     }
@@ -408,7 +469,7 @@
 
     function prewarm(userId, revision) {
         var token = ++prewarmToken;
-        HELP_LINES.reduce(function (chain, line) {
+        helpLines().reduce(function (chain, line) {
             return chain.then(function () {
                 if (token !== prewarmToken || boundUser !== userId)
                     return null;
@@ -576,6 +637,8 @@
             return Promise.resolve(false);
         return readProfile(boundUser).then(function (profile) {
             voiceReady = !!(profile && profile.ready && profile.wav);
+            if (voiceReady)
+                prewarm(boundUser, profile.revision);
             return voiceReady;
         });
     }
@@ -639,6 +702,8 @@
         hasCachedPhrase: hasCachedPhrase,
         hasVoice: hasVoice,
         ensureVoice: ensureVoice,
+        lines: speechLines,
+        saveLine: saveSpeechLine,
         watchOwnVoice: watchOwnVoice,
         unwatchOwnVoice: unwatchOwnVoice,
         release: release,
