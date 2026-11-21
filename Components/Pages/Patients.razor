@@ -15,10 +15,9 @@
         <div>
             <p class="eyebrow">Doctor workspace</p>
             <h1>Patients</h1>
-            <p class="muted">Request access first. A patient approves with a code sent to the phone on their account. You never see that code.</p>
+            <p class="muted">Choose a patient you are affiliated with, then check View, Update, or both for each record. The patient approves with a code sent to the phone on their account, and to their email when one is saved. You never see that code.</p>
         </div>
     </div>
-    <button type="button" class="btn btn-light" @onclick="OpenRequest">Request patient access</button>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(status))
@@ -62,116 +61,127 @@
 }
 
 <div class="table-card">
-    <table class="table align-middle">
-        <thead>
-            <tr>
-                <th>Patient</th>
-                <th>Approved access</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var row in grants)
-            {
-                <tr class="@(row.PatientId == _selectedPatientId ? "is-selected" : null)" @onclick="() => SelectPatient(row)">
-                    <td data-label="Patient">
-                        <span class="identity-row">
-                            <PersonPhoto Url="@PhotoUrl(row)" Size="sm" Alt="" />
-                            <strong>@row.PatientName</strong>
-                        </span>
-                    </td>
-                    <td data-label="Approved access">@ChartAccessText.Describe(row.Lab, row.BloodPressure, row.Sugar, row.Medication, row.ToDo, row.Doctors)</td>
-                    <td class="text-end d-flex gap-2 justify-content-end flex-wrap">
-                        @if (row.BloodPressure != ChartAccessLevel.None || row.Sugar != ChartAccessLevel.None || row.Medication != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-primary" href="@CareLinks.To("", row.PatientId)">Dashboard</a>
-                        }
-                        @if (row.BloodPressure != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", row.PatientId)">Blood pressure</a>
-                        }
-                        @if (row.Sugar != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-warning" href="@CareLinks.To("sugar", row.PatientId)">Sugar</a>
-                        }
-                        @if (row.Lab != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("labs", row.PatientId)">Labs</a>
-                        }
-                        @if (row.Medication != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", row.PatientId)">Medication</a>
-                        }
-                        @if (row.ToDo != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("todos", row.PatientId)">To Do</a>
-                        }
-                        @if (row.Doctors != ChartAccessLevel.None)
-                        {
-                            <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("doctors", row.PatientId)">Doctors</a>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-    @if (grants.Count == 0)
+    <h2 class="h5 px-3 pt-3">Affiliated patients</h2>
+    @if (!_ready)
     {
-        <p class="muted p-3">No patient has approved access yet.</p>
+        <p class="muted p-3 mb-0">Loading patients...</p>
+    }
+    else if (affiliated.Count == 0)
+    {
+        <p class="muted p-3 mb-0">No affiliated patients yet. A patient shows up here after they list you as their doctor, a prescription or appointment uses your name, or you already have an access request with them.</p>
+    }
+    else
+    {
+        <table class="table align-middle patient-pick-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Patient</th>
+                    <th>Date of birth</th>
+                    <th>Access</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in affiliated)
+                {
+                    var selected = row.PatientId == _selectedPatientId;
+                    <tr class="patient-pick @(selected ? "is-selected" : null)" @onclick="() => Pick(row)">
+                        <td>
+                            <input type="radio"
+                                   name="affiliated-patient"
+                                   checked="@selected"
+                                   aria-label="@($"Select {row.PatientName}")"
+                                   @onchange="() => Pick(row)" />
+                        </td>
+                        <td data-label="Patient">
+                            <span class="identity-row">
+                                <PersonPhoto Url="@PhotoUrl(row)" Size="sm" Alt="" />
+                                <strong>@row.PatientName</strong>
+                            </span>
+                        </td>
+                        <td data-label="Date of birth">@(row.DateOfBirth?.ToString("MMMM d, yyyy") ?? "Not on profile")</td>
+                        <td data-label="Access">@AccessStatus(row)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 </div>
 
-<DoctorChartPanel PatientUserId="@_selectedPatientId" PatientName="@_selectedPatientName" />
-
-@if (dialogOpen)
+@if (SelectedPatient is AffiliatedPatientItem chosen)
 {
-    <div class="chart-modal-backdrop" @onclick="CloseRequest">
-        <div class="chart-modal access-request-modal" role="dialog" aria-modal="true" aria-labelledby="access-request-title" @onclick:stopPropagation="true">
-            <div class="chart-modal-head">
-                <div>
-                    <h3 id="access-request-title">Access request</h3>
-                    <p>The patient confirms this from their own signed-in account with a code sent to their phone.</p>
-                </div>
-                <button type="button" class="chart-modal-close" aria-label="Close" @onclick="CloseRequest">&times;</button>
-            </div>
-            <div class="access-request-body">
-                @if (!string.IsNullOrWhiteSpace(status))
+    <div class="table-card access-request-card">
+        <h2 class="h5">Request access for @chosen.PatientName</h2>
+        @if (chosen.DateOfBirth is DateOnly dob)
+        {
+            <p class="muted">Date of birth on the profile: @dob.ToString("MMMM d, yyyy")</p>
+        }
+        else
+        {
+            <p class="muted">Date of birth is not on this profile yet. The request still goes to this account.</p>
+        }
+        @if (SelectedGrant is DoctorGrantItem grant)
+        {
+            <p>Approved now: @ChartAccessText.Describe(grant.Lab, grant.BloodPressure, grant.Sugar, grant.Medication, grant.ToDo, grant.Doctors)</p>
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                @if (grant.BloodPressure != ChartAccessLevel.None || grant.Sugar != ChartAccessLevel.None || grant.Medication != ChartAccessLevel.None)
                 {
-                    <div class="alert @(statusOk ? "alert-success" : "alert-danger")" role="status">@status</div>
+                    <a class="btn btn-sm btn-primary" href="@CareLinks.To("", grant.PatientId)">Dashboard</a>
                 }
-                <div class="mb-3">
-                    <label class="form-label" for="patient-name">Patient full name</label>
-                    <input id="patient-name" class="form-control" @bind="patientName" autocomplete="name" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="patient-dob">Date of birth</label>
-                    <input id="patient-dob" type="date" class="form-control" @bind="patientDob" />
-                </div>
-                <fieldset class="access-scope">
-                    <legend>Records and action</legend>
-                    <ScopeRow Title="Labs" @bind-Selected="labOn" @bind-Level="labLevel" />
-                    <ScopeRow Title="Blood pressure chart and list" @bind-Selected="bpOn" @bind-Level="bpLevel" />
-                    <ScopeRow Title="Sugar chart and list" @bind-Selected="sugarOn" @bind-Level="sugarLevel" />
-                    <ScopeRow Title="Medication chart and list" @bind-Selected="medicationOn" @bind-Level="medicationLevel" />
-                    <ScopeRow Title="To Do" @bind-Selected="todoOn" @bind-Level="todoLevel" />
-                    <ScopeRow Title="Doctors" @bind-Selected="doctorsOn" @bind-Level="doctorsLevel" />
-                </fieldset>
-                <p class="muted">You do not choose the phone number. The code goes only to the number the patient already saved.</p>
-                <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@busy">Send approval request</button>
+                @if (grant.BloodPressure != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-primary" href="@CareLinks.To("blood-pressure", grant.PatientId)">Blood pressure</a>
+                }
+                @if (grant.Sugar != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-warning" href="@CareLinks.To("sugar", grant.PatientId)">Sugar</a>
+                }
+                @if (grant.Lab != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("labs", grant.PatientId)">Labs</a>
+                }
+                @if (grant.Medication != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-success" href="@CareLinks.To("medications", grant.PatientId)">Medication</a>
+                }
+                @if (grant.ToDo != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("todos", grant.PatientId)">To Do</a>
+                }
+                @if (grant.Doctors != ChartAccessLevel.None)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" href="@CareLinks.To("doctors", grant.PatientId)">Doctors</a>
+                }
             </div>
-        </div>
+        }
+        <fieldset class="access-scope">
+            <legend>Records to request</legend>
+            <p class="muted">Check View, Update, or both. Update includes viewing that record.</p>
+            <ScopeRow Title="Labs" @bind-Selected="labOn" @bind-Level="labLevel" />
+            <ScopeRow Title="Blood pressure chart and list" @bind-Selected="bpOn" @bind-Level="bpLevel" />
+            <ScopeRow Title="Sugar chart and list" @bind-Selected="sugarOn" @bind-Level="sugarLevel" />
+            <ScopeRow Title="Medication chart and list" @bind-Selected="medicationOn" @bind-Level="medicationLevel" />
+            <ScopeRow Title="To Do" @bind-Selected="todoOn" @bind-Level="todoLevel" />
+            <ScopeRow Title="Doctors" @bind-Selected="doctorsOn" @bind-Level="doctorsLevel" />
+        </fieldset>
+        <p class="muted">You do not choose the phone number or the email. The code goes to the number the patient already saved, and to their account email when one is saved.</p>
+        <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@busy">Send approval request</button>
     </div>
 }
 
+@if (SelectedGrant is not null)
+{
+    <DoctorChartPanel PatientUserId="@_selectedPatientId" PatientName="@_selectedPatientName" />
+}
+
 @code {
+    private List<AffiliatedPatientItem> affiliated = [];
     private List<DoctorGrantItem> grants = [];
     private List<DoctorAccessRequestItem> pending = [];
     private string? status;
     private bool statusOk;
-    private bool dialogOpen;
     private bool busy;
-    private string patientName = "";
-    private DateOnly? patientDob;
+    private bool _ready;
     private bool labOn;
     private bool bpOn;
     private bool sugarOn;
@@ -189,6 +199,12 @@
     private string? _selectedPatientId;
     private string? _selectedPatientName;
 
+    private AffiliatedPatientItem? SelectedPatient =>
+        affiliated.FirstOrDefault(row => row.PatientId == _selectedPatientId);
+
+    private DoctorGrantItem? SelectedGrant =>
+        grants.FirstOrDefault(row => row.PatientId == _selectedPatientId);
+
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
@@ -205,45 +221,39 @@
         if (string.IsNullOrWhiteSpace(doctorId))
             return;
 
+        affiliated = (await ChartAccess.ListAffiliatedPatientsAsync(doctorId)).ToList();
         grants = (await Access.ListGrantedPatientsAsync(doctorId)).ToList();
         pending = (await ChartAccess.ListRequestsForDoctorAsync(doctorId)).ToList();
-        if (grants.All(row => row.PatientId != _selectedPatientId))
+        _ready = true;
+        if (affiliated.All(row => row.PatientId != _selectedPatientId))
         {
             _selectedPatientId = null;
             _selectedPatientName = null;
+            Selection.Select(null, null);
+            return;
         }
 
-        if (_selectedPatientId is null && grants.Count == 1)
-            SelectPatient(grants[0]);
-        else if (_selectedPatientId is not null)
+        if (_selectedPatientId is not null)
             Selection.Select(_selectedPatientId, _selectedPatientName);
     }
 
-    private void SelectPatient(DoctorGrantItem row)
+    private void Pick(AffiliatedPatientItem row)
     {
         _selectedPatientId = row.PatientId;
         _selectedPatientName = row.PatientName;
         Selection.Select(row.PatientId, row.PatientName);
-    }
-
-    private void OpenRequest()
-    {
         status = null;
-        dialogOpen = true;
     }
-
-    private void CloseRequest() => dialogOpen = false;
 
     private async Task Submit()
     {
-        if (string.IsNullOrWhiteSpace(doctorId))
+        if (string.IsNullOrWhiteSpace(doctorId) || string.IsNullOrWhiteSpace(_selectedPatientId))
             return;
 
         busy = true;
-        var result = await ChartAccess.SubmitAsync(
+        var result = await ChartAccess.SubmitForPatientAsync(
             doctorId,
-            patientName,
-            patientDob,
+            _selectedPatientId,
             labOn ? labLevel : ChartAccessLevel.None,
             bpOn ? bpLevel : ChartAccessLevel.None,
             sugarOn ? sugarLevel : ChartAccessLevel.None,
@@ -255,15 +265,23 @@
         busy = false;
         if (result.Accepted)
         {
-            dialogOpen = false;
-            patientName = "";
-            patientDob = null;
             labOn = bpOn = sugarOn = medicationOn = todoOn = doctorsOn = false;
             await Reload();
         }
     }
 
-    private string? PhotoUrl(DoctorGrantItem row) => Photos.GetPhotoUrl(row.PatientId, row.PhotoUpdatedAt);
+    private string? PhotoUrl(AffiliatedPatientItem row) => Photos.GetPhotoUrl(row.PatientId, row.PhotoUpdatedAt);
+
+    private static string AccessStatus(AffiliatedPatientItem row)
+    {
+        if (row.HasGrant && row.RequestPending)
+            return "Access approved, new request waiting";
+        if (row.HasGrant)
+            return "Access approved";
+        if (row.RequestPending)
+            return "Waiting for approval";
+        return "No access yet";
+    }
 
     private async Task Resend(int requestId)
     {

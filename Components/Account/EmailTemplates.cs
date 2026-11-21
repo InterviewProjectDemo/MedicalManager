@@ -1,4 +1,5 @@
 using System.Net;
+using MedicalManager.Data;
 
 namespace MedicalManager.Components.Account;
 
@@ -230,6 +231,69 @@ internal static class EmailTemplates
                           </p>
                           <p style="margin:0 0 16px;font-size:13px;line-height:1.5;word-break:break-all;color:{MutedColor};"><a href="{encodedLink}" style="color:{BrandColor};">{encodedLink}</a></p>
                           <p style="margin:0;font-size:14px;line-height:1.6;">The picture is on only while {encodedName} leaves Monitor open.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        return (html, plainText);
+    }
+
+    public static (string Html, string PlainText) AccessApproval(string doctorName, string records, string code)
+    {
+        var doctor = string.IsNullOrWhiteSpace(doctorName) ? "Your doctor" : doctorName.Trim();
+        var encodedDoctor = WebUtility.HtmlEncode(doctor);
+        var encodedRecords = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(records) ? "Selected records" : records.Trim());
+        var encodedCode = WebUtility.HtmlEncode(code);
+        var link = SmsCopy.HomeUrl.TrimEnd('/') + "/access-requests";
+        var encodedLink = WebUtility.HtmlEncode(link);
+
+        var plainText = $"""
+            {doctor} asked to open records in Medical Manager.
+
+            Records: {records}
+
+            Your one-time approval code is {code}. It expires in 15 minutes.
+
+            Sign in and enter the code on Access requests:
+            {link}
+
+            The doctor does not see this code. If you did not expect this request, you can ignore this email.
+
+            — The Medical Manager Team
+            """;
+
+        var html = $"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:{TextColor};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.08);">
+                      <tr>
+                        <td style="background:{BrandColor};padding:28px 32px;">
+                          <p style="margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.85);">Medical Manager</p>
+                          <h1 style="margin:8px 0 0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;">Approval request</h1>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:32px;">
+                          <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">{encodedDoctor} asked to open records in Medical Manager.</p>
+                          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;"><strong>Records:</strong> {encodedRecords}</p>
+                          <p style="margin:0 0 8px;font-size:15px;line-height:1.6;">Your one-time approval code is</p>
+                          <p style="margin:0 0 8px;font-size:28px;font-weight:800;letter-spacing:0.18em;color:#134e4a;">{encodedCode}</p>
+                          <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:{MutedColor};">It expires in 15 minutes.</p>
+                          <p style="margin:0 0 24px;text-align:center;">
+                            <a href="{encodedLink}" style="display:inline-block;background:{BrandColor};color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:12px 28px;border-radius:8px;">Open access requests</a>
+                          </p>
+                          <p style="margin:0;font-size:14px;line-height:1.6;">The doctor does not see this code. If you did not expect this request, you can ignore this email.</p>
                         </td>
                       </tr>
                     </table>

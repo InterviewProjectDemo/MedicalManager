@@ -354,6 +354,20 @@ public sealed class VirtualVisitService(
         await db.SaveChangesAsync();
     }
 
+    public async Task UpdateSummaryAsync(string doctorUserId, string patientUserId, int summaryId, string body)
+    {
+        await RequireGrantAsync(doctorUserId, patientUserId, labUpdate: false);
+        var text = RequiredText(body, "Summary", 8000);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await db.AfterVisitSummaries.FirstOrDefaultAsync(summary =>
+            summary.Id == summaryId
+            && summary.PatientUserId == patientUserId
+            && summary.DoctorUserId == doctorUserId)
+            ?? throw new InvalidOperationException("That summary was not found.");
+        item.Body = text;
+        await db.SaveChangesAsync();
+    }
+
     public async Task<IReadOnlyList<ReferralOrder>> ListReferralsAsync(ClaimsPrincipal principal, string patientUserId)
     {
         var actor = await RequireReaderAsync(principal, patientUserId);

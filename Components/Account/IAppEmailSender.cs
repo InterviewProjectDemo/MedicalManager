@@ -12,4 +12,11 @@ public interface IAppEmailSender : IEmailSender<ApplicationUser>
     bool IsConfigured { get; }
 
     Task<bool> TrySendPrescriptionAsync(string email, string html, string plainText, CancellationToken cancellationToken = default);
+
+    Task<bool> TrySendAccessApprovalAsync(
+        string email,
+        string doctorName,
+        string records,
+        string code,
+        CancellationToken cancellationToken = default);
 }

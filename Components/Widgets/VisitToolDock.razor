@@ -3,21 +3,57 @@
     <p class="muted">
         @(ForDoctor
             ? "Notes, messages, and video for the selected patient. Each one opens in a window you can move and resize."
-            : "Notes, a separate message tab for each doctor, and video invites. Each one opens in a window you can move and resize.")
+            : "Notes, a separate message tab for each doctor, video invites, and after-visit summaries. Each one opens in a window you can move and resize.")
     </p>
     <div class="visit-tool-row">
         <button type="button" class="visit-tool" aria-pressed="@_notesOpen" @onclick="() => _notesOpen = true">
-            <span class="visit-tool-logo"><span class="bi bi-notes-nav-menu" aria-hidden="true"></span></span>
+            <span class="visit-tool-logo">
+                @if (ForDoctor)
+                {
+                    <FeatureScene Scene="doctor-notes" />
+                }
+                else
+                {
+                    <span class="bi bi-notes-nav-menu" aria-hidden="true"></span>
+                }
+            </span>
             <span>Notes</span>
         </button>
         <button type="button" class="visit-tool" aria-pressed="@_messageOpen" @onclick="() => _messageOpen = true">
-            <span class="visit-tool-logo"><span class="bi bi-message-nav-menu" aria-hidden="true"></span></span>
+            <span class="visit-tool-logo">
+                @if (ForDoctor)
+                {
+                    <FeatureScene Scene="doctor-message" />
+                }
+                else
+                {
+                    <span class="bi bi-message-nav-menu" aria-hidden="true"></span>
+                }
+            </span>
             <span>Message</span>
         </button>
         <button type="button" class="visit-tool" aria-pressed="@_videoOpen" @onclick="() => _videoOpen = true">
-            <span class="visit-tool-logo"><span class="bi bi-video-nav-menu" aria-hidden="true"></span></span>
+            <span class="visit-tool-logo">
+                @if (ForDoctor)
+                {
+                    <FeatureScene Scene="doctor-video" />
+                }
+                else
+                {
+                    <span class="bi bi-video-nav-menu" aria-hidden="true"></span>
+                }
+            </span>
             <span>Video Visit</span>
         </button>
+        @if (!ForDoctor)
+        {
+            <button type="button" class="visit-tool" aria-pressed="@(_summaryOpen ? "true" : "false")" @onclick="() => _summaryOpen = true">
+                <span class="visit-tool-logo">
+                    <FeatureScene Scene="summary" />
+                </span>
+                <span>After Visit Summary</span>
+            </button>
+        }
     </div>
 </section>
 
@@ -39,6 +75,12 @@
         <VisitVideoPanel PatientUserId="@PatientUserId" PatientName="@PatientName" />
     </StudioFloat>
 }
+@if (_summaryOpen)
+{
+    <StudioFloat @bind-Visible="_summaryOpen" Title="After-visit summary" Place="summary">
+        <AfterVisitSummaryView PatientUserId="@PatientUserId" />
+    </StudioFloat>
+}
 
 @code {
     [Parameter] public bool ForDoctor { get; set; }
@@ -48,4 +90,5 @@
     private bool _notesOpen;
     private bool _messageOpen;
     private bool _videoOpen;
+    private bool _summaryOpen;
 }

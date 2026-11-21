@@ -1,7 +1,5 @@
-@using System.Security.Claims
 @inject FamilyCallCoordinator FamilyCalls
 @inject AuthenticationStateProvider Auth
-@inject ProfilePhotoService Photos
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -10,12 +8,7 @@
         <span class="portrait-figure">
             @if (_isDoctor)
             {
-                <span class="portrait-orb has-caller">
-                    <PersonPhoto Url="@_doctorPhotoUrl" CssClass="scene-img" Alt="" />
-                    <span class="caller-badge" aria-hidden="true">
-                        <svg viewBox="0 0 24 24"><path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.2.9c.5.2.8.7.8 1.3l-.3 2.2c-.1.5 0 1 .4 1.3l1.6 1.3a9 9 0 0 0 3.4 2l1.2-1.6c.3-.4.8-.6 1.3-.5l2.2.4c.6.1 1 .6 1.1 1.2l.3 2.3c.1.6-.2 1.2-.7 1.5-1.6 1-3.6 1.4-5.6.9A15 15 0 0 1 5.2 8.8c-.7-1.9-.5-4 .6-5.6z" /></svg>
-                    </span>
-                </span>
+                <span class="portrait-orb"><FeatureScene Scene="call-patient" /></span>
             }
             else
             {
@@ -35,18 +28,11 @@
     private DotNetObjectReference<FamilyFloatHost>? _self;
     private IJSObjectReference? _module;
     private bool _isDoctor;
-    private string? _doctorPhotoUrl;
 
     protected override async Task OnInitializedAsync()
     {
         var state = await Auth.GetAuthenticationStateAsync();
         _isDoctor = state.User.IsInRole(AppRoles.Doctor);
-        if (!_isDoctor)
-            return;
-
-        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(userId))
-            _doctorPhotoUrl = await Photos.GetPhotoUrlForUserAsync(userId);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

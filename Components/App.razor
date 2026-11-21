@@ -15,6 +15,13 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    @if (HttpContext.User.IsInRole(AppRoles.Doctor))
+    {
+        <script>document.documentElement.dataset.a11yScope="doctor";</script>
+    }
+    <script src="@Assets["js/voice-capture.js"]"></script>
+    <script type="module" src="@Assets["js/voice-clone.js"]"></script>
+    <script src="@Assets["js/accessibility.js"]"></script>
     <link rel="stylesheet" href="@Assets["studio.css"]" />
     <link rel="stylesheet" href="@Assets["MedicalManager.styles.css"]" />
     <ImportMap />

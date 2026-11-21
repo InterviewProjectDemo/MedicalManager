@@ -1,15 +1,12 @@
 <div class="access-scope-row">
-    <label class="access-scope-check">
-        <input type="checkbox" checked="@Selected" @onchange="Toggle" />
-        <span>@Title</span>
-    </label>
-    <div class="access-scope-actions" role="radiogroup" aria-label="@($"{Title} action")">
+    <span class="access-scope-title">@Title</span>
+    <div class="access-scope-actions">
         <label>
-            <input type="radio" name="@Title" disabled="@(!Selected)" checked="@(Level == ChartAccessLevel.View)" @onchange="() => Set(ChartAccessLevel.View)" />
+            <input type="checkbox" checked="@ViewChecked" @onchange="SetView" />
             View
         </label>
         <label>
-            <input type="radio" name="@Title" disabled="@(!Selected)" checked="@(Level == ChartAccessLevel.Update)" @onchange="() => Set(ChartAccessLevel.Update)" />
+            <input type="checkbox" checked="@UpdateChecked" @onchange="SetUpdate" />
             Update
         </label>
     </div>
@@ -22,21 +19,51 @@
     [Parameter] public ChartAccessLevel Level { get; set; } = ChartAccessLevel.View;
     [Parameter] public EventCallback<ChartAccessLevel> LevelChanged { get; set; }
 
-    private async Task Toggle(ChangeEventArgs e)
+    private bool ViewChecked => Selected && Level != ChartAccessLevel.None;
+
+    private bool UpdateChecked => Selected && Level == ChartAccessLevel.Update;
+
+    private async Task SetView(ChangeEventArgs e)
     {
         var on = e.Value is bool value && value;
-        Selected = on;
-        await SelectedChanged.InvokeAsync(on);
-        if (on && Level == ChartAccessLevel.None)
+        if (!on)
+        {
+            Selected = false;
+            Level = ChartAccessLevel.None;
+            await SelectedChanged.InvokeAsync(false);
+            await LevelChanged.InvokeAsync(ChartAccessLevel.None);
+            return;
+        }
+
+        Selected = true;
+        if (Level != ChartAccessLevel.Update)
+            Level = ChartAccessLevel.View;
+        await SelectedChanged.InvokeAsync(true);
+        await LevelChanged.InvokeAsync(Level);
+    }
+
+    private async Task SetUpdate(ChangeEventArgs e)
+    {
+        var on = e.Value is bool value && value;
+        if (on)
+        {
+            Selected = true;
+            Level = ChartAccessLevel.Update;
+            await SelectedChanged.InvokeAsync(true);
+            await LevelChanged.InvokeAsync(ChartAccessLevel.Update);
+            return;
+        }
+
+        if (ViewChecked)
         {
             Level = ChartAccessLevel.View;
             await LevelChanged.InvokeAsync(Level);
+            return;
         }
-    }
 
-    private async Task Set(ChartAccessLevel level)
-    {
-        Level = level;
-        await LevelChanged.InvokeAsync(level);
+        Selected = false;
+        Level = ChartAccessLevel.None;
+        await SelectedChanged.InvokeAsync(false);
+        await LevelChanged.InvokeAsync(ChartAccessLevel.None);
     }
 }

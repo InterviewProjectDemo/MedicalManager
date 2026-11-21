@@ -2,7 +2,7 @@
 
 <a class="portrait home-mark" href="@Href">
     <span class="portrait-figure">
-        <span class="portrait-orb"><FeatureScene Scene="home" /></span>
+        <span class="portrait-orb"><FeatureScene Scene="@Scene" /></span>
         <span class="portrait-pedestal" aria-hidden="true"></span>
     </span>
     <span class="portrait-stem" aria-hidden="true"></span>
@@ -14,6 +14,7 @@
 @code {
     [Parameter] public string? PatientUserId { get; set; }
     [Parameter] public string Hint { get; set; } = "Returns to Home";
+    [Parameter] public string Scene { get; set; } = "home";
 
     private string Href => string.IsNullOrWhiteSpace(PatientUserId)
         ? "/"

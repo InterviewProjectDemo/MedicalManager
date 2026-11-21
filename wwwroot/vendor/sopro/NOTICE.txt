@@ -1,0 +1,6 @@
+Voice speech is generated in the browser by Sopro
+(https://github.com/samuel-vitorino/sopro), Apache License 2.0.
+Copyright Samuel Vitorino.
+
+The ONNX Runtime for the Web is loaded from jsDelivr
+(onnxruntime-web), MIT License.

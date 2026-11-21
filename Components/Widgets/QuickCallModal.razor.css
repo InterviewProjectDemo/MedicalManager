@@ -67,17 +67,9 @@
 }
 
 .is-patient .quick-call-portrait {
-    overflow: visible;
-    background: #d5dde6;
-    position: relative;
+    overflow: hidden;
+    background: #f7f4ee;
 }
-.is-patient .caller-mark {
-    position: relative;
-    width: 100%;
-    height: 100%;
-}
-.is-patient .caller-mark .person-photo { width: 100%; height: 100%; border-radius: 1.4rem; }
-.is-patient .caller-badge { right: -0.35rem; bottom: -0.35rem; }
 
 .quick-call-portrait img {
     width: 100%;

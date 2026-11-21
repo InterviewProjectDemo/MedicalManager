@@ -1,0 +1,607 @@
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider Auth
+
+@if (Visible)
+{
+    <StudioFloat Visible="true" VisibleChanged="HandleClose" Title="Accessibility" Place="access">
+        <div class="a11y-window">
+            <p class="a11y-hint">Drag a tab to reorder it, or move the group left and right. Drag the title bar to reposition this window, and the corner to resize it.</p>
+            <div class="a11y-tabs" role="tablist" aria-label="Accessibility groups">
+                @for (var i = 0; i < _tabs.Count; i++)
+                {
+                    var tab = _tabs[i];
+                    var selected = tab.Id == _activeId;
+                    <button type="button"
+                            id="@TabButtonId(tab)"
+                            role="tab"
+                            class="a11y-tab @(selected ? "active" : null) @(_dropId == tab.Id ? "drop-target" : null)"
+                            draggable="true"
+                            aria-selected="@(selected ? "true" : "false")"
+                            aria-controls="a11y-panel"
+                            tabindex="@(selected ? 0 : -1)"
+                            @ondragstart="e => StartDrag(e, tab.Id)"
+                            @ondragover="() => { _dropId = tab.Id; }"
+                            @ondragover:preventDefault
+                            @ondragleave="() => ClearDrop(tab.Id)"
+                            @ondrop="() => DropOn(tab.Id)"
+                            @ondrop:preventDefault
+                            @onkeydown="e => OnTabKey(e, tab)"
+                            @onclick="() => Select(tab.Id)">
+                        <span>@tab.Title</span>
+                        @if (!tab.BuiltIn)
+                        {
+                            <span class="a11y-tab-x" role="presentation" title="Remove group" @onclick:stopPropagation="true" @onclick="() => Remove(tab)">&times;</span>
+                        }
+                    </button>
+                }
+                @if (_adding)
+                {
+                    <form class="a11y-add" @onsubmit="AddTab" @onsubmit:preventDefault>
+                        <label class="visually-hidden" for="a11y-new-tab">New group name</label>
+                        <input id="a11y-new-tab" @bind="_newTitle" @bind:event="oninput" maxlength="40" placeholder="Group name" />
+                        <button type="submit" disabled="@string.IsNullOrWhiteSpace(_newTitle)">Add</button>
+                        <button type="button" @onclick="CancelAdd">Cancel</button>
+                    </form>
+                }
+                else
+                {
+                    <button type="button" class="a11y-tab a11y-tab-add" @onclick="BeginAdd">+ Tab</button>
+                }
+            </div>
+
+            @if (_loaded && Active is not null)
+            {
+                <div id="a11y-panel" class="a11y-panel" role="tabpanel" aria-labelledby="@TabButtonId(Active)">
+                    <h3>@Active.Title</h3>
+                    <p class="a11y-lead">@Lead(Active.Kind)</p>
+                    <div class="a11y-tools">
+                        <button type="button" disabled="@IsFirst" @onclick="() => MoveActive(-1)">Move left</button>
+                        <button type="button" disabled="@IsLast" @onclick="() => MoveActive(1)">Move right</button>
+                    </div>
+
+                    @if (Active.Kind == "general")
+                    {
+                        <fieldset class="a11y-sizes">
+                            <legend>Text size</legend>
+                            @foreach (var size in Sizes)
+                            {
+                                <label>
+                                    <input type="radio" name="a11y-text-size" checked="@(_textSize == size.Id)" @onchange="() => SetSize(size.Id)" />
+                                    @size.Label
+                                </label>
+                            }
+                        </fieldset>
+                    }
+
+                    @if (Active.Kind == "custom")
+                    {
+                        <label class="form-label" for="a11y-rename">Group name</label>
+                        <input id="a11y-rename" class="a11y-rename" maxlength="40" value="@Active.Title" @onchange="Rename" />
+                        <label class="form-label mt-3" for="a11y-note">Notes for this group</label>
+                        <textarea id="a11y-note" class="form-control" rows="4" value="@Active.Note" @onchange="EditNote"></textarea>
+                        <p class="a11y-note">Custom groups stay in this browser with the other accessibility choices.</p>
+                    }
+                    else
+                    {
+                        @if (Active.Kind == "dialysis")
+                        {
+                            <DialysisHelpCalls />
+                        }
+                        @if (Active.Kind == "dialysis" && _dialysisSpeak)
+                        {
+                            <button type="button" class="a11y-voice" @onclick="TestVoice">Test voice</button>
+                        }
+                        @foreach (var option in OptionsFor(Active.Kind))
+                        {
+                            <label class="a11y-option">
+                                <input type="checkbox" checked="@option.Get()" @onchange="e => SetOption(option, e.Value is true)" />
+                                <span>
+                                    <strong>@option.Label</strong>
+                                    <small>@option.Hint</small>
+                                </span>
+                            </label>
+                        }
+                        @if (Active.Kind == "general")
+                        {
+                            <button type="button" class="a11y-reset" @onclick="ResetAll">Reset all choices</button>
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="a11y-panel"><p class="a11y-lead mb-0">Loading accessibility settings…</p></div>
+            }
+        </div>
+    </StudioFloat>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    private static readonly (string Id, string Label)[] Sizes =
+    [
+        ("sm", "Small"),
+        ("md", "Default"),
+        ("lg", "Large"),
+        ("xl", "Extra large")
+    ];
+
+    private static readonly (string Id, string Title, string Kind)[] BuiltIns =
+    [
+        ("general", "General Purpose", "general"),
+        ("dialysis", "Dialysis Treatment", "dialysis"),
+        ("authorization", "Authorization", "authorization"),
+        ("social", "Social Service", "social"),
+        ("government", "Government Agencies", "government"),
+        ("medicare", "Medicare", "medicare")
+    ];
+
+    private readonly List<A11yTab> _tabs = [];
+    private string _activeId = "general";
+    private string _textSize = "md";
+    private bool _highContrast;
+    private bool _reduceMotion;
+    private bool _largeTargets;
+    private bool _strongFocus;
+    private bool _underlineLinks;
+    private bool _comfortableSpacing;
+    private bool _dialysisLargeNumbers;
+    private bool _dialysisSimple;
+    private bool _dialysisContrast;
+    private bool _dialysisSpeak;
+    private bool _authLarge;
+    private bool _authPlain;
+    private bool _authConfirm;
+    private bool _socialReading;
+    private bool _socialContacts;
+    private bool _govForms;
+    private bool _govPrint;
+    private bool _govSticky;
+    private bool _medicareDates;
+    private bool _medicareAmounts;
+    private bool _medicarePlain;
+    private bool _loaded;
+    private bool _adding;
+    private string _newTitle = "";
+    private string? _dragId;
+    private string? _dropId;
+
+    private A11yTab? Active => _tabs.FirstOrDefault(tab => tab.Id == _activeId);
+    private bool IsFirst => _tabs.FindIndex(tab => tab.Id == _activeId) <= 0;
+    private bool IsLast
+    {
+        get
+        {
+            var index = _tabs.FindIndex(tab => tab.Id == _activeId);
+            return index < 0 || index >= _tabs.Count - 1;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible || _loaded)
+            return;
+
+        A11yState? saved = null;
+        try
+        {
+            saved = await JS.InvokeAsync<A11yState?>("mmAccessibility.load");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+
+        if (saved is not null)
+            CopyFrom(saved);
+
+        EnsureBuiltIns();
+        if (_tabs.All(tab => tab.Id != _activeId))
+            _activeId = _tabs[0].Id;
+
+        _loaded = true;
+        await Persist();
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrWhiteSpace(userId))
+                await JS.InvokeVoidAsync("mmVoice.bindUser", userId);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+
+        StateHasChanged();
+    }
+
+    private Task HandleClose(bool open)
+        => open ? Task.CompletedTask : VisibleChanged.InvokeAsync(false);
+
+    private async Task Select(string id)
+    {
+        if (_activeId == id)
+            return;
+
+        _activeId = id;
+        await Persist();
+    }
+
+    private async Task OnTabKey(KeyboardEventArgs e, A11yTab tab)
+    {
+        var index = _tabs.FindIndex(item => item.Id == tab.Id);
+        if (index < 0)
+            return;
+
+        var next = e.Key switch
+        {
+            "ArrowRight" => (index + 1) % _tabs.Count,
+            "ArrowLeft" => (index - 1 + _tabs.Count) % _tabs.Count,
+            "Home" => 0,
+            "End" => _tabs.Count - 1,
+            _ => -1
+        };
+        if (next < 0)
+            return;
+
+        _activeId = _tabs[next].Id;
+        await Persist();
+    }
+
+    private void StartDrag(DragEventArgs e, string id)
+    {
+        _dragId = id;
+        e.DataTransfer.EffectAllowed = "move";
+    }
+
+    private void ClearDrop(string id)
+    {
+        if (_dropId == id)
+            _dropId = null;
+    }
+
+    private async Task DropOn(string targetId)
+    {
+        _dropId = null;
+        if (_dragId is null || _dragId == targetId)
+            return;
+
+        var from = _tabs.FindIndex(tab => tab.Id == _dragId);
+        var to = _tabs.FindIndex(tab => tab.Id == targetId);
+        _dragId = null;
+        if (from < 0 || to < 0)
+            return;
+
+        var tab = _tabs[from];
+        _tabs.RemoveAt(from);
+        _tabs.Insert(to, tab);
+        await Persist();
+    }
+
+    private async Task MoveActive(int delta)
+    {
+        var index = _tabs.FindIndex(tab => tab.Id == _activeId);
+        var next = index + delta;
+        if (index < 0 || next < 0 || next >= _tabs.Count)
+            return;
+
+        var tab = _tabs[index];
+        _tabs.RemoveAt(index);
+        _tabs.Insert(next, tab);
+        await Persist();
+    }
+
+    private void BeginAdd()
+    {
+        _adding = true;
+        _newTitle = "";
+    }
+
+    private void CancelAdd()
+    {
+        _adding = false;
+        _newTitle = "";
+    }
+
+    private async Task AddTab()
+    {
+        var title = _newTitle.Trim();
+        if (title.Length == 0)
+            return;
+
+        var tab = new A11yTab
+        {
+            Id = "custom-" + Guid.NewGuid().ToString("N")[..8],
+            Title = title,
+            Kind = "custom",
+            BuiltIn = false
+        };
+        _tabs.Add(tab);
+        _activeId = tab.Id;
+        _adding = false;
+        _newTitle = "";
+        await Persist();
+    }
+
+    private async Task Remove(A11yTab tab)
+    {
+        if (tab.BuiltIn)
+            return;
+
+        var index = _tabs.FindIndex(item => item.Id == tab.Id);
+        if (index < 0)
+            return;
+
+        _tabs.RemoveAt(index);
+        if (_activeId == tab.Id)
+            _activeId = _tabs[Math.Clamp(index - 1, 0, Math.Max(0, _tabs.Count - 1))].Id;
+        await Persist();
+    }
+
+    private async Task Rename(ChangeEventArgs e)
+    {
+        if (Active is not { BuiltIn: false })
+            return;
+
+        var title = (e.Value?.ToString() ?? "").Trim();
+        if (title.Length == 0)
+            return;
+
+        Active.Title = title;
+        await Persist();
+    }
+
+    private async Task EditNote(ChangeEventArgs e)
+    {
+        if (Active is null)
+            return;
+
+        Active.Note = e.Value?.ToString() ?? "";
+        await Persist();
+    }
+
+    private async Task SetSize(string size)
+    {
+        _textSize = size;
+        await Persist();
+    }
+
+    private async Task SetOption(A11yOption option, bool value)
+    {
+        option.Set(value);
+        await Persist();
+        if (option.SpeakOnEnable && value)
+            await Speak("Dialysis treatment numbers will be read aloud.");
+    }
+
+    private async Task TestVoice() => await Speak("Dialysis treatment numbers will be read aloud.");
+
+    private async Task Speak(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.speak", text);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task ResetAll()
+    {
+        _textSize = "md";
+        _highContrast = _reduceMotion = _largeTargets = _strongFocus = _underlineLinks = _comfortableSpacing = false;
+        _dialysisLargeNumbers = _dialysisSimple = _dialysisContrast = _dialysisSpeak = false;
+        _authLarge = _authPlain = _authConfirm = false;
+        _socialReading = _socialContacts = false;
+        _govForms = _govPrint = _govSticky = false;
+        _medicareDates = _medicareAmounts = _medicarePlain = false;
+        await Persist();
+    }
+
+    private IEnumerable<A11yOption> OptionsFor(string kind) => kind switch
+    {
+        "general" =>
+        [
+            Opt("High contrast", "Stronger text, links, and borders.", () => _highContrast, v => _highContrast = v),
+            Opt("Reduce motion", "Stops animations and moving notices.", () => _reduceMotion, v => _reduceMotion = v),
+            Opt("Larger targets", "Makes buttons and navigation items easier to tap.", () => _largeTargets, v => _largeTargets = v),
+            Opt("Strong focus", "Shows a clear outline on the keyboard focus.", () => _strongFocus, v => _strongFocus = v),
+            Opt("Underline links", "Keeps links underlined.", () => _underlineLinks, v => _underlineLinks = v),
+            Opt("Comfortable spacing", "Opens up line spacing so text is easier to follow.", () => _comfortableSpacing, v => _comfortableSpacing = v)
+        ],
+        "dialysis" =>
+        [
+            Opt("Larger treatment numbers", "Enlarges readings and chart values.", () => _dialysisLargeNumbers, v => _dialysisLargeNumbers = v),
+            Opt("Simpler treatment layout", "Quiets card shadows during treatment review.", () => _dialysisSimple, v => _dialysisSimple = v),
+            Opt("High contrast readouts", "Highlights numbers so they stand apart from the page.", () => _dialysisContrast, v => _dialysisContrast = v),
+            Opt("Read numbers aloud", "Speaks treatment numbers. Use Test voice to hear it.", () => _dialysisSpeak, v => _dialysisSpeak = v, speak: true)
+        ],
+        "authorization" =>
+        [
+            Opt("Larger form controls", "Makes fields and buttons taller.", () => _authLarge, v => _authLarge = v),
+            Opt("Plain-language labels", "Enlarges form labels and gives them more space.", () => _authPlain, v => _authPlain = v),
+            Opt("Confirm before sending", "Asks before a button labeled approve, authorize, consent, or grant is sent.", () => _authConfirm, v => _authConfirm = v)
+        ],
+        "social" =>
+        [
+            Opt("Easier reading", "Shortens lines and opens paragraph spacing.", () => _socialReading, v => _socialReading = v),
+            Opt("Highlight phone and email", "Marks phone and email links so they are easy to find.", () => _socialContacts, v => _socialContacts = v)
+        ],
+        "government" =>
+        [
+            Opt("High contrast forms", "Uses darker borders on form fields.", () => _govForms, v => _govForms = v),
+            Opt("Large print", "Increases the size of page text.", () => _govPrint, v => _govPrint = v),
+            Opt("Keep headings in view", "Holds section headings at the top while you scroll.", () => _govSticky, v => _govSticky = v)
+        ],
+        "medicare" =>
+        [
+            Opt("Emphasize dates", "Highlights dates and the daily date controls.", () => _medicareDates, v => _medicareDates = v),
+            Opt("Larger amounts", "Makes benefit amounts and totals heavier.", () => _medicareAmounts, v => _medicareAmounts = v),
+            Opt("Plain language", "Opens paragraph spacing and heading size.", () => _medicarePlain, v => _medicarePlain = v)
+        ],
+        _ => []
+    };
+
+    private static A11yOption Opt(string label, string hint, Func<bool> get, Action<bool> set, bool speak = false)
+        => new(label, hint, get, set, speak);
+
+    private static string Lead(string kind) => kind switch
+    {
+        "general" => "Choices here apply everywhere in Medical Manager.",
+        "dialysis" => "Makes treatment numbers and readings easier to see and hear.",
+        "authorization" => "Makes approval and consent steps easier to read and harder to send by mistake.",
+        "social" => "Makes resource and contact information easier to read.",
+        "government" => "Makes agency forms and official pages easier to follow.",
+        "medicare" => "Makes dates, amounts, and benefit text easier to pick out.",
+        _ => "Use this group for accessibility choices that do not fit the built-in groups."
+    };
+
+    private static string TabButtonId(A11yTab tab) => "a11y-tab-" + tab.Id;
+
+    private void EnsureBuiltIns()
+    {
+        if (_tabs.Count == 0)
+        {
+            _tabs.AddRange(DefaultTabs());
+            return;
+        }
+
+        foreach (var built in BuiltIns)
+        {
+            var existing = _tabs.FirstOrDefault(tab => tab.Id == built.Id);
+            if (existing is null)
+            {
+                _tabs.Add(new A11yTab { Id = built.Id, Title = built.Title, Kind = built.Kind, BuiltIn = true });
+                continue;
+            }
+
+            existing.Title = built.Title;
+            existing.Kind = built.Kind;
+            existing.BuiltIn = true;
+        }
+    }
+
+    private static List<A11yTab> DefaultTabs() => BuiltIns
+        .Select(built => new A11yTab { Id = built.Id, Title = built.Title, Kind = built.Kind, BuiltIn = true })
+        .ToList();
+
+    private void CopyFrom(A11yState saved)
+    {
+        _textSize = saved.TextSize is "sm" or "lg" or "xl" ? saved.TextSize : "md";
+        _highContrast = saved.HighContrast;
+        _reduceMotion = saved.ReduceMotion;
+        _largeTargets = saved.LargeTargets;
+        _strongFocus = saved.StrongFocus;
+        _underlineLinks = saved.UnderlineLinks;
+        _comfortableSpacing = saved.ComfortableSpacing;
+        _dialysisLargeNumbers = saved.DialysisLargeNumbers;
+        _dialysisSimple = saved.DialysisSimple;
+        _dialysisContrast = saved.DialysisContrast;
+        _dialysisSpeak = saved.DialysisSpeak;
+        _authLarge = saved.AuthLarge;
+        _authPlain = saved.AuthPlain;
+        _authConfirm = saved.AuthConfirm;
+        _socialReading = saved.SocialReading;
+        _socialContacts = saved.SocialContacts;
+        _govForms = saved.GovForms;
+        _govPrint = saved.GovPrint;
+        _govSticky = saved.GovSticky;
+        _medicareDates = saved.MedicareDates;
+        _medicareAmounts = saved.MedicareAmounts;
+        _medicarePlain = saved.MedicarePlain;
+        _activeId = string.IsNullOrWhiteSpace(saved.ActiveTabId) ? "general" : saved.ActiveTabId;
+        _tabs.Clear();
+        if (saved.Tabs is not null)
+            _tabs.AddRange(saved.Tabs.Where(tab => !string.IsNullOrWhiteSpace(tab.Id) && !string.IsNullOrWhiteSpace(tab.Title)));
+    }
+
+    private async Task Persist()
+    {
+        if (!_loaded)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.save", Snapshot());
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private A11yState Snapshot() => new()
+    {
+        TextSize = _textSize,
+        HighContrast = _highContrast,
+        ReduceMotion = _reduceMotion,
+        LargeTargets = _largeTargets,
+        StrongFocus = _strongFocus,
+        UnderlineLinks = _underlineLinks,
+        ComfortableSpacing = _comfortableSpacing,
+        DialysisLargeNumbers = _dialysisLargeNumbers,
+        DialysisSimple = _dialysisSimple,
+        DialysisContrast = _dialysisContrast,
+        DialysisSpeak = _dialysisSpeak,
+        AuthLarge = _authLarge,
+        AuthPlain = _authPlain,
+        AuthConfirm = _authConfirm,
+        SocialReading = _socialReading,
+        SocialContacts = _socialContacts,
+        GovForms = _govForms,
+        GovPrint = _govPrint,
+        GovSticky = _govSticky,
+        MedicareDates = _medicareDates,
+        MedicareAmounts = _medicareAmounts,
+        MedicarePlain = _medicarePlain,
+        ActiveTabId = _activeId,
+        Tabs = _tabs.Select(tab => new A11yTab
+        {
+            Id = tab.Id,
+            Title = tab.Title,
+            Kind = tab.Kind,
+            BuiltIn = tab.BuiltIn,
+            Note = tab.Note
+        }).ToList()
+    };
+
+    private sealed class A11yState
+    {
+        public string TextSize { get; set; } = "md";
+        public bool HighContrast { get; set; }
+        public bool ReduceMotion { get; set; }
+        public bool LargeTargets { get; set; }
+        public bool StrongFocus { get; set; }
+        public bool UnderlineLinks { get; set; }
+        public bool ComfortableSpacing { get; set; }
+        public bool DialysisLargeNumbers { get; set; }
+        public bool DialysisSimple { get; set; }
+        public bool DialysisContrast { get; set; }
+        public bool DialysisSpeak { get; set; }
+        public bool AuthLarge { get; set; }
+        public bool AuthPlain { get; set; }
+        public bool AuthConfirm { get; set; }
+        public bool SocialReading { get; set; }
+        public bool SocialContacts { get; set; }
+        public bool GovForms { get; set; }
+        public bool GovPrint { get; set; }
+        public bool GovSticky { get; set; }
+        public bool MedicareDates { get; set; }
+        public bool MedicareAmounts { get; set; }
+        public bool MedicarePlain { get; set; }
+        public string ActiveTabId { get; set; } = "general";
+        public List<A11yTab>? Tabs { get; set; }
+    }
+
+    private sealed class A11yTab
+    {
+        public string Id { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Kind { get; set; } = "custom";
+        public bool BuiltIn { get; set; }
+        public string Note { get; set; } = "";
+    }
+
+    private sealed record A11yOption(string Label, string Hint, Func<bool> Get, Action<bool> Set, bool SpeakOnEnable);
+}

@@ -30,7 +30,7 @@
             <AuthorizeView>
                 <Authorized Context="authContext">
                     <button type="button"
-                            class="nav-avatar @(!string.IsNullOrWhiteSpace(_photoUrl) ? "nav-avatar-has-photo" : null)"
+                            class="nav-avatar @(!string.IsNullOrWhiteSpace(_photoUrl) || _isDoctor ? "nav-avatar-has-photo" : null)"
                             title="@authContext.User.Identity?.Name"
                             aria-label="Change profile photo"
                             @onclick="OpenPhotoModal">
@@ -40,7 +40,7 @@
                         }
                         else if (_isDoctor)
                         {
-                            <span class="nav-avatar-icon" aria-hidden="true"></span>
+                            <img src="/studio/studio-doctor-profile.jpg" alt="" class="nav-avatar-img" />
                         }
                         else
                         {
@@ -91,6 +91,8 @@
                                    OnEmergency="OpenEmergencyCall"
                                    OnVoice="OpenGuide"
                                    OnPrescription="OpenPrescription"
+                                   OnAccessibility="OpenAccessibility"
+                                   AccessibilityOpen="_accessibilityOpen"
                                    OnNavigate="CloseNav" />
                 }
                 else
@@ -114,6 +116,15 @@
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
                     </NavLink>
                 </div>
+                <AuthorizeView Roles="@AppRoles.Doctor" Context="hideA11y">
+                    <NotAuthorized>
+                <div class="nav-item px-3">
+                    <button type="button" class="nav-link nav-a11y" aria-pressed="@_accessibilityOpen" @onclick="OpenAccessibility">
+                        <span class="bi bi-accessibility-nav-menu" aria-hidden="true"></span> Accessibility
+                    </button>
+                </div>
+                    </NotAuthorized>
+                </AuthorizeView>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link nav-studio" href="@Href("dashboard-studio")">
                         <span class="bi bi-layout-nav-menu" aria-hidden="true"></span> Dashboard Studio
@@ -284,7 +295,7 @@
             <NotAuthorized>
                 @if (StudioLayout.Enabled)
                 {
-                    <StudioSideNav Guest="true" OnNavigate="CloseNav" />
+                    <StudioSideNav Guest="true" OnNavigate="CloseNav" OnAccessibility="OpenAccessibility" AccessibilityOpen="_accessibilityOpen" />
                 }
                 else
                 {
@@ -292,6 +303,11 @@
                     <NavLink class="nav-link nav-dash" href="Account/Login">
                         <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Login
                     </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <button type="button" class="nav-link nav-a11y" aria-pressed="@_accessibilityOpen" @onclick="OpenAccessibility">
+                        <span class="bi bi-accessibility-nav-menu" aria-hidden="true"></span> Accessibility
+                    </button>
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Register">
@@ -332,11 +348,11 @@
                 <AuthorizeView Roles="@AppRoles.Doctor" Context="doctorTabs">
                     <Authorized>
                         <button type="button" class="mobile-tab" @onclick="OpenPrescription">
-                            <span class="bi bi-prescription-nav-menu" aria-hidden="true"></span>
+                            <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="doctor-rx" /></span>
                             Prescription
                         </button>
                         <NavLink class="mobile-tab" href="video-visit">
-                            <span class="bi bi-video-nav-menu" aria-hidden="true"></span>
+                            <span class="studio-nav-orb studio-nav-orb-sm"><FeatureScene Scene="doctor-video" /></span>
                             Video Visit
                         </NavLink>
                     </Authorized>
@@ -464,6 +480,11 @@
     </Authorized>
 </AuthorizeView>
 
+@if (!_isDoctor)
+{
+    <AccessibilityWindow Visible="_accessibilityOpen" VisibleChanged="OnAccessibilityChanged" />
+}
+
 @code {
     private string? currentUrl;
     private string? selectedPatientId;
@@ -473,6 +494,9 @@
     private bool _navOpen;
     private bool _isDoctor;
     private bool _prescriptionOpen;
+    private bool _accessibilityOpen;
+    private bool _authReady;
+    private bool? _a11yForDoctor;
     private bool _callOpen;
     private int _callSerial;
     private bool _guideOpen;
@@ -524,6 +548,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await SyncAccessibilityScopeAsync();
+
         if (!_isDoctor && !_cameraGestureReady)
         {
             _cameraGestureReady = true;
@@ -549,6 +575,7 @@
         var state = await Auth.GetAuthenticationStateAsync();
         _userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)?.Trim();
         _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+        _authReady = true;
         if (string.IsNullOrWhiteSpace(_userId))
         {
             _photoUrl = null;
@@ -810,6 +837,39 @@
         _navOpen = false;
     }
 
+    private void OpenAccessibility()
+    {
+        if (_isDoctor)
+            return;
+
+        _accessibilityOpen = true;
+        _navOpen = false;
+    }
+
+    private async Task SyncAccessibilityScopeAsync()
+    {
+        if (!_authReady || _a11yForDoctor == _isDoctor)
+            return;
+
+        _a11yForDoctor = _isDoctor;
+        if (_isDoctor)
+            _accessibilityOpen = false;
+
+        try
+        {
+            await JS.InvokeVoidAsync(_isDoctor ? "mmAccessibility.holdForDoctor" : "mmAccessibility.releaseHold");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private Task OnAccessibilityChanged(bool visible)
+    {
+        _accessibilityOpen = visible;
+        return Task.CompletedTask;
+    }
+
     private Task ClosePrescription()
     {
         _prescriptionOpen = false;
@@ -841,6 +901,8 @@
     {
         _navOpen = false;
         UpdateFromUri();
+        if (_isDoctor)
+            _a11yForDoctor = null;
         try
         {
             await LoadFamilyContactAsync();

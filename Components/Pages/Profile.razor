@@ -58,6 +58,12 @@ else
                 <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="OpenPhotoModal">
                     Change photo
                 </button>
+                @if (!_isDoctor)
+                {
+                    <button type="button" class="btn btn-outline-primary btn-sm mt-2 ms-2" @onclick="OpenVoice">
+                        Speech Recognition
+                    </button>
+                }
             </div>
         </div>
 
@@ -394,6 +400,13 @@ else
     <ProfilePhotoModal Visible="_photoModalOpen"
                        VisibleChanged="OnPhotoModalVisibleChanged"
                        PhotoSaved="OnPhotoSaved" />
+
+    @if (_voiceOpen && _user is not null)
+    {
+        <StudioFloat @bind-Visible="_voiceOpen" Title="Speech Recognition" Place="voice-capture">
+            <SpeechCapture UserId="@_user.Id" />
+        </StudioFloat>
+    }
 }
 
 @code {
@@ -407,6 +420,7 @@ else
     private string? _userId;
     private string? _photoUrl;
     private bool _photoModalOpen;
+    private bool _voiceOpen;
     private ApplicationUser? _user;
     private PatientProfile? _profile;
     private readonly ProfileForm _profileForm = new();
@@ -735,6 +749,8 @@ else
     }
 
     private void OpenPhotoModal() => _photoModalOpen = true;
+
+    private void OpenVoice() => _voiceOpen = true;
 
     private Task OnPhotoModalVisibleChanged(bool visible)
     {

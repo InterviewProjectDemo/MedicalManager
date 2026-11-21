@@ -1615,6 +1615,38 @@ tr.med-prescribed > td { background: #e6e8ec; color: #3d4654; }
 .visit-entry { padding: 0.75rem 0; border-bottom: 1px solid #e7eef5; }
 .visit-entry header { display: flex; justify-content: space-between; gap: 1rem; }
 .visit-entry p { margin: 0.35rem 0 0; white-space: pre-wrap; }
+.access-scope-title { font-weight: 700; color: #1b2838; }
+.access-scope-row { flex-wrap: wrap; }
+.access-scope-actions label { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; cursor: pointer; }
+.patient-pick { cursor: pointer; }
+.patient-pick-table td:first-child { width: 2.6rem; }
+.summary-browser { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; min-height: 0; }
+.summary-browser-host { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; min-height: 0; flex: 1 1 auto; }
+.summary-filters { display: flex; flex-wrap: wrap; gap: 0.6rem 0.8rem; align-items: end; }
+.summary-filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; font-weight: 700; color: #0f3d5c; min-width: 0; }
+.summary-filters .form-control,
+.summary-filters .form-select { min-width: 10.5rem; font-weight: 500; }
+.summary-find { flex: 1 1 14rem; }
+.summary-find .form-control { width: 100%; }
+.summary-clear { align-self: end; }
+.summary-hint { margin-top: -0.2rem; }
+.summary-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.summary-nav span { font-weight: 700; color: #0f3d5c; margin: 0 0.25rem; }
+.summary-split { display: grid; grid-template-columns: minmax(11rem, 16rem) minmax(0, 1fr); gap: 0.75rem; min-height: 16rem; }
+.summary-jump { list-style: none; margin: 0; padding: 0; overflow: auto; border: 1px solid #e6eef5; border-radius: 12px; background: #fff; }
+.summary-jump li { margin: 0; }
+.summary-jump button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; width: 100%; border: 0; border-bottom: 1px solid #eef3f8; background: transparent; text-align: left; padding: 0.55rem 0.7rem; cursor: pointer; color: inherit; font: inherit; }
+.summary-jump button.is-current { background: #e7f6f4; }
+.summary-jump time { font-weight: 700; color: #0f3d5c; }
+.summary-jump span { color: #475467; font-size: 0.86rem; }
+.summary-read { overflow: auto; min-width: 0; }
+.summary-read header { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+.summary-read p { white-space: pre-wrap; margin: 0.55rem 0 0; }
+.summary-read .btn { margin-top: 0.55rem; }
+@media (max-width: 720px) {
+    .summary-split { grid-template-columns: 1fr; }
+    .summary-jump { max-height: 12rem; }
+}
 .visit-thread { display: flex; flex-direction: column; gap: 0.55rem; padding: 1rem; }
 .visit-bubble { max-width: 36rem; padding: 0.65rem 0.8rem; border-radius: 14px; }
 .visit-bubble p { margin: 0; white-space: pre-wrap; }
@@ -1646,6 +1678,7 @@ tr.is-selected > td { background: #e7f6f4; }
     cursor: pointer;
 }
 .visit-tool-logo {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1654,6 +1687,15 @@ tr.is-selected > td { background: #e7f6f4; }
     border-radius: 50%;
     background: #0f3d5c;
     box-shadow: 0 8px 18px rgba(15, 61, 92, 0.18);
+}
+.visit-tool-logo:has(.scene-img) {
+    background: #f7f4ee;
+    overflow: hidden;
+}
+.visit-tool-logo .scene-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 .visit-tool-logo .bi {
     display: block;
@@ -4941,3 +4983,137 @@ html.family-btn-floating [data-family-dock] {
 }
 
 .legal-page .sms-consent-quote input { margin-top: 0.35rem; }
+
+html.a11y-text-sm { font-size: 93.75%; }
+html.a11y-text-lg { font-size: 112.5%; }
+html.a11y-text-xl { font-size: 125%; }
+
+html.a11y-contrast body,
+html.a11y-contrast .studio-float {
+    background: #fff;
+    color: #111;
+}
+
+html.a11y-contrast .studio-float {
+    border: 2px solid #111;
+}
+
+html.a11y-contrast a { color: #0033aa; }
+html.a11y-contrast .btn-primary { background: #052e4a; border-color: #111; }
+
+html.a11y-motion *,
+html.a11y-motion *::before,
+html.a11y-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+}
+
+html.a11y-targets button,
+html.a11y-targets .btn,
+html.a11y-targets .nav-link,
+html.a11y-targets .studio-nav-link,
+html.a11y-targets .mobile-tab {
+    min-height: 2.75rem;
+}
+
+html.a11y-focus :focus-visible {
+    outline: 3px solid #b45309 !important;
+    outline-offset: 3px !important;
+}
+
+html.a11y-links a {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+
+html.a11y-spacing body { line-height: 1.65; letter-spacing: 0.01em; }
+
+html.a11y-dialysis-numbers .bp-reading,
+html.a11y-dialysis-numbers .chart-stat-value {
+    font-size: 1.45em;
+    font-weight: 800;
+}
+
+html.a11y-dialysis-simple .chart-card,
+html.a11y-dialysis-simple .table-card {
+    box-shadow: none;
+}
+
+html.a11y-dialysis-contrast .bp-reading,
+html.a11y-dialysis-contrast .chart-stat-value {
+    color: #111 !important;
+    background: #fff7d6;
+    border-radius: 0.2rem;
+}
+
+html.a11y-auth-large .form-control,
+html.a11y-auth-large .form-select,
+html.a11y-auth-large .btn {
+    min-height: 3rem;
+    font-size: 1.05rem;
+}
+
+html.a11y-auth-plain .form-label,
+html.a11y-auth-plain label {
+    font-size: 1.05em;
+    line-height: 1.45;
+}
+
+html.a11y-social-reading .content p,
+html.a11y-social-reading .content li {
+    max-width: 40rem;
+    line-height: 1.75;
+    font-size: 1.06em;
+}
+
+html.a11y-social-contacts a[href^="tel:"],
+html.a11y-social-contacts a[href^="mailto:"] {
+    background: #fef3c7;
+    padding: 0.1em 0.35em;
+    border-radius: 0.35rem;
+    font-weight: 700;
+}
+
+html.a11y-gov-forms .form-control,
+html.a11y-gov-forms .form-select,
+html.a11y-gov-forms textarea {
+    border: 2px solid #111;
+    background: #fff;
+    color: #111;
+}
+
+html.a11y-gov-print .content { font-size: 1.12rem; }
+
+html.a11y-gov-sticky h1,
+html.a11y-gov-sticky h2 {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #fff;
+}
+
+html.a11y-medicare-dates time,
+html.a11y-medicare-dates .daily-vitals-date-nav {
+    font-weight: 800;
+    background: #fff4cc;
+}
+
+html.a11y-medicare-amounts .cost,
+html.a11y-medicare-amounts .amount,
+html.a11y-medicare-amounts .price {
+    font-size: 1.25em;
+    font-weight: 800;
+}
+
+html.a11y-medicare-plain .content p {
+    max-width: 42rem;
+    line-height: 1.7;
+}
+
+html.a11y-medicare-plain .content h1,
+html.a11y-medicare-plain .content h2,
+html.a11y-medicare-plain .content h3 {
+    line-height: 1.3;
+}

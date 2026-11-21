@@ -1,0 +1,53 @@
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+
+<div class="summary-browser-host">
+    <p class="muted">Read only. Filter by a start and end date, sort, search, and step through each visit.</p>
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger py-2" role="alert">@_error</div>
+    }
+    else if (_items is null)
+    {
+        <p class="muted">Loading summaries...</p>
+    }
+    else
+    {
+        <AfterVisitBrowser Items="_items" />
+    }
+</div>
+
+@code {
+    [Parameter] public string? PatientUserId { get; set; }
+
+    private IReadOnlyList<AfterVisitSummary>? _items;
+    private string? _error;
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PatientUserId))
+        {
+            _items = [];
+            _loadedFor = null;
+            _error = null;
+            return;
+        }
+
+        if (_loadedFor == PatientUserId && _items is not null)
+            return;
+
+        _loadedFor = PatientUserId;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            _items = await Visits.ListSummariesAsync(state.User, PatientUserId);
+            _error = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+            _items = [];
+        }
+    }
+}

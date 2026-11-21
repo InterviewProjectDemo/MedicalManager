@@ -245,7 +245,8 @@ article.content > .home-mark {
 .studio-nav a.studio-nav-link:focus-visible,
 .studio-nav button.studio-nav-link:hover,
 .studio-nav button.studio-nav-link:focus-visible,
-.studio-nav a.studio-nav-link.active {
+.studio-nav a.studio-nav-link.active,
+.studio-nav button.studio-nav-link.active {
     background: rgba(255, 255, 255, 0.14);
     color: #fff;
 }
@@ -294,27 +295,8 @@ article.content > .home-mark {
     object-fit: cover;
 }
 
-.portrait-orb.has-caller { overflow: visible; }
-.portrait-orb.has-caller .person-photo { border-radius: 50%; overflow: hidden; }
-.caller-badge {
-    position: absolute;
-    z-index: 3;
-    right: -0.15rem;
-    bottom: -0.15rem;
-    width: 1.7rem;
-    height: 1.7rem;
-    border-radius: 50%;
-    background: #0f766e;
-    border: 2px solid #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 6px rgba(15, 61, 92, 0.28);
-}
-.caller-badge svg { width: 58%; height: 58%; fill: #fff; }
-.family-float-host .caller-badge { width: 1.35rem; height: 1.35rem; }
-
-.studio-nav a.studio-nav-link.active .studio-nav-orb {
+.studio-nav a.studio-nav-link.active .studio-nav-orb,
+.studio-nav button.studio-nav-link.active .studio-nav-orb {
     box-shadow: 0 0 0 3px #fff, 0 8px 16px rgba(0, 0, 0, 0.22);
 }
 
@@ -790,6 +772,46 @@ article.content > .home-mark {
     height: min(80vh, 720px);
 }
 
+.studio-float.place-access {
+    top: 4.4rem;
+    left: 17.4rem;
+    width: min(920px, calc(100vw - 18.8rem));
+    height: min(78vh, 680px);
+}
+
+.studio-float.place-summary {
+    top: 5rem;
+    left: 12.5rem;
+    width: min(880px, calc(100vw - 2rem));
+    height: min(80vh, 720px);
+}
+
+.studio-float.place-voice-capture {
+    top: 4.6rem;
+    left: 13rem;
+    width: min(640px, calc(100vw - 2rem));
+    height: min(78vh, 680px);
+}
+
+.studio-float-body:has(.summary-browser-host) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.studio-float .summary-browser-host > .summary-browser,
+.studio-float .summary-split {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.studio-float-body:has(.a11y-window) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+}
+
 .studio-float-head {
     display: flex;
     align-items: center;
@@ -895,7 +917,10 @@ article.content > .home-mark {
     .studio-float.place-review,
     .studio-float.place-notes,
     .studio-float.place-message,
-    .studio-float.place-video {
+    .studio-float.place-video,
+    .studio-float.place-access,
+    .studio-float.place-summary,
+    .studio-float.place-voice-capture {
         top: 0.6rem;
         left: 0.5rem;
         width: calc(100vw - 1rem);

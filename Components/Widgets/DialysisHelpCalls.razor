@@ -1,0 +1,153 @@
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider Auth
+@implements IDisposable
+
+<section class="dialysis-calls" aria-label="Call for help">
+    <p class="dialysis-calls-lead">Tap a picture once. It keeps saying that need, as clearly as this device can, and the picture blinks. Tap Attended when someone is with you.</p>
+    <div class="dialysis-call-row">
+        @foreach (var call in Calls)
+        {
+            var calling = call.Id == _activeId;
+            <button type="button"
+                    class="dialysis-call @(calling ? "is-calling" : null)"
+                    aria-pressed="@(calling ? "true" : "false")"
+                    @onclick="() => Start(call)">
+                <span class="dialysis-call-logo">
+                    <img src="@call.Image" alt="" draggable="false" />
+                </span>
+                <span>@call.Label</span>
+                @if (calling)
+                {
+                    <span class="dialysis-call-state">Calling</span>
+                }
+            </button>
+        }
+    </div>
+
+    @if (Active is Call active)
+    {
+        <div class="dialysis-attended" role="status" aria-live="assertive">
+            <p class="dialysis-attended-phrase">@active.Phrase</p>
+            <p class="dialysis-attended-hint">@Hint()</p>
+            @if (_speechMissing)
+            {
+                <p class="dialysis-attended-hint">This browser cannot speak, so the words stay on the screen in large type.</p>
+            }
+            <button type="button" class="dialysis-attended-btn" @onclick="Attend">Attended</button>
+        </div>
+    }
+    else if (_acknowledged)
+    {
+        <p class="dialysis-ack" role="status">Attended. The voice has stopped.</p>
+    }
+</section>
+
+@code {
+    private static readonly Call[] Calls =
+    [
+        new("help", "Help", "Please help.", "/studio/dialysis-help.jpg"),
+        new("family", "Family", "Please call my family.", "/studio/dialysis-family.jpg"),
+        new("pain", "Pain", "I am in pain. Please help.", "/studio/dialysis-pain.jpg"),
+        new("breathing", "Breathing", "I am having a breathing issue. Please help.", "/studio/dialysis-breathing.jpg"),
+        new("blood", "Blood", "I am bleeding. Please help.", "/studio/dialysis-blood.jpg")
+    ];
+
+    private string? _activeId;
+    private bool _acknowledged;
+    private bool _speechMissing;
+    private bool _ownVoice;
+    private bool _voiceComing;
+    private bool _synced;
+    private DotNetObjectReference<DialysisHelpCalls>? _self;
+
+    private Call? Active => Calls.FirstOrDefault(call => call.Id == _activeId);
+
+    private string Hint() =>
+        _ownVoice
+            ? "This is your voice, repeating. Tap Attended when someone is here."
+            : _voiceComing
+                ? "This keeps repeating. Your saved voice takes over as soon as it is ready. Tap Attended when someone is here."
+                : "This keeps repeating. Tap Attended when someone is here. That stops the voice.";
+
+    protected override void OnInitialized() => _self = DotNetObjectReference.Create(this);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _synced)
+            return;
+
+        _synced = true;
+        try
+        {
+            if (_self is not null)
+                await JS.InvokeVoidAsync("mmVoice.watchOwnVoice", _self);
+
+            var state = await Auth.GetAuthenticationStateAsync();
+            var userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrWhiteSpace(userId))
+                await JS.InvokeVoidAsync("mmVoice.bindUser", userId);
+
+            var phrase = await JS.InvokeAsync<string>("mmAccessibility.helpCallPhrase");
+            var match = Calls.FirstOrDefault(call => call.Phrase == phrase);
+            if (match is null)
+                return;
+
+            _activeId = match.Id;
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task Start(Call call)
+    {
+        _acknowledged = false;
+        _activeId = call.Id;
+        try
+        {
+            var saved = await JS.InvokeAsync<bool>("mmVoice.ensureVoice");
+            _ownVoice = saved && await JS.InvokeAsync<bool>("mmVoice.hasCachedPhrase", call.Phrase);
+            _voiceComing = saved && !_ownVoice;
+            _speechMissing = !await JS.InvokeAsync<bool>("mmAccessibility.startHelpCall", call.Phrase);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            _speechMissing = true;
+        }
+    }
+
+    [JSInvokable]
+    public void OwnVoiceStarted()
+    {
+        if (_activeId is null)
+            return;
+
+        _ownVoice = true;
+        _voiceComing = false;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _self?.Dispose();
+        _ = JS.InvokeVoidAsync("mmVoice.unwatchOwnVoice");
+    }
+
+    private async Task Attend()
+    {
+        _activeId = null;
+        _acknowledged = true;
+        _speechMissing = false;
+        _voiceComing = false;
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.stopHelpCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private sealed record Call(string Id, string Label, string Phrase, string Image);
+}

@@ -1,7 +1,9 @@
+using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using MedicalManager.Components.Account;
 using MedicalManager.Data.Notifications;
 
 namespace MedicalManager.Data;
@@ -62,10 +64,19 @@ public sealed record DoctorGrantItem(
     DateTime ApprovedAt,
     DateTime? PhotoUpdatedAt);
 
+public sealed record AffiliatedPatientItem(
+    string PatientId,
+    string PatientName,
+    DateOnly? DateOfBirth,
+    DateTime? PhotoUpdatedAt,
+    bool HasGrant,
+    bool RequestPending);
+
 public sealed class ChartAccessService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     UserManager<ApplicationUser> users,
     TwilioNotificationSender twilio,
+    IAppEmailSender mail,
     ILogger<ChartAccessService> logger)
 {
     public const int CodeLifetimeMinutes = 15;
@@ -149,11 +160,11 @@ public sealed class ChartAccessService(
                     && people.TryGetValue(x.PatientUserId, out var person))
                 {
                     profiles.TryGetValue(x.PatientUserId, out var profile);
-                    reason = NotSent(Classify(person, profile).Problem);
+                    reason = NotSent(Classify(person, profile).Problem, PatientEmail(person) is not null);
                 }
                 else
                 {
-                    reason = NotSent(TextDestinationProblem.NoPhone);
+                    reason = NotSent(TextDestinationProblem.NoPhone, hasEmail: false);
                 }
             }
 
@@ -196,7 +207,7 @@ public sealed class ChartAccessService(
             var problem = patient is null
                 ? TextDestinationProblem.NoPhone
                 : Classify(patient, profile).Problem;
-            patientReason = PatientNotSent(problem);
+            patientReason = PatientNotSent(problem, patient is not null && PatientEmail(patient) is not null);
         }
 
         return rows.Select(x =>
@@ -288,6 +299,8 @@ public sealed class ChartAccessService(
         }
 
         var destination = await ClassifyAsync(db, patient);
+        var emailAddress = PatientEmail(patient);
+        var canText = destination.Problem == TextDestinationProblem.None && destination.E164 is not null;
         var request = new ChartAccessRequest
         {
             DoctorUserId = doctorUserId,
@@ -305,26 +318,126 @@ public sealed class ChartAccessService(
         };
 
         string? code = null;
-        if (destination.Problem == TextDestinationProblem.None)
+        if (canText || emailAddress is not null)
         {
             code = NewCode();
-            var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-            request.CodeSalt = salt;
-            request.CodeHash = HashCode(salt, code);
-            request.CodeExpiresAt = DateTime.UtcNow.AddMinutes(CodeLifetimeMinutes);
+            StampCode(request, code);
         }
 
         db.ChartAccessRequests.Add(request);
         await db.SaveChangesAsync();
 
-        if (code is null || destination.E164 is null)
-            return new AccessRequestResult(true, NotSent(destination.Problem), false);
+        if (code is null)
+            return new AccessRequestResult(true, NotSent(destination.Problem, emailAddress is not null), false);
 
+        var sender = await users.FindByIdAsync(doctorUserId);
         return await DeliverCodeAsync(
             request.Id,
-            destination.E164,
+            canText ? destination.E164 : null,
+            emailAddress,
             code,
-            "A confirmation code was sent to the phone on the patient's account. You can open a chart after they enter that code.");
+            sender?.DisplayName ?? "Your doctor",
+            ChartAccessText.Describe(lab, bloodPressure, sugar, medication, toDo, doctors),
+            renew: false);
+    }
+
+    public async Task<IReadOnlyList<AffiliatedPatientItem>> ListAffiliatedPatientsAsync(string doctorUserId)
+    {
+        var doctor = await users.FindByIdAsync(doctorUserId);
+        if (doctor is null || !await users.IsInRoleAsync(doctor, AppRoles.Doctor))
+            return [];
+
+        var patients = await users.GetUsersInRoleAsync(AppRoles.Patient);
+        var patientById = patients.ToDictionary(patient => patient.Id, StringComparer.Ordinal);
+        var affiliated = await FindAffiliatedPatientIdsAsync(doctor, patientById.Keys);
+        if (affiliated.Count == 0)
+            return [];
+
+        var affiliatedIds = affiliated.ToList();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var profiles = await db.PatientProfiles.AsNoTracking()
+            .Where(profile => affiliatedIds.Contains(profile.UserId))
+            .Select(profile => new { profile.UserId, profile.DateOfBirth, profile.ProfilePhotoUpdatedAt })
+            .ToListAsync();
+        var profileById = profiles.ToDictionary(profile => profile.UserId, StringComparer.Ordinal);
+        var grantIds = (await db.ChartAccessGrants.AsNoTracking()
+            .Where(grant => grant.DoctorUserId == doctorUserId && grant.RevokedAt == null && affiliatedIds.Contains(grant.PatientUserId))
+            .Select(grant => grant.PatientUserId)
+            .ToListAsync()).ToHashSet(StringComparer.Ordinal);
+        var pendingIds = (await db.ChartAccessRequests.AsNoTracking()
+            .Where(request => request.DoctorUserId == doctorUserId
+                && request.Status == AccessRequestStatus.Pending
+                && request.PatientUserId != null
+                && affiliatedIds.Contains(request.PatientUserId))
+            .Select(request => request.PatientUserId!)
+            .ToListAsync()).ToHashSet(StringComparer.Ordinal);
+
+        return affiliatedIds
+            .Where(patientById.ContainsKey)
+            .Select(id =>
+            {
+                var patient = patientById[id];
+                profileById.TryGetValue(id, out var profile);
+                return new AffiliatedPatientItem(
+                    id,
+                    patient.DisplayName,
+                    profile?.DateOfBirth,
+                    profile?.ProfilePhotoUpdatedAt,
+                    grantIds.Contains(id),
+                    pendingIds.Contains(id));
+            })
+            .OrderBy(item => item.PatientName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public async Task<AccessRequestResult> SubmitForPatientAsync(
+        string doctorUserId,
+        string patientUserId,
+        ChartAccessLevel lab,
+        ChartAccessLevel bloodPressure,
+        ChartAccessLevel sugar,
+        ChartAccessLevel medication,
+        ChartAccessLevel toDo,
+        ChartAccessLevel doctors)
+    {
+        var doctor = await users.FindByIdAsync(doctorUserId);
+        if (doctor is null || !await users.IsInRoleAsync(doctor, AppRoles.Doctor))
+            return new AccessRequestResult(false, "Only a doctor account can request access.");
+        if (NoSections(lab, bloodPressure, sugar, medication, toDo, doctors))
+            return new AccessRequestResult(false, "Check View, Update, or both for at least one record.");
+
+        var patient = await users.FindByIdAsync(patientUserId);
+        if (patient is null || patient.Id == doctorUserId || !await users.IsInRoleAsync(patient, AppRoles.Patient))
+            return new AccessRequestResult(false, "Choose a patient from the affiliated list.");
+
+        var affiliated = await FindAffiliatedPatientIdsAsync(doctor, [patient.Id]);
+        if (!affiliated.Contains(patient.Id))
+            return new AccessRequestResult(false, "That patient is not affiliated with this doctor.");
+
+        var name = patient.DisplayName.Trim();
+        if (name.Length == 0)
+            name = "Patient";
+
+        DateOnly? dateOfBirth;
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            dateOfBirth = await db.PatientProfiles.AsNoTracking()
+                .Where(profile => profile.UserId == patient.Id)
+                .Select(profile => profile.DateOfBirth)
+                .FirstOrDefaultAsync();
+        }
+
+        return await SavePendingRequestAsync(
+            doctorUserId,
+            patient,
+            name,
+            dateOfBirth,
+            lab,
+            bloodPressure,
+            sugar,
+            medication,
+            toDo,
+            doctors);
     }
 
     public async Task<AccessRequestResult> ResendAsync(string doctorUserId, int requestId)
@@ -339,29 +452,31 @@ public sealed class ChartAccessService(
             return new AccessRequestResult(false, "That request is no longer waiting.");
 
         var destination = await ClassifyAsync(db, patient);
-        if (destination.Problem != TextDestinationProblem.None || destination.E164 is null)
-            return new AccessRequestResult(true, NotSent(destination.Problem), false);
+        var emailAddress = PatientEmail(patient);
+        var canText = destination.Problem == TextDestinationProblem.None && destination.E164 is not null;
+        if (!canText && emailAddress is null)
+            return new AccessRequestResult(true, NotSent(destination.Problem, hasEmail: false), false);
 
         var code = NewCode();
-        var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-        request.CodeSalt = salt;
-        request.CodeHash = HashCode(salt, code);
-        request.CodeExpiresAt = DateTime.UtcNow.AddMinutes(CodeLifetimeMinutes);
-        request.CodeAttempts = 0;
+        StampCode(request, code);
         await db.SaveChangesAsync();
 
+        var doctor = await users.FindByIdAsync(doctorUserId);
         return await DeliverCodeAsync(
             request.Id,
-            destination.E164,
+            canText ? destination.E164 : null,
+            emailAddress,
             code,
-            "A new confirmation code was sent to the phone on the patient's account.");
+            doctor?.DisplayName ?? "Your doctor",
+            ChartAccessText.Describe(request.Lab, request.BloodPressure, request.Sugar, request.Medication, request.ToDo, request.Doctors),
+            renew: true);
     }
 
     public async Task<AccessRequestResult> ApproveAsync(string patientUserId, int requestId, string code)
     {
         var entered = (code ?? "").Trim();
         if (entered.Length != 6 || !entered.All(char.IsDigit))
-            return new AccessRequestResult(false, "Enter the 6-digit code from the text message.");
+            return new AccessRequestResult(false, "Enter the 6-digit code from the text or the email.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var request = await db.ChartAccessRequests.FirstOrDefaultAsync(x => x.Id == requestId && x.PatientUserId == patientUserId);
@@ -439,6 +554,167 @@ public sealed class ChartAccessService(
         return new AccessRequestResult(true, "Access revoked. The doctor can no longer open those records.");
     }
 
+    private async Task<AccessRequestResult> SavePendingRequestAsync(
+        string doctorUserId,
+        ApplicationUser patient,
+        string name,
+        DateOnly? dateOfBirth,
+        ChartAccessLevel lab,
+        ChartAccessLevel bloodPressure,
+        ChartAccessLevel sugar,
+        ChartAccessLevel medication,
+        ChartAccessLevel toDo,
+        ChartAccessLevel doctors)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var pending = await db.ChartAccessRequests
+            .Where(x => x.DoctorUserId == doctorUserId && x.PatientUserId == patient.Id && x.Status == AccessRequestStatus.Pending)
+            .ToListAsync();
+        if (pending.Count > 0)
+            db.ChartAccessRequests.RemoveRange(pending);
+
+        var destination = await ClassifyAsync(db, patient);
+        var emailAddress = PatientEmail(patient);
+        var canText = destination.Problem == TextDestinationProblem.None && destination.E164 is not null;
+        var request = new ChartAccessRequest
+        {
+            DoctorUserId = doctorUserId,
+            PatientUserId = patient.Id,
+            RequestedName = name,
+            RequestedDateOfBirth = dateOfBirth,
+            Lab = lab,
+            BloodPressure = bloodPressure,
+            Sugar = sugar,
+            Medication = medication,
+            ToDo = toDo,
+            Doctors = doctors,
+            Status = AccessRequestStatus.Pending,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        string? code = null;
+        if (canText || emailAddress is not null)
+        {
+            code = NewCode();
+            StampCode(request, code);
+        }
+
+        db.ChartAccessRequests.Add(request);
+        await db.SaveChangesAsync();
+
+        if (code is null)
+            return new AccessRequestResult(true, NotSent(destination.Problem, emailAddress is not null), false);
+
+        var sender = await users.FindByIdAsync(doctorUserId);
+        return await DeliverCodeAsync(
+            request.Id,
+            canText ? destination.E164 : null,
+            emailAddress,
+            code,
+            sender?.DisplayName ?? "Your doctor",
+            ChartAccessText.Describe(lab, bloodPressure, sugar, medication, toDo, doctors),
+            renew: false);
+    }
+
+    private async Task<HashSet<string>> FindAffiliatedPatientIdsAsync(ApplicationUser doctor, IEnumerable<string> patientIds)
+    {
+        var patients = patientIds.ToHashSet(StringComparer.Ordinal);
+        var affiliated = new HashSet<string>(StringComparer.Ordinal);
+        if (patients.Count == 0)
+            return affiliated;
+
+        var patientIdList = patients.ToList();
+        var doctorKey = NormalizePersonName(doctor.FullName);
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var careTeam = await db.Doctors.AsNoTracking()
+            .Where(row => patientIdList.Contains(row.UserId))
+            .Select(row => new { row.UserId, row.Name })
+            .ToListAsync();
+        foreach (var row in careTeam)
+        {
+            if (doctorKey.Length > 0 && NormalizePersonName(row.Name) == doctorKey)
+                affiliated.Add(row.UserId);
+        }
+
+        var appointments = await db.Appointments.AsNoTracking()
+            .Where(row => patientIdList.Contains(row.UserId))
+            .Select(row => new { row.UserId, row.ProviderName })
+            .ToListAsync();
+        foreach (var row in appointments)
+        {
+            if (doctorKey.Length > 0 && NormalizePersonName(row.ProviderName) == doctorKey)
+                affiliated.Add(row.UserId);
+        }
+
+        var medications = await db.Medications.AsNoTracking()
+            .Where(row => patientIdList.Contains(row.UserId))
+            .Select(row => new { row.UserId, row.PrescribedBy, row.PrescribingDoctorUserId })
+            .ToListAsync();
+        foreach (var row in medications)
+        {
+            if (row.PrescribingDoctorUserId == doctor.Id
+                || (doctorKey.Length > 0 && NormalizePersonName(row.PrescribedBy) == doctorKey))
+                affiliated.Add(row.UserId);
+        }
+
+        var grantIds = await db.ChartAccessGrants.AsNoTracking()
+            .Where(grant => grant.DoctorUserId == doctor.Id && grant.RevokedAt == null)
+            .Select(grant => grant.PatientUserId)
+            .ToListAsync();
+        var pendingIds = await db.ChartAccessRequests.AsNoTracking()
+            .Where(request => request.DoctorUserId == doctor.Id
+                && request.Status == AccessRequestStatus.Pending
+                && request.PatientUserId != null)
+            .Select(request => request.PatientUserId!)
+            .ToListAsync();
+        foreach (var id in grantIds)
+        {
+            if (patients.Contains(id))
+                affiliated.Add(id);
+        }
+
+        foreach (var id in pendingIds)
+        {
+            if (patients.Contains(id))
+                affiliated.Add(id);
+        }
+
+        return affiliated;
+    }
+
+    private static bool NoSections(
+        ChartAccessLevel lab,
+        ChartAccessLevel bloodPressure,
+        ChartAccessLevel sugar,
+        ChartAccessLevel medication,
+        ChartAccessLevel toDo,
+        ChartAccessLevel doctors) =>
+        lab == ChartAccessLevel.None
+        && bloodPressure == ChartAccessLevel.None
+        && sugar == ChartAccessLevel.None
+        && medication == ChartAccessLevel.None
+        && toDo == ChartAccessLevel.None
+        && doctors == ChartAccessLevel.None;
+
+    private static readonly string[] NameSuffixes = ["md", "do", "np", "pa", "rn", "rd", "phd", "fnp", "pac"];
+
+    private static string NormalizePersonName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "";
+
+        var letters = new string(value.Trim().ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : ' ')
+            .ToArray());
+        var parts = letters.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (parts.Count > 0 && parts[0] is "dr" or "doctor")
+            parts.RemoveAt(0);
+        while (parts.Count > 1 && NameSuffixes.Contains(parts[^1], StringComparer.Ordinal))
+            parts.RemoveAt(parts.Count - 1);
+        return string.Join(' ', parts);
+    }
+
     private async Task<ApplicationUser?> MatchPatientAsync(string name, DateOnly dateOfBirth)
     {
         var patients = await users.GetUsersInRoleAsync(AppRoles.Patient);
@@ -465,26 +741,96 @@ public sealed class ChartAccessService(
         return match;
     }
 
-    private async Task<AccessRequestResult> DeliverCodeAsync(int requestId, string e164, string code, string sentMessage)
+    private async Task<AccessRequestResult> DeliverCodeAsync(
+        int requestId,
+        string? e164,
+        string? emailAddress,
+        string code,
+        string doctorName,
+        string records,
+        bool renew)
     {
-        OutboundResult sent;
-        try
+        var textAttempted = !string.IsNullOrWhiteSpace(e164);
+        var emailAttempted = !string.IsNullOrWhiteSpace(emailAddress);
+        var textSent = false;
+        string? textProblem = null;
+
+        if (textAttempted)
         {
-            sent = await twilio.TextAsync(e164, SmsCopy.ApprovalCode(code), CancellationToken.None, confirmDelivery: true);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            logger.LogWarning(ex, "Access approval text for request {RequestId} was not sent.", requestId);
-            return new AccessRequestResult(true, NotSent(TextDestinationProblem.None), false);
+            try
+            {
+                var sent = await twilio.TextAsync(e164!, SmsCopy.ApprovalCode(code), CancellationToken.None, confirmDelivery: true);
+                textSent = sent.Ok;
+                if (!textSent)
+                {
+                    logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", requestId, sent.Detail ?? "unknown");
+                    textProblem = DeliveryProblem(sent.Detail, emailAttempted);
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                logger.LogWarning(ex, "Access approval text for request {RequestId} was not sent.", requestId);
+                textProblem = NotSent(TextDestinationProblem.None, emailAttempted);
+            }
         }
 
-        if (!sent.Ok)
+        var emailSent = false;
+        if (emailAttempted)
+            emailSent = await mail.TrySendAccessApprovalAsync(emailAddress!, doctorName, records, code);
+
+        if (textSent || emailSent)
         {
-            logger.LogWarning("Access approval text for request {RequestId} was not sent ({Detail}).", requestId, sent.Detail ?? "unknown");
-            return new AccessRequestResult(true, DeliveryProblem(sent.Detail), false);
+            return new AccessRequestResult(
+                true,
+                SentMessage(textSent, emailSent, textAttempted, emailAttempted, renew));
         }
 
-        return new AccessRequestResult(true, sentMessage);
+        if (textProblem is not null && emailAttempted)
+            return new AccessRequestResult(true, textProblem + " The same request could not be emailed.", false);
+
+        if (textProblem is not null)
+            return new AccessRequestResult(true, textProblem, false);
+
+        return new AccessRequestResult(true, "The request is saved, but the confirmation email was not sent.", false);
+    }
+
+    private static void StampCode(ChartAccessRequest request, string code)
+    {
+        var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        request.CodeSalt = salt;
+        request.CodeHash = HashCode(salt, code);
+        request.CodeExpiresAt = DateTime.UtcNow.AddMinutes(CodeLifetimeMinutes);
+        request.CodeAttempts = 0;
+    }
+
+    private static string? PatientEmail(ApplicationUser patient)
+    {
+        var raw = patient.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (!MailAddress.TryCreate(raw, out var parsed) || !parsed.Host.Contains('.', StringComparison.Ordinal))
+            return null;
+
+        return parsed.Address;
+    }
+
+    private static string SentMessage(bool textSent, bool emailSent, bool textAttempted, bool emailAttempted, bool renew)
+    {
+        var lead = renew ? "A new confirmation code" : "A confirmation code";
+        if (textSent && emailSent)
+            return $"{lead} was sent to the phone and the email on the patient's account. You can open a chart after they enter that code.";
+
+        if (textSent && emailAttempted)
+            return $"{lead} was sent to the phone on the patient's account. The same request could not be emailed.";
+
+        if (textSent)
+            return $"{lead} was sent to the phone on the patient's account. You can open a chart after they enter that code.";
+
+        if (emailSent && textAttempted)
+            return "The confirmation text was not sent. The same code was sent to the email on the patient's account. You can open a chart after they enter that code.";
+
+        return $"{lead} was sent to the email on the patient's account. You can open a chart after they enter that code.";
     }
 
     private static async Task<TextDestination> ClassifyAsync(ApplicationDbContext db, ApplicationUser patient)
@@ -511,50 +857,53 @@ public sealed class ChartAccessService(
         return new TextDestination(e164, TextDestinationProblem.None);
     }
 
-    private static string NotSent(TextDestinationProblem problem) => problem switch
+    private static string NotSent(TextDestinationProblem problem, bool hasEmail) => problem switch
     {
         TextDestinationProblem.NoPhone =>
-            "The request is saved, but the confirmation text was not sent. No phone number is saved on that account.",
+            "The request is saved, but the confirmation text was not sent. No phone number is saved on that account." + EmailGap(hasEmail),
         TextDestinationProblem.InvalidPhone =>
-            "The request is saved, but the confirmation text was not sent. The phone number saved on that account is not a valid US number.",
+            "The request is saved, but the confirmation text was not sent. The phone number saved on that account is not a valid US number." + EmailGap(hasEmail),
         TextDestinationProblem.NoConsent =>
-            "The request is saved, but the confirmation text was not sent. The text-message consent box on that patient's profile is not checked.",
+            "The request is saved, but the confirmation text was not sent. The text-message consent box on that patient's profile is not checked." + EmailGap(hasEmail),
         _ =>
-            "The request is saved, but the confirmation text was not sent. Use Send a new code to try again."
+            "The request is saved, but the confirmation text was not sent. Use Send a new code to try again." + EmailGap(hasEmail)
     };
 
-    private static string PatientNotSent(TextDestinationProblem problem) => problem switch
+    private static string PatientNotSent(TextDestinationProblem problem, bool hasEmail) => problem switch
     {
         TextDestinationProblem.NoPhone =>
-            "The confirmation text was not sent. Add a mobile number on your profile, then ask the doctor to send a new code.",
+            "The confirmation text was not sent. Add a mobile number on your profile, then ask the doctor to send a new code." + EmailGap(hasEmail, yours: true),
         TextDestinationProblem.InvalidPhone =>
-            "The confirmation text was not sent. The phone number on your profile is not a valid US number. Correct it, then ask the doctor to send a new code.",
+            "The confirmation text was not sent. The phone number on your profile is not a valid US number. Correct it, then ask the doctor to send a new code." + EmailGap(hasEmail, yours: true),
         TextDestinationProblem.NoConsent =>
-            "The confirmation text was not sent. Check the text-message consent box on your profile, then ask the doctor to send a new code.",
+            "The confirmation text was not sent. Check the text-message consent box on your profile, then ask the doctor to send a new code." + EmailGap(hasEmail, yours: true),
         _ =>
-            "The confirmation text was not sent. Ask the doctor to send a new code."
+            "The confirmation text was not sent. Ask the doctor to send a new code." + EmailGap(hasEmail, yours: true)
     };
 
-    private static string DeliveryProblem(string? detail)
+    private static string EmailGap(bool hasEmail, bool yours = false) =>
+        hasEmail ? "" : yours ? " No email is saved on your account." : " No email is saved on that account.";
+
+    private static string DeliveryProblem(string? detail, bool hasEmail)
     {
         if (!string.IsNullOrWhiteSpace(detail)
             && (detail.Contains("21211", StringComparison.Ordinal)
                 || detail.Contains("21614", StringComparison.Ordinal)
                 || detail.Contains("not a valid US number", StringComparison.OrdinalIgnoreCase)))
         {
-            return NotSent(TextDestinationProblem.InvalidPhone);
+            return NotSent(TextDestinationProblem.InvalidPhone, hasEmail);
         }
 
         if (!string.IsNullOrWhiteSpace(detail) && detail.Contains("21610", StringComparison.Ordinal))
-            return "The request is saved, but the confirmation text was not sent. That number has opted out of text messages.";
+            return "The request is saved, but the confirmation text was not sent. That number has opted out of text messages." + EmailGap(hasEmail);
 
         if (!string.IsNullOrWhiteSpace(detail)
             && (detail.Contains("30034", StringComparison.Ordinal) || detail.Contains("30032", StringComparison.Ordinal)))
         {
-            return "The request is saved, but the confirmation text was not sent. The carrier rejected the message.";
+            return "The request is saved, but the confirmation text was not sent. The carrier rejected the message." + EmailGap(hasEmail);
         }
 
-        return NotSent(TextDestinationProblem.None);
+        return NotSent(TextDestinationProblem.None, hasEmail);
     }
 
     private enum TextDestinationProblem

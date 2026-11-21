@@ -1,7 +1,10 @@
 @page "/after-visit"
 @attribute [Authorize]
+@implements IDisposable
 @inject VirtualVisitService Visits
+@inject ChartAccessService ChartAccess
 @inject AuthenticationStateProvider Auth
+@inject GrantedPatientSelection Selection
 
 <PageTitle>After-visit summary</PageTitle>
 
@@ -9,68 +12,156 @@
     <div>
         <p class="eyebrow">Virtual visit</p>
         <h1>After-visit summary</h1>
-        <p class="muted">Write what the patient should know after this visit. The patient can read it from Notes.</p>
+        @if (_isDoctor)
+        {
+            <p class="muted">Write what the patient should know after this visit. The summary is editable after you pick that patient on the Patients page.</p>
+        }
+        else
+        {
+            <p class="muted">Read the summaries your doctors wrote. Filter by date, sort, and step through each visit.</p>
+        }
     </div>
 </div>
 
-<VisitDesk EmptyMessage="No patient has approved access for an after-visit summary." SelectionChanged="LoadAsync">
-    <ChildContent Context="choice">
-        @if (choice.IsDoctor)
-        {
-            <EditForm Model="_form" OnValidSubmit="() => SaveAsync(choice)" class="form-card mb-3">
-                <label class="form-label" for="summary-body">Summary</label>
-                <InputTextArea id="summary-body" class="form-control mb-3" rows="5" @bind-Value="_form.Body" />
-                @if (!string.IsNullOrWhiteSpace(_error))
-                {
-                    <div class="alert alert-danger py-2" role="alert">@_error</div>
-                }
-                <button type="submit" class="btn btn-teal" disabled="@_saving">Save summary</button>
-            </EditForm>
-        }
-        <div class="table-card p-3">
-            @if (_items.Count == 0)
+@if (_isDoctor && string.IsNullOrWhiteSpace(_patientId))
+{
+    <div class="table-card p-3">
+        <p>Pick a patient on the Patients page. The radio button there chooses who this summary is for.</p>
+        <p class="mb-0"><a href="patients">Patients</a></p>
+    </div>
+}
+else if (_isDoctor && !_hasGrant)
+{
+    <div class="table-card p-3">
+        <p><strong>@_patientName</strong> is selected. The summary opens for editing after that patient approves access.</p>
+        <p class="mb-0"><a href="patients">Request access</a></p>
+    </div>
+}
+else
+{
+    @if (_isDoctor)
+    {
+        <p class="muted">Editing the summary for <strong>@_patientName</strong>.</p>
+        <EditForm Model="_form" OnValidSubmit="SaveAsync" class="form-card mb-3">
+            <label class="form-label" for="summary-body">@(_editingId is null ? "New summary" : "Edit this summary")</label>
+            <InputTextArea id="summary-body" class="form-control mb-3" rows="5" @bind-Value="_form.Body" />
+            @if (!string.IsNullOrWhiteSpace(_error))
             {
-                <p class="muted mb-0">No after-visit summary yet.</p>
+                <div class="alert alert-danger py-2" role="alert">@_error</div>
             }
-            else
-            {
-                @foreach (var item in _items)
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-teal" disabled="@_saving">@(_editingId is null ? "Save summary" : "Save changes")</button>
+                @if (_editingId is not null)
                 {
-                    <article class="visit-entry">
-                        <header>
-                            <strong>@item.AuthorName</strong>
-                            <time>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
-                        </header>
-                        <p>@item.Body</p>
-                    </article>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelEdit">Write a new summary</button>
                 }
-            }
-        </div>
-    </ChildContent>
-</VisitDesk>
+            </div>
+        </EditForm>
+    }
+    else if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="alert alert-danger py-2" role="alert">@_error</div>
+    }
+
+    <div class="table-card p-3">
+        <AfterVisitBrowser Items="_items" CanEdit="_isDoctor" EditRequested="BeginEdit" />
+    </div>
+}
 
 @code {
     private readonly TextForm _form = new();
     private IReadOnlyList<AfterVisitSummary> _items = [];
     private string? _error;
     private bool _saving;
+    private bool _isDoctor;
+    private bool _hasGrant;
+    private string? _userId;
+    private string? _patientId;
+    private string? _patientName;
+    private string? _loadedPatientId;
+    private int? _editingId;
 
-    private async Task LoadAsync(VisitChoice choice)
+    protected override void OnInitialized() => Selection.Changed += HandleSelection;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private void HandleSelection() => _ = InvokeAsync(async () =>
     {
-        _error = null;
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Selection.Changed -= HandleSelection;
+
+    private async Task LoadAsync()
+    {
         var state = await Auth.GetAuthenticationStateAsync();
-        _items = await Visits.ListSummariesAsync(state.User, choice.PatientUserId);
+        _isDoctor = state.User.IsInRole(AppRoles.Doctor);
+        _userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        _error = null;
+
+        if (_isDoctor)
+        {
+            var nextPatient = Selection.PatientUserId;
+            if (!string.Equals(_loadedPatientId, nextPatient, StringComparison.Ordinal))
+            {
+                _form.Body = "";
+                _editingId = null;
+                _loadedPatientId = nextPatient;
+            }
+
+            _patientId = nextPatient;
+            _patientName = Selection.PatientName;
+            _hasGrant = false;
+            _items = [];
+            if (string.IsNullOrWhiteSpace(_userId) || string.IsNullOrWhiteSpace(_patientId))
+                return;
+
+            var grant = await ChartAccess.GetActiveGrantAsync(_userId, _patientId);
+            _hasGrant = grant is not null;
+            if (!_hasGrant)
+                return;
+
+            _items = await Visits.ListSummariesAsync(state.User, _patientId);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        _patientId = _userId;
+        _items = await Visits.ListSummariesAsync(state.User, _userId);
     }
 
-    private async Task SaveAsync(VisitChoice choice)
+    private void BeginEdit(AfterVisitSummary item)
     {
+        _editingId = item.Id;
+        _form.Body = item.Body;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form.Body = "";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId) || string.IsNullOrWhiteSpace(_patientId))
+            return;
+
         _saving = true;
         _error = null;
         try
         {
-            await Visits.AddSummaryAsync(choice.DoctorUserId, choice.PatientUserId, _form.Body);
+            if (_editingId is int summaryId)
+                await Visits.UpdateSummaryAsync(_userId, _patientId, summaryId, _form.Body);
+            else
+                await Visits.AddSummaryAsync(_userId, _patientId, _form.Body);
+
             _form.Body = "";
-            await LoadAsync(choice);
+            _editingId = null;
+            await LoadAsync();
         }
         catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
         {

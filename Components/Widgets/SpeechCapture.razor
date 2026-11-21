@@ -1,0 +1,178 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="voice-capture">
+    <p class="voice-lead">Read any everyday line below. A few clear seconds is enough. The app learns your voice and speaks every accessibility message in it, including Help, Family, Pain, Breathing, and Blood.</p>
+    <p class="voice-note">You do not record those help lines. The recording stays on this device and is not sent anywhere.</p>
+
+    @if (_status.Prompts.Count == 0)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <ol class="voice-lines">
+            @foreach (var line in _status.Prompts)
+            {
+                var selected = line.Id == _selectedId;
+                <li>
+                    <button type="button"
+                            class="voice-line @(selected ? "is-selected" : null)"
+                            aria-pressed="@(selected ? "true" : "false")"
+                            @onclick="() => Choose(line.Id)">
+                        <span>@line.Label</span>
+                        <small>Read this</small>
+                    </button>
+                </li>
+            }
+        </ol>
+
+        @if (Selected is VoiceLine current)
+        {
+            <p class="voice-say">@current.Phrase</p>
+            <p class="voice-progress">@Progress()</p>
+            <div class="voice-meter" data-voice-meter aria-hidden="true"><span></span></div>
+            <div class="voice-actions">
+                @if (!_status.Ready)
+                {
+                    <button @ref="_recordButton" type="button" class="voice-record">
+                        @(_listening ? "Stop" : _status.Seconds <= 0 ? "Start" : "Say another line")
+                    </button>
+                }
+                else
+                {
+                    <button @ref="_previewButton" type="button" class="voice-secondary">Hear Please help in this voice</button>
+                }
+                <button type="button" class="voice-secondary" @onclick="Reset">Reset</button>
+            </div>
+            <p class="voice-result" data-voice-prepare></p>
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <p class="voice-result @(_clear ? "is-clear" : "is-retry")" role="status">@_message</p>
+            }
+            @if (_status.Ready)
+            {
+                <p class="voice-done" role="status">Your voice is ready. Accessibility buttons will speak with it.</p>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string UserId { get; set; } = "";
+
+    private VoiceStatus _status = new();
+    private string? _selectedId;
+    private string? _message;
+    private bool _clear;
+    private bool _listening;
+    private bool _loaded;
+    private ElementReference _recordButton;
+    private ElementReference _previewButton;
+    private DotNetObjectReference<SpeechCapture>? _self;
+
+    private VoiceLine? Selected => _status.Prompts.FirstOrDefault(line => line.Id == _selectedId);
+
+    protected override void OnInitialized() => _self = DotNetObjectReference.Create(this);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_loaded)
+        {
+            _loaded = true;
+            await JS.InvokeVoidAsync("mmVoice.bindUser", UserId);
+            await Reload();
+            return;
+        }
+
+        if (_self is null || Selected is null)
+            return;
+
+        if (!_status.Ready)
+            await JS.InvokeVoidAsync("mmVoice.bindRecord", _recordButton, UserId, _self);
+        else
+            await JS.InvokeVoidAsync("mmVoice.bindPreview", _previewButton, UserId);
+    }
+
+    private async Task Reload()
+    {
+        _status = await JS.InvokeAsync<VoiceStatus>("mmVoice.status", UserId) ?? new VoiceStatus();
+        _status.Prompts ??= [];
+        _selectedId ??= _status.Prompts.FirstOrDefault()?.Id;
+        StateHasChanged();
+    }
+
+    private void Choose(string id)
+    {
+        _selectedId = id;
+        _message = null;
+        _listening = false;
+    }
+
+    [JSInvokable]
+    public void Listening()
+    {
+        _listening = true;
+        _message = "Listening. Read the line in your normal voice, then pause.";
+        _clear = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task TakeFinished(TakeResult result)
+    {
+        _listening = false;
+        _clear = result.Clear;
+        _message = result.Reason;
+        await Reload();
+    }
+
+    private async Task Reset()
+    {
+        _listening = false;
+        await JS.InvokeVoidAsync("mmVoice.reset", UserId);
+        _message = "Reset. Read a line to record your voice again.";
+        _clear = false;
+        await Reload();
+    }
+
+    private string Progress() =>
+        _status.Ready
+            ? "Your voice is saved. Any accessibility line can be spoken with it."
+            : $"Clear speech: {_status.Seconds:0.0} of {_status.Needed:0} seconds.";
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmVoice.release");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+
+        _self?.Dispose();
+    }
+
+    private sealed class VoiceStatus
+    {
+        public double Seconds { get; set; }
+        public double Needed { get; set; } = 4;
+        public bool Ready { get; set; }
+        public List<VoiceLine> Prompts { get; set; } = [];
+    }
+
+    private sealed class VoiceLine
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Phrase { get; set; } = "";
+    }
+
+    public sealed class TakeResult
+    {
+        public bool Clear { get; set; }
+        public string Reason { get; set; } = "";
+        public bool MicDenied { get; set; }
+    }
+}

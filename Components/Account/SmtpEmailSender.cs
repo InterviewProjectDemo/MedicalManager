@@ -76,6 +76,32 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         }
     }
 
+    public async Task<bool> TrySendAccessApprovalAsync(
+        string email,
+        string doctorName,
+        string records,
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured)
+        {
+            _logger.LogWarning("Email is not configured. An access approval email was not sent.");
+            return false;
+        }
+
+        try
+        {
+            var (html, plainText) = EmailTemplates.AccessApproval(doctorName, records, code);
+            await SendAsync(email, "Medical Manager approval request", html, plainText, cancellationToken, quietFailure: true);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "An access approval email was not sent.");
+            return false;
+        }
+    }
+
     public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
     {
         var (html, plainText) = EmailTemplates.EmailConfirmation(confirmationLink);

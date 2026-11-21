@@ -1,0 +1,145 @@
+.voice-capture {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 0;
+}
+
+.voice-lead,
+.voice-note {
+    margin: 0;
+}
+
+.voice-note {
+    color: #667085;
+    font-size: 0.9rem;
+}
+
+.voice-lines {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.voice-line {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    min-width: 6.5rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid #d7e1ea;
+    border-radius: 12px;
+    background: #fff;
+    color: #1b2838;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.voice-line small {
+    font-weight: 600;
+    color: #667085;
+}
+
+.voice-line.is-selected {
+    border-color: #0f3d5c;
+    background: #eef6fb;
+}
+
+.voice-line.is-ready small {
+    color: #067647;
+}
+
+.voice-say {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    background: #0f3d5c;
+    color: #fff;
+    font-size: 1.55rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.voice-progress {
+    margin: 0;
+    font-weight: 700;
+    color: #0f3d5c;
+}
+
+.voice-meter {
+    height: 0.55rem;
+    border-radius: 999px;
+    background: #e7eef5;
+    overflow: hidden;
+}
+
+.voice-meter span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: #0f766e;
+}
+
+.voice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.voice-record,
+.voice-secondary {
+    border: 0;
+    border-radius: 999px;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.voice-record {
+    min-height: 3rem;
+    padding: 0.65rem 1.3rem;
+    background: #b42318;
+    color: #fff;
+}
+
+.voice-record:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.voice-secondary {
+    min-height: 3rem;
+    padding: 0.65rem 1rem;
+    background: #eef6fb;
+    color: #0f3d5c;
+}
+
+.voice-result,
+.voice-done {
+    margin: 0;
+    padding: 0.7rem 0.85rem;
+    border-radius: 12px;
+    font-weight: 700;
+}
+
+.voice-result:empty {
+    display: none;
+    padding: 0;
+}
+
+.voice-result.is-clear,
+.voice-done {
+    background: #ecfdf3;
+    color: #067647;
+}
+
+.voice-result.is-retry {
+    background: #fff5f5;
+    color: #7a271a;
+}

@@ -12,58 +12,52 @@
         <NavLink class="studio-nav-link" href="Account/Register?account=doctor" @onclick="OnNavigate">
             @Mark("doctorreg", "I'm a doctor")
         </NavLink>
+        <button type="button" class="studio-nav-link @(AccessibilityOpen ? "active" : null)" aria-pressed="@(AccessibilityOpen ? "true" : "false")" @onclick="OpenAccessibility">
+            @Mark("accessibility", "Accessibility")
+        </button>
     }
     else
     {
         <AuthorizeView Roles="@AppRoles.Doctor" Context="doctorNav">
             <Authorized>
                 <NavLink class="studio-nav-link" href="@Href("")" Match="NavLinkMatch.All" @onclick="OnNavigate">
-                    @Mark("home", "Dashboard")
+                    @Mark("doctor-home", "Dashboard")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="@Href("profile")" @onclick="OnNavigate">
-                    @PhotoMark(DoctorPhotoUrl, "Profile")
+                    @Mark("doctor-profile", "Profile")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="patients" @onclick="OnNavigate">
-                    @PhotoMark(PatientPhotoUrl, "Patients")
-                </NavLink>
-                <NavLink class="studio-nav-link" href="@Href("labs")" @onclick="OnNavigate">
-                    @Mark("labs", "Labs")
-                </NavLink>
-                <NavLink class="studio-nav-link" href="@Href("blood-pressure")" @onclick="OnNavigate">
-                    @Mark("bp", "Blood pressure")
-                </NavLink>
-                <NavLink class="studio-nav-link" href="@Href("sugar")" @onclick="OnNavigate">
-                    @Mark("sugar", "Sugar")
+                    @Mark("patient", "Patients")
                 </NavLink>
                 <button type="button" class="studio-nav-link" @onclick="OpenPrescription">
-                    @Icon("bi-prescription-nav-menu", "Prescription")
+                    @Mark("doctor-rx", "Prescription")
                 </button>
                 <NavLink class="studio-nav-link" href="visit-notes" @onclick="OnNavigate">
-                    @Icon("bi-notes-nav-menu", "Notes")
+                    @Mark("doctor-notes", "Notes")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="messages" @onclick="OnNavigate">
-                    @Icon("bi-message-nav-menu", "Message")
+                    @Mark("doctor-message", "Message")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="set-appointment" @onclick="OnNavigate">
-                    @Icon("bi-appointment-nav-menu", "Set Appointment")
+                    @Mark("doctor-appt", "Set Appointment")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="video-visit" @onclick="OnNavigate">
-                    @Icon("bi-video-nav-menu", "Video Visit")
+                    @Mark("doctor-video", "Video Visit")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="after-visit" @onclick="OnNavigate">
-                    @Icon("bi-summary-nav-menu", "After-visit summary")
+                    @Mark("doctor-summary", "After-visit summary")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="referral" @onclick="OnNavigate">
-                    @Icon("bi-referral-nav-menu", "Referral")
+                    @Mark("doctor-referral", "Referral")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
-                    @PhotoMark(DoctorPhotoUrl, "Account")
+                    @Mark("doctor-account", "Account")
                 </NavLink>
                 <form class="studio-nav-form" action="Account/Logout" method="post">
                     <AntiforgeryToken />
                     <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
                     <button type="submit" class="studio-nav-link">
-                        @Mark("logout", "Log out")
+                        @Mark("doctor-logout", "Log out")
                     </button>
                 </form>
             </Authorized>
@@ -73,6 +67,9 @@
                 </button>
                 <button type="button" class="studio-nav-link" @onclick="OnVoice">
                     @Mark("voice", "Say Call")
+                </button>
+                <button type="button" class="studio-nav-link @(AccessibilityOpen ? "active" : null)" aria-pressed="@(AccessibilityOpen ? "true" : "false")" @onclick="OpenAccessibility">
+                    @Mark("accessibility", "Accessibility")
                 </button>
                 <NavLink class="studio-nav-link" href="@Href("dashboard-studio")" @onclick="OnNavigate">
                     @Mark("layout", "Layout")
@@ -118,11 +115,19 @@
     [Parameter] public EventCallback OnVoice { get; set; }
     [Parameter] public EventCallback OnNavigate { get; set; }
     [Parameter] public EventCallback OnPrescription { get; set; }
+    [Parameter] public EventCallback OnAccessibility { get; set; }
+    [Parameter] public bool AccessibilityOpen { get; set; }
 
     private async Task OpenPrescription()
     {
         await OnNavigate.InvokeAsync();
         await OnPrescription.InvokeAsync();
+    }
+
+    private async Task OpenAccessibility()
+    {
+        await OnNavigate.InvokeAsync();
+        await OnAccessibility.InvokeAsync();
     }
 
     private string Href(string path) => CareLinks.To(path, PatientUserId);
@@ -132,13 +137,4 @@
         <span class="studio-nav-name">@label</span>
     </span>;
 
-    private RenderFragment PhotoMark(string? url, string label) => @<span class="studio-nav-mark">
-        <span class="studio-nav-orb"><PersonPhoto Url="@url" CssClass="scene-img" Alt="" /></span>
-        <span class="studio-nav-name">@label</span>
-    </span>;
-
-    private RenderFragment Icon(string icon, string label) => @<span class="studio-nav-mark">
-        <span class="studio-nav-orb studio-nav-icon-orb"><span class="bi @icon" aria-hidden="true"></span></span>
-        <span class="studio-nav-name">@label</span>
-    </span>;
 }

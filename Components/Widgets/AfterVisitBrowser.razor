@@ -1,0 +1,233 @@
+<div class="summary-browser">
+    <div class="summary-filters">
+        <label>
+            From
+            <input type="date" class="form-control" value="@DateValue(_from)" @onchange="SetFrom" />
+        </label>
+        <label>
+            To
+            <input type="date" class="form-control" value="@DateValue(_to)" @onchange="SetTo" />
+        </label>
+        <label>
+            Sort
+            <select class="form-select" @bind="_sort" @bind:after="ShowFirst">
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+                <option value="text-asc">Summary A to Z</option>
+                <option value="name-asc">Doctor A to Z</option>
+            </select>
+        </label>
+        <label class="summary-find">
+            Find
+            <input type="search" class="form-control" placeholder="Doctor or words in the summary" value="@_query" @oninput="SetQuery" />
+        </label>
+        <button type="button" class="btn btn-sm btn-outline-secondary summary-clear" @onclick="ClearFilters">Clear filters</button>
+    </div>
+    @if (_from is not null && _to is not null && _from > _to)
+    {
+        <p class="muted summary-hint mb-0">Showing visits from the earlier date through the later date.</p>
+    }
+
+    @{
+        var visible = Visible();
+        var current = visible.Count == 0 ? null : visible[Math.Clamp(_index, 0, visible.Count - 1)];
+    }
+
+    <div class="summary-nav">
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFirst" disabled="@(visible.Count == 0 || _index <= 0)">First</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Previous" disabled="@(visible.Count == 0 || _index <= 0)">Previous</button>
+        <span>@Position(visible.Count)</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Next" disabled="@(visible.Count == 0 || _index >= visible.Count - 1)">Next</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowLast" disabled="@(visible.Count == 0 || _index >= visible.Count - 1)">Last</button>
+    </div>
+
+    @if (Items.Count == 0)
+    {
+        <p class="muted mb-0">No after-visit summary yet.</p>
+    }
+    else if (visible.Count == 0)
+    {
+        <p class="muted mb-0">No summary matches these filters.</p>
+    }
+    else
+    {
+        <div class="summary-split">
+            <ul class="summary-jump">
+                @for (var i = 0; i < visible.Count; i++)
+                {
+                    var index = i;
+                    var item = visible[index];
+                    <li>
+                        <button type="button" class="@(index == _index ? "is-current" : null)" aria-pressed="@(index == _index ? "true" : "false")" @onclick="() => Choose(index)">
+                            <time>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</time>
+                            <span>@item.AuthorName</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+            @if (current is not null)
+            {
+                <article class="summary-read">
+                    <header>
+                        <strong>@current.AuthorName</strong>
+                        <time>@current.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                    </header>
+                    @if (CanEdit)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditRequested.InvokeAsync(current)">Edit this summary</button>
+                    }
+                    <p>@current.Body</p>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<AfterVisitSummary> Items { get; set; } = [];
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback<AfterVisitSummary> EditRequested { get; set; }
+
+    private DateOnly? _from;
+    private DateOnly? _to;
+    private string _sort = "date-desc";
+    private string _query = "";
+    private int _index;
+    private int? _pinnedId;
+
+    protected override void OnParametersSet()
+    {
+        var visible = Visible();
+        if (_pinnedId is int id)
+        {
+            var found = visible.FindIndex(item => item.Id == id);
+            if (found >= 0)
+                _index = found;
+            else if (visible.Count == 0)
+                _index = 0;
+            else
+                _index = Math.Clamp(_index, 0, visible.Count - 1);
+        }
+        else if (visible.Count == 0)
+        {
+            _index = 0;
+        }
+        else
+        {
+            _index = Math.Clamp(_index, 0, visible.Count - 1);
+        }
+    }
+
+    private List<AfterVisitSummary> Visible()
+    {
+        var start = _from;
+        var end = _to;
+        if (start is not null && end is not null && start > end)
+            (start, end) = (end, start);
+
+        var query = _query.Trim();
+        IEnumerable<AfterVisitSummary> rows = Items;
+        if (start is DateOnly from)
+            rows = rows.Where(item => DateOnly.FromDateTime(item.CreatedAt.ToLocalTime()) >= from);
+        if (end is DateOnly to)
+            rows = rows.Where(item => DateOnly.FromDateTime(item.CreatedAt.ToLocalTime()) <= to);
+        if (query.Length > 0)
+        {
+            rows = rows.Where(item =>
+                item.AuthorName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Body.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        rows = _sort switch
+        {
+            "date-asc" => rows.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id),
+            "text-asc" => rows.OrderBy(item => item.Body, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.CreatedAt),
+            "name-asc" => rows.OrderBy(item => item.AuthorName, StringComparer.OrdinalIgnoreCase).ThenByDescending(item => item.CreatedAt),
+            _ => rows.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id)
+        };
+        return rows.ToList();
+    }
+
+    private void Choose(int index)
+    {
+        _index = index;
+        _pinnedId = CurrentId();
+    }
+
+    private void ShowFirst()
+    {
+        _index = 0;
+        _pinnedId = CurrentId();
+    }
+
+    private void ShowLast()
+    {
+        var count = Visible().Count;
+        _index = Math.Max(0, count - 1);
+        _pinnedId = CurrentId();
+    }
+
+    private void Previous()
+    {
+        if (_index > 0)
+            _index--;
+        _pinnedId = CurrentId();
+    }
+
+    private void Next()
+    {
+        var count = Visible().Count;
+        if (_index < count - 1)
+            _index++;
+        _pinnedId = CurrentId();
+    }
+
+    private int? CurrentId()
+    {
+        var visible = Visible();
+        if (visible.Count == 0)
+            return null;
+        return visible[Math.Clamp(_index, 0, visible.Count - 1)].Id;
+    }
+
+    private void SetFrom(ChangeEventArgs e)
+    {
+        _from = ParseDate(e.Value?.ToString());
+        ShowFirst();
+    }
+
+    private void SetTo(ChangeEventArgs e)
+    {
+        _to = ParseDate(e.Value?.ToString());
+        ShowFirst();
+    }
+
+    private void SetQuery(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        ShowFirst();
+    }
+
+    private void ClearFilters()
+    {
+        _from = null;
+        _to = null;
+        _query = "";
+        _sort = "date-desc";
+        ShowFirst();
+    }
+
+    private string Position(int count)
+    {
+        if (Items.Count == 0)
+            return "No summaries";
+        if (count == 0)
+            return "0 matches";
+        return $"Summary {_index + 1} of {count}";
+    }
+
+    private static string DateValue(DateOnly? date) => date?.ToString("yyyy-MM-dd") ?? "";
+
+    private static DateOnly? ParseDate(string? value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
+}
