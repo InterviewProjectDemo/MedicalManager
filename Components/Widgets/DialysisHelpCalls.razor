@@ -10,6 +10,7 @@
             <div class="a11y-tile" data-a11y-tile="@call.Id">
                 <button type="button"
                         class="dialysis-call @(calling ? "is-calling" : null)"
+                        data-phrase="@call.Phrase"
                         aria-pressed="@(calling ? "true" : "false")"
                         @onclick="() => Start(call)">
                     <span class="dialysis-call-logo">
@@ -33,7 +34,7 @@
             <p class="dialysis-attended-hint">@Hint()</p>
             @if (_speechMissing)
             {
-                <p class="dialysis-attended-hint">Record your voice on Profile so this sounds like you. Until then, the words stay on the screen.</p>
+                <p class="dialysis-attended-hint">Record your voice on Profile so this sounds like you. Until then, this device reads the line aloud.</p>
             }
             <button type="button" class="dialysis-attended-btn" @onclick="Attend">Attended</button>
         </div>

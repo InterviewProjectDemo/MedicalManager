@@ -65,54 +65,173 @@
     var helpGeneration = 0;
 
     function watchHelp() {
-        if (!helpCall || helpCall.stopped || helpCall.waiting)
+        if (!helpCall || helpCall.stopped)
+            return;
+        if (helpCall.deviceVoice && helpCall.resumeDevice && window.speechSynthesis && !window.speechSynthesis.speaking && !helpCall.deviceTimer) {
+            helpCall.resumeDevice();
+            return;
+        }
+        if (helpCall.waiting)
             return;
         if (!helpCall.usingVoice || helpCall.between)
             return;
-        if (helpCall.audio && helpCall.audio.paused)
+        if (helpCall.player && helpCall.player.nudge)
+            helpCall.player.nudge();
+        else if (helpCall.audio && helpCall.audio.paused)
             helpCall.audio.play().catch(function () { });
     }
 
-    function playOwnVoice(blob) {
-        var url = URL.createObjectURL(blob);
-        var audio = new Audio(url);
-        audio.volume = 1;
-        helpCall.audio = audio;
-        helpCall.audioUrl = url;
-        audio.onended = function () {
-            if (!helpCall || helpCall.stopped || helpCall.audio !== audio)
-                return;
-            helpCall.between = true;
-            setTimeout(function () {
-                if (!helpCall || helpCall.stopped || helpCall.audio !== audio)
-                    return;
-                helpCall.between = false;
-                audio.currentTime = 0;
-                audio.play().catch(function () { });
-            }, 350);
+    function naturalVoice() {
+        if (!window.speechSynthesis)
+            return null;
+        var voices = window.speechSynthesis.getVoices() || [];
+        var english = voices.filter(function (voice) {
+            return /^en/i.test(voice.lang || "") || /english/i.test(voice.name || "");
+        });
+        function named(list, pattern) {
+            for (var i = 0; i < list.length; i++) {
+                if (pattern.test(list[i].name || ""))
+                    return list[i];
+            }
+            return null;
+        }
+        var preferred = named(english, /natural|neural|premium|enhanced/i)
+            || named(english, /zira|aria|jenny|guy|sonia|libby|sara|hazel|susan|google|samantha|karen|moira|allison|ava|serena/i);
+        if (preferred)
+            return preferred;
+        for (var i = 0; i < english.length; i++) {
+            if (!/david|mark|espeak|compact/i.test(english[i].name || ""))
+                return english[i];
+        }
+        return english[0] || voices[0] || null;
+    }
+
+    function stopDeviceVoice() {
+        if (helpCall) {
+            helpCall.deviceVoice = false;
+            helpCall.resumeDevice = null;
+            if (helpCall.deviceTimer) {
+                clearTimeout(helpCall.deviceTimer);
+                helpCall.deviceTimer = null;
+            }
+        }
+        if (window.speechSynthesis)
+            window.speechSynthesis.cancel();
+    }
+
+    function beginDevicePhrase(phrase) {
+        if (!window.speechSynthesis)
+            return false;
+        var generation = ++helpGeneration;
+        var text = String(phrase);
+        var synth = window.speechSynthesis;
+        var wasSpeaking = !!(synth.speaking || synth.pending);
+        if (helpCall && helpCall.player)
+            helpCall.player.stop();
+        if (helpCall && helpCall.deviceTimer) {
+            clearTimeout(helpCall.deviceTimer);
+            helpCall.deviceTimer = null;
+        }
+        if (helpCall) {
+            helpCall.deviceVoice = false;
+            helpCall.resumeDevice = null;
+        }
+        if (wasSpeaking)
+            synth.cancel();
+        helpCall = {
+            phrase: text,
+            stopped: false,
+            pending: false,
+            quietSince: 0,
+            generation: generation,
+            usingVoice: false,
+            deviceVoice: true,
+            between: false,
+            waiting: true
         };
-        return audio.play().then(function () { return true; }).catch(function () { return false; });
+        function say() {
+            if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.deviceVoice)
+                return;
+            helpCall.deviceTimer = null;
+            var synth = window.speechSynthesis;
+            var utter = new SpeechSynthesisUtterance(text);
+            utter.lang = "en-US";
+            utter.rate = 0.92;
+            utter.pitch = 1;
+            var voice = naturalVoice();
+            if (voice)
+                utter.voice = voice;
+            utter.onend = function () {
+                if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.deviceVoice)
+                    return;
+                helpCall.deviceTimer = setTimeout(say, 350);
+            };
+            synth.resume();
+            synth.speak(utter);
+        }
+        helpCall.resumeDevice = say;
+        if (wasSpeaking)
+            setTimeout(say, 60);
+        else
+            say();
+        if (!helpWatch)
+            helpWatch = setInterval(watchHelp, 1000);
+        return true;
+    }
+
+    function playOwnVoice(blob) {
+        if (!window.mmAudio || !helpCall)
+            return Promise.resolve(false);
+        var player = window.mmAudio.loop(blob, 350);
+        helpCall.player = player;
+        return player.started;
+    }
+
+    function sameCall(phrase) {
+        return !!(helpCall && !helpCall.stopped && helpCall.usingVoice && !helpCall.waiting && helpCall.phrase === String(phrase));
     }
 
     function beginVoiceLoop(phrase, blob) {
+        var generation = ++helpGeneration;
+        stopDeviceVoice();
+        if (helpCall && helpCall.player)
+            helpCall.player.stop();
         helpCall = {
             phrase: String(phrase),
             stopped: false,
             pending: false,
             quietSince: 0,
-            generation: ++helpGeneration,
+            generation: generation,
             usingVoice: true,
-            between: false
+            between: false,
+            waiting: false
         };
         return playOwnVoice(blob).then(function (played) {
+            if (!helpCall || helpCall.generation !== generation)
+                return false;
             if (!played) {
-                stopHelpCall();
+                beginDevicePhrase(phrase);
                 return false;
             }
+            document.dispatchEvent(new CustomEvent("mm-own-voice"));
             if (!helpWatch)
                 helpWatch = setInterval(watchHelp, 1000);
             return true;
         });
+    }
+
+    function playHelpNow(phrase, blob) {
+        if (doctorView() || !phrase)
+            return false;
+        if (blob) {
+            if (sameCall(phrase) && helpCall.player)
+                return true;
+            beginVoiceLoop(phrase, blob);
+            return true;
+        }
+        if (helpCall && !helpCall.stopped && helpCall.deviceVoice && helpCall.phrase === String(phrase))
+            return true;
+        return beginDevicePhrase(phrase);
     }
 
     async function startHelpCall(phrase) {
@@ -120,13 +239,20 @@
             stopHelpCall();
             return false;
         }
-        stopHelpCall();
+        if (sameCall(phrase) && helpCall.player)
+            return true;
+        var deviceAlready = !!(helpCall && !helpCall.stopped && helpCall.deviceVoice && helpCall.phrase === String(phrase));
+        if (!deviceAlready)
+            stopHelpCall();
         var ready = false;
         if (window.mmVoice && window.mmVoice.ensureVoice) {
             try { ready = await window.mmVoice.ensureVoice(); } catch (e) { ready = false; }
         }
-        if (!ready)
+        if (!ready) {
+            if (!deviceAlready)
+                beginDevicePhrase(phrase);
             return false;
+        }
         if (window.mmVoice.cachedPhrase) {
             try {
                 var clip = await window.mmVoice.cachedPhrase(phrase);
@@ -134,27 +260,34 @@
                     return await beginVoiceLoop(phrase, clip);
             } catch (e) { /* the saved voice is generated next */ }
         }
-        helpCall = {
-            phrase: String(phrase),
-            stopped: false,
-            pending: true,
-            quietSince: 0,
-            generation: ++helpGeneration,
-            usingVoice: false,
-            waiting: true
-        };
+        if (!deviceAlready)
+            beginDevicePhrase(phrase);
+        if (!helpCall || helpCall.phrase !== String(phrase)) {
+            helpCall = {
+                phrase: String(phrase),
+                stopped: false,
+                pending: true,
+                quietSince: 0,
+                generation: ++helpGeneration,
+                usingVoice: false,
+                waiting: true
+            };
+        }
         if (!helpWatch)
             helpWatch = setInterval(watchHelp, 1000);
         window.mmVoice.speakPhrase(phrase).then(function (blob) {
             if (!blob || !helpCall || helpCall.stopped || helpCall.phrase !== String(phrase))
                 return;
+            stopDeviceVoice();
+            helpCall.deviceVoice = false;
+            helpCall.resumeDevice = null;
             helpCall.usingVoice = true;
             helpCall.waiting = false;
             helpCall.pending = false;
             helpCall.between = false;
             return playOwnVoice(blob).then(function (played) {
-                if (played)
-                    document.dispatchEvent(new CustomEvent("mm-own-voice"));
+                if (!played)
+                    beginDevicePhrase(phrase);
             });
         }).catch(function () { });
         return true;
@@ -162,6 +295,9 @@
 
     function stopHelpCall() {
         helpGeneration += 1;
+        stopDeviceVoice();
+        if (helpCall && helpCall.player)
+            helpCall.player.stop();
         if (helpCall && helpCall.audio) {
             helpCall.audio.onended = null;
             helpCall.audio.pause();
@@ -194,9 +330,8 @@
             return window.mmVoice.speakPhrase(text).then(function (blob) {
                 if (!blob || helpCall)
                     return;
-                var audio = new Audio(URL.createObjectURL(blob));
-                audio.volume = 1;
-                audio.play().catch(function () { });
+                if (window.mmAudio)
+                    window.mmAudio.play(blob);
             });
         }).catch(function () { });
     }
@@ -482,7 +617,8 @@
 
             var dx = event.clientX - drag.startX;
             var dy = event.clientY - drag.startY;
-            if (!drag.moved && Math.hypot(dx, dy) < 6)
+            var slop = event.pointerType === "mouse" ? 6 : 32;
+            if (!drag.moved && Math.hypot(dx, dy) < slop)
                 return;
             if (!drag.moved && drag.mode === "move") {
                 try { drag.tile.setPointerCapture(event.pointerId); } catch (e) { /* the window listener still follows the pointer */ }
@@ -571,9 +707,18 @@
         holdForDoctor: holdForDoctor,
         releaseHold: releaseHold,
         startHelpCall: startHelpCall,
+        playHelpNow: playHelpNow,
         stopHelpCall: stopHelpCall,
         helpCallPhrase: helpCallPhrase,
         watchLayout: watchLayout
     };
+    if (window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+        if (window.speechSynthesis.addEventListener) {
+            window.speechSynthesis.addEventListener("voiceschanged", function () {
+                window.speechSynthesis.getVoices();
+            });
+        }
+    }
     apply(doctorView() ? null : load());
 })();

@@ -34,6 +34,7 @@
     var synthChain = Promise.resolve();
     var prewarmToken = 0;
     var resetGeneration = 0;
+    var phraseBlobs = new Map();
 
     function speechLines() {
         var saved = {};
@@ -78,6 +79,26 @@
 
     function helpLines() {
         return speechLines().map(function (line) { return line.phrase; });
+    }
+
+    function rememberPhrase(text, blob) {
+        if (!text || !blob)
+            return blob || null;
+        phraseBlobs.set(String(text), blob);
+        return blob;
+    }
+
+    function peekPhrase(phrase) {
+        return phraseBlobs.get(String(phrase)) || null;
+    }
+
+    function warmPhraseCache(userId) {
+        helpLines().forEach(function (line) {
+            readKey(spokenKey(userId, line)).then(function (blob) {
+                if (blob && boundUser === userId)
+                    rememberPhrase(line, blob);
+            }).catch(function () { });
+        });
     }
 
     function openDb() {
@@ -441,7 +462,7 @@
             return Promise.resolve(null);
         return readKey(spokenKey(boundUser, text)).then(function (cached) {
             if (cached)
-                return cached;
+                return rememberPhrase(text, cached);
             return readProfile(boundUser).then(function (profile) {
                 if (!profile || !profile.ready || !profile.wav)
                     return null;
@@ -454,7 +475,7 @@
                     return readProfile(boundUser).then(function (current) {
                         if (!current || current.revision !== revision)
                             return null;
-                        return writeKey(spokenKey(boundUser, text), blob).then(function () { return blob; });
+                        return writeKey(spokenKey(boundUser, text), blob).then(function () { return rememberPhrase(text, blob); });
                     });
                 });
             });
@@ -511,6 +532,8 @@
     }
 
     function playBlob(blob) {
+        if (window.mmAudio)
+            return window.mmAudio.play(blob);
         var audio = new Audio(URL.createObjectURL(blob));
         audio.volume = 1;
         return audio.play().then(function () { return true; }).catch(function () { return false; });
@@ -590,6 +613,7 @@
     }
 
     function reset(userId) {
+        phraseBlobs.clear();
         prewarmToken += 1;
         abortTake();
         if (userId === boundUser)
@@ -619,7 +643,9 @@
     function cachedPhrase(phrase) {
         if (!boundUser || !voiceReady)
             return Promise.resolve(null);
-        return readKey(spokenKey(boundUser, phrase));
+        return readKey(spokenKey(boundUser, phrase)).then(function (blob) {
+            return rememberPhrase(phrase, blob);
+        });
     }
 
     function hasCachedPhrase(phrase) {
@@ -637,8 +663,10 @@
             return Promise.resolve(false);
         return readProfile(boundUser).then(function (profile) {
             voiceReady = !!(profile && profile.ready && profile.wav);
-            if (voiceReady)
+            if (voiceReady) {
                 prewarm(boundUser, profile.revision);
+                warmPhraseCache(boundUser);
+            }
             return voiceReady;
         });
     }
@@ -699,6 +727,7 @@
         reset: reset,
         speakPhrase: speakPhrase,
         cachedPhrase: cachedPhrase,
+        peekPhrase: peekPhrase,
         hasCachedPhrase: hasCachedPhrase,
         hasVoice: hasVoice,
         ensureVoice: ensureVoice,
