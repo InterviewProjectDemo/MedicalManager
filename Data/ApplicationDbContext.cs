@@ -37,6 +37,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<VideoVisitSession> VideoVisitSessions => Set<VideoVisitSession>();
     public DbSet<AfterVisitSummary> AfterVisitSummaries => Set<AfterVisitSummary>();
     public DbSet<ReferralOrder> ReferralOrders => Set<ReferralOrder>();
+    public DbSet<ScheduleSeat> ScheduleSeats => Set<ScheduleSeat>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -217,6 +218,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         ConfigureVisit<ReferralOrder>(builder);
         builder.Entity<ReferralOrder>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
 
+        builder.Entity<ScheduleSeat>().HasIndex(x => new { x.DoctorUserId, x.StartsAt }).IsUnique();
+        builder.Entity<ScheduleSeat>().HasIndex(x => x.PatientUserId);
+        builder.Entity<ScheduleSeat>().HasIndex(x => x.AppointmentId);
+
         ApplyPhiEncryption(builder);
     }
 
@@ -345,6 +350,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasConversion(optional)
             .HasColumnType("text");
         builder.Entity<AppointmentReminder>().Property(x => x.Detail)
+            .HasConversion(optional)
+            .HasColumnType("text");
+        builder.Entity<ScheduleSeat>().Property(x => x.Purpose)
             .HasConversion(optional)
             .HasColumnType("text");
     }

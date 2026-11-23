@@ -41,6 +41,9 @@
                 <NavLink class="studio-nav-link" href="set-appointment" @onclick="OnNavigate">
                     @Mark("doctor-appt", "Set Appointment")
                 </NavLink>
+                <NavLink class="studio-nav-link" href="calendar" @onclick="OnNavigate">
+                    @Mark("doctor-appt", "Calendar")
+                </NavLink>
                 <NavLink class="studio-nav-link" href="video-visit" @onclick="OnNavigate">
                     @Mark("doctor-video", "Video Visit")
                 </NavLink>
@@ -88,6 +91,9 @@
                 </NavLink>
                 <NavLink class="studio-nav-link" href="access-requests" @onclick="OnNavigate">
                     @Mark("access", "Access")
+                </NavLink>
+                <NavLink class="studio-nav-link" href="@Href("calendar")" @onclick="OnNavigate">
+                    @Mark("appt", "Calendar")
                 </NavLink>
                 <NavLink class="studio-nav-link" href="@Href("medication-schedule")" title="Daily medication schedule" @onclick="OnNavigate">
                     @Mark("schedule", "Schedule")

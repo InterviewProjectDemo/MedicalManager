@@ -146,6 +146,8 @@ builder.Services.AddScoped<ChartAccessService>();
 builder.Services.AddScoped<PatientAccessService>();
 builder.Services.AddScoped<LabReportService>();
 builder.Services.AddScoped<VirtualVisitService>();
+builder.Services.AddSingleton<ScheduleLiveBoard>();
+builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<GrantedPatientSelection>();
 builder.Services.AddSingleton<VideoSignalBroker>();
 builder.Services.AddScoped<PrescriptionMailService>();
@@ -407,7 +409,8 @@ app.MapGet("/profile-photo/{userId}", async (
     string userId,
     HttpContext context,
     ProfilePhotoService photos,
-    ChartAccessService chartAccess) =>
+    ChartAccessService chartAccess,
+    ScheduleService schedule) =>
 {
     var currentUserId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrWhiteSpace(currentUserId))
@@ -417,7 +420,9 @@ app.MapGet("/profile-photo/{userId}", async (
     var isDoctor = context.User.IsInRole(AppRoles.Doctor);
     if (!isSelf && !isDoctor)
         return Results.Forbid();
-    if (isDoctor && !isSelf && await chartAccess.GetActiveGrantAsync(currentUserId, userId) is null)
+    if (isDoctor && !isSelf
+        && await chartAccess.GetActiveGrantAsync(currentUserId, userId) is null
+        && !await schedule.SharesSeatAsync(currentUserId, userId))
         return Results.Forbid();
 
     var photo = await photos.GetPhotoDataAsync(userId);

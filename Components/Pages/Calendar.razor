@@ -1,0 +1,660 @@
+@page "/calendar"
+@attribute [Authorize]
+@implements IDisposable
+@using System.Security.Claims
+@inject ScheduleService Schedule
+@inject ScheduleLiveBoard Live
+@inject ChartAccessService Chart
+@inject AuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Calendar</PageTitle>
+
+<div class="page-head accent-appt">
+    <div>
+        <p class="eyebrow">Seat map</p>
+        <h1>Calendar</h1>
+        <p class="muted">@(_isDoctor
+            ? "Offer an open seat to a patient, or confirm a seat they held. Once you both confirm, the visit is added to the patient's appointment list. Either of you can cancel a pending request or a booked visit, and that seat opens again."
+            : "Pick a doctor and hold an open seat. The seat locks when you and the doctor both confirm, and the visit shows up on Appointments. Either of you can cancel a pending request or a booked visit, and that seat opens again.")</p>
+    </div>
+    <div class="live-pill" title="This calendar updates as seats are held or booked">
+        <span class="live-dot" aria-hidden="true"></span>
+        Live
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_message))
+{
+    <div class="alert @(_messageOk ? "alert-success" : "alert-danger")" role="status">@_message</div>
+}
+
+@if (_ready && !_isDoctor && !_isPatient)
+{
+    <p class="muted">The calendar is for patient and doctor accounts.</p>
+}
+else if (_ready)
+{
+    @if (_notices.Count > 0)
+    {
+        <div class="seat-notices">
+            @foreach (var group in NoticeGroups)
+            {
+                <section>
+                    <h2>@LaneTitle(group.Key)</h2>
+                    @foreach (var note in group)
+                    {
+                        <article class="seat-notice">
+                            <span class="seat-face" aria-hidden="true">
+                                @if (!string.IsNullOrWhiteSpace(note.PhotoUrl))
+                                {
+                                    <img src="@note.PhotoUrl" alt="" />
+                                }
+                                else
+                                {
+                                    <span>@note.Initials</span>
+                                }
+                            </span>
+                            <div>
+                                <strong>@note.Summary</strong>
+                                @if (!string.IsNullOrWhiteSpace(note.Purpose))
+                                {
+                                    <p class="muted mb-0">@note.Purpose</p>
+                                }
+                            </div>
+                            <div class="seat-notice-actions">
+                                @if (note.Lane == ScheduleNoticeLane.NeedsYou)
+                                {
+                                    <button type="button" class="btn btn-sm btn-purple" disabled="@_busy" @onclick="() => ConfirmAsync(note.SeatId)">Confirm</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_busy" @onclick="() => DeclineAsync(note.SeatId)">Cancel</button>
+                                }
+                                else if (note.Lane == ScheduleNoticeLane.Waiting)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_busy" @onclick="() => DeclineAsync(note.SeatId)">Cancel</button>
+                                }
+                                else
+                                {
+                                    @if (!_isDoctor)
+                                    {
+                                        <a class="btn btn-sm btn-outline-secondary" href="appointments">Appointments</a>
+                                    }
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_busy" @onclick="() => ReleaseAsync(note.SeatId)">Cancel</button>
+                                }
+                            </div>
+                        </article>
+                    }
+                </section>
+            }
+        </div>
+    }
+
+    @if (!_isDoctor)
+    {
+        <div class="seat-toolbar">
+            <label class="seat-search">
+                <span class="visually-hidden">Find a doctor</span>
+                <input class="form-control" placeholder="Find a doctor" @bind="_doctorQuery" @bind:event="oninput" />
+            </label>
+        </div>
+        @if (_doctors.Count == 0)
+        {
+            <p class="muted">No doctor accounts are available yet.</p>
+        }
+        else if (!FilteredDoctors.Any())
+        {
+            <p class="muted">No doctor matches that search.</p>
+        }
+        else
+        {
+            <div class="doctor-row" role="list">
+                @foreach (var doctor in FilteredDoctors)
+                {
+                    <button type="button"
+                            class="doctor-card @(doctor.Id == Doctor ? "is-on" : null)"
+                            role="listitem"
+                            @onclick="() => PickDoctor(doctor.Id)">
+                        <span class="doctor-card-name">@doctor.Name</span>
+                        @if (!string.IsNullOrWhiteSpace(doctor.Specialty))
+                        {
+                            <span class="doctor-card-meta">@doctor.Specialty</span>
+                        }
+                        @if (doctor.Approved)
+                        {
+                            <span class="doctor-card-tag">Your doctor</span>
+                        }
+                    </button>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <div class="seat-toolbar">
+            <label class="seat-search">
+                Patient
+                <select class="form-select" @bind="_patientId">
+                    <option value="">Choose a patient</option>
+                    @foreach (var patient in _patients)
+                    {
+                        <option value="@patient.PatientId">@patient.PatientName</option>
+                    }
+                </select>
+            </label>
+            @if (_patients.Count == 0)
+            {
+                <p class="muted mb-0">Patients you are already connected with appear here. Anyone can still hold an open seat, and that request shows up above.</p>
+            }
+        </div>
+    }
+
+    @if (_board is not null)
+    {
+        <div class="seat-week">
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!CanGoBack)" @onclick="() => ShiftWeek(-7)">Previous week</button>
+            <strong>@_board.Days[0].ToString("MMM d") – @_board.Days[^1].ToString("MMM d")</strong>
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!CanGoForward)" @onclick="() => ShiftWeek(7)">Next week</button>
+        </div>
+        <p class="seat-clinic muted">
+            @_board.DoctorName
+            @if (!string.IsNullOrWhiteSpace(_board.Specialty))
+            {
+                <span> · @_board.Specialty</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(_board.Clinic))
+            {
+                <span> · @_board.Clinic</span>
+            }
+        </p>
+
+        <div class="seat-legend" aria-hidden="true">
+            <span class="seat seat-open seat-sample"><span class="seat-time">Open</span></span>
+            <span class="seat seat-held seat-sample"><span class="seat-time">Held</span></span>
+            <span class="seat seat-taken seat-sample"><span class="seat-time">Booked</span></span>
+            <span class="seat seat-closed seat-sample"><span class="seat-time">Closed</span></span>
+        </div>
+        <p class="muted seat-legend-copy">
+            @(_isDoctor
+                ? "A held seat is reserved, like a seat on a plane, until the other person answers or 48 hours pass. Booked seats show a round photo and name when a picture is on file."
+                : "A held seat is reserved until the other person answers or 48 hours pass. Your booked seat shows your photo and name. Other patients only see that a seat is taken.")
+        </p>
+
+        <div class="seat-day-chips" role="tablist" aria-label="Day">
+            @foreach (var day in _board.Days)
+            {
+                <button type="button"
+                        class="seat-chip @(day == _focusDay ? "is-on" : null)"
+                        @onclick="() => _focusDay = day">
+                    @day.ToString("ddd d")
+                </button>
+            }
+        </div>
+
+        <div class="seat-scroll">
+            <div class="seat-board">
+                @foreach (var day in DayGroups)
+                {
+                    <section class="seat-day @(day.Key == _focusDay ? "is-focus" : null) @(day.Key == DateOnly.FromDateTime(DateTime.Today) ? "is-today" : null)">
+                        <h2>@day.Key.ToString("ddd d")</h2>
+                        @foreach (var seat in day)
+                        {
+                            <button type="button"
+                                    class="seat @SeatClass(seat) @(seat.StartsAt == _pickedStart ? "seat-picked" : null)"
+                                    disabled="@(!seat.CanOpen || _busy)"
+                                    aria-label="@seat.AriaLabel"
+                                    @onclick="() => OpenSeat(seat)">
+                                <span class="seat-time">@seat.StartsAt.ToString("h:mm tt")</span>
+                                @if (seat.ShowIdentity)
+                                {
+                                    <span class="seat-face">
+                                        @if (!string.IsNullOrWhiteSpace(seat.PhotoUrl))
+                                        {
+                                            <img src="@seat.PhotoUrl" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <span>@seat.Initials</span>
+                                        }
+                                    </span>
+                                }
+                                <span class="seat-who">@seat.Label</span>
+                            </button>
+                        }
+                    </section>
+                }
+            </div>
+        </div>
+
+        @if (_picked is not null)
+        {
+            <section class="boarding-pass" aria-live="polite">
+                <p class="eyebrow">@PassEyebrow</p>
+                <h2>@_picked.StartsAt.ToString("dddd, MMM d")</h2>
+                <p class="boarding-time">@_picked.StartsAt.ToString("h:mm tt") – @_picked.EndsAt.ToString("h:mm tt")</p>
+                <p class="mb-2">@_board.DoctorName</p>
+                @if (_picked.ShowIdentity && !string.IsNullOrWhiteSpace(_picked.PersonName))
+                {
+                    <p class="boarding-who">
+                        <span class="seat-face">
+                            @if (!string.IsNullOrWhiteSpace(_picked.PhotoUrl))
+                            {
+                                <img src="@_picked.PhotoUrl" alt="" />
+                            }
+                            else
+                            {
+                                <span>@_picked.Initials</span>
+                            }
+                        </span>
+                        <span>@_picked.PersonName</span>
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_picked.Purpose) && _picked.Status != ScheduleSeatViewStatus.Open)
+                {
+                    <p class="muted">@_picked.Purpose</p>
+                }
+
+                @if (_picked.Status == ScheduleSeatViewStatus.Open && !_isDoctor)
+                {
+                    <label class="form-label" for="seat-reason">Reason, if you want one</label>
+                    <input id="seat-reason" class="form-control" maxlength="200" placeholder="Follow-up, lab review, check-in" @bind="_reason" @bind:event="oninput" />
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-purple" disabled="@_busy" @onclick="HoldAsync">Hold this seat</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ClearPick">Never mind</button>
+                    </div>
+                }
+                else if (_picked.Status == ScheduleSeatViewStatus.Open && _isDoctor)
+                {
+                    <label class="form-label" for="seat-reason">Reason, if you want one</label>
+                    <input id="seat-reason" class="form-control" maxlength="200" placeholder="Follow-up, lab review, check-in" @bind="_reason" @bind:event="oninput" />
+                    @if (string.IsNullOrWhiteSpace(_patientId))
+                    {
+                        <p class="muted mt-2 mb-0">Choose a patient above before you send this seat.</p>
+                    }
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-purple" disabled="@(_busy || string.IsNullOrWhiteSpace(_patientId))" @onclick="HoldAsync">Send request</button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="CloseAsync">Close seat</button>
+                        <button type="button" class="btn btn-link" @onclick="ClearPick">Never mind</button>
+                    </div>
+                }
+                else if (_picked.AwaitingViewer && _picked.SeatId is int confirmId)
+                {
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-purple" disabled="@_busy" @onclick="() => ConfirmAsync(confirmId)">Confirm and lock</button>
+                        <button type="button" class="btn btn-outline-danger" disabled="@_busy" @onclick="() => DeclineAsync(confirmId)">Cancel</button>
+                    </div>
+                }
+                else if (_picked.ViewerStarted && _picked.SeatId is int withdrawId)
+                {
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-outline-danger" disabled="@_busy" @onclick="() => DeclineAsync(withdrawId)">Cancel</button>
+                        <button type="button" class="btn btn-link" @onclick="ClearPick">Keep it</button>
+                    </div>
+                }
+                else if (_picked.CanCancel && _picked.Status == ScheduleSeatViewStatus.Locked)
+                {
+                    <p class="muted">Cancel this visit and the seat opens for everyone.</p>
+                    <div class="form-actions">
+                        @if (_picked.SeatId is int lockedId)
+                        {
+                            <button type="button" class="btn btn-outline-danger" disabled="@_busy" @onclick="() => ReleaseAsync(lockedId)">Cancel appointment</button>
+                        }
+                        else if (_picked.AppointmentId is int visitId)
+                        {
+                            <button type="button" class="btn btn-outline-danger" disabled="@_busy" @onclick="() => CancelVisitAsync(visitId)">Cancel appointment</button>
+                        }
+                        <button type="button" class="btn btn-link" @onclick="ClearPick">Keep it</button>
+                    </div>
+                }
+                else if (_picked.Status == ScheduleSeatViewStatus.Closed && _picked.SeatId is int reopenId)
+                {
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-purple" disabled="@_busy" @onclick="() => ReopenAsync(reopenId)">Open this seat</button>
+                        <button type="button" class="btn btn-link" @onclick="ClearPick">Keep it closed</button>
+                    </div>
+                }
+            </section>
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "doctor")] public string? Doctor { get; set; }
+    [SupplyParameterFromQuery] public string? Week { get; set; }
+    [SupplyParameterFromQuery] public string? PatientUserId { get; set; }
+
+    private readonly List<ScheduleDoctorOption> _doctors = [];
+    private readonly List<AffiliatedPatientItem> _patients = [];
+    private List<ScheduleNotice> _notices = [];
+    private ScheduleBoard? _board;
+    private ScheduleSeatView? _picked;
+    private DateTime? _pickedStart;
+    private DateOnly _weekStart;
+    private DateOnly? _focusDay;
+    private string? _userId;
+    private string _patientId = "";
+    private string _doctorQuery = "";
+    private string _reason = "";
+    private string? _message;
+    private string _listenKey = "";
+    private bool _messageOk;
+    private bool _isDoctor;
+    private bool _isPatient;
+    private bool _ready;
+    private bool _busy;
+    private bool _left;
+    private bool _doctorsLoaded;
+    private bool _patientsLoaded;
+    private bool _routedDefault;
+    private int _reload;
+    private IDisposable? _listen;
+    private CancellationTokenSource? _poll;
+
+    private string? SelectedDoctorId => _isDoctor ? _userId : Doctor;
+
+    private bool CanGoBack => _weekStart > DateOnly.FromDateTime(DateTime.Today).AddDays(-56);
+
+    private bool CanGoForward => _weekStart < DateOnly.FromDateTime(DateTime.Today).AddDays(16 * 7);
+
+    private IEnumerable<ScheduleDoctorOption> FilteredDoctors
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_doctorQuery))
+                return _doctors;
+
+            var term = _doctorQuery.Trim();
+            return _doctors.Where(doctor =>
+                doctor.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || doctor.Specialty.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || doctor.Clinic.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private IEnumerable<IGrouping<DateOnly, ScheduleSeatView>> DayGroups =>
+        (_board?.Seats ?? []).GroupBy(seat => DateOnly.FromDateTime(seat.StartsAt));
+
+    private IEnumerable<IGrouping<ScheduleNoticeLane, ScheduleNotice>> NoticeGroups =>
+        _notices.GroupBy(note => note.Lane).OrderBy(group => (int)group.Key);
+
+    private string PassEyebrow => _picked?.Status switch
+    {
+        ScheduleSeatViewStatus.Held => "Held seat",
+        ScheduleSeatViewStatus.Locked => "Booked seat",
+        ScheduleSeatViewStatus.Closed => "Closed seat",
+        _ => "Open seat"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        var user = state.User;
+        _userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+        _isDoctor = user.IsInRole(AppRoles.Doctor);
+        _isPatient = user.IsInRole(AppRoles.Patient);
+        _ready = true;
+        var day = DateOnly.TryParse(Week, out var parsed) ? parsed : DateOnly.FromDateTime(DateTime.Today);
+        _weekStart = ScheduleGrid.WeekStart(day);
+        if (string.IsNullOrWhiteSpace(Week))
+        {
+            var lastSeat = _weekStart.AddDays(4).ToDateTime(ScheduleGrid.LastStart);
+            if (lastSeat <= DateTime.Now)
+                _weekStart = _weekStart.AddDays(7);
+        }
+        EnsureListen();
+        await ReloadAsync();
+        StartPoll();
+    }
+
+    private void EnsureListen()
+    {
+        if (string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        var key = _userId + "|" + (SelectedDoctorId ?? "");
+        if (key == _listenKey)
+            return;
+
+        _listen?.Dispose();
+        _listenKey = key;
+        var channels = new List<string> { "user:" + _userId };
+        if (!string.IsNullOrWhiteSpace(SelectedDoctorId))
+            channels.Add("doctor:" + SelectedDoctorId);
+        _listen = Live.Listen(channels, OnLiveAsync);
+    }
+
+    private void StartPoll()
+    {
+        if (_poll is not null || string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        _poll = new CancellationTokenSource();
+        _ = PollAsync(_poll.Token);
+    }
+
+    private async Task PollAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(8), token);
+                await OnLiveAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task OnLiveAsync()
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (_left)
+                    return;
+                await ReloadAsync();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_left || string.IsNullOrWhiteSpace(_userId))
+            return;
+        if (Interlocked.CompareExchange(ref _reload, 1, 0) != 0)
+            return;
+
+        try
+        {
+            if (_isPatient && !_doctorsLoaded)
+            {
+                _doctors.Clear();
+                _doctors.AddRange(await Schedule.ListDoctorsAsync(_userId));
+                _doctorsLoaded = true;
+            }
+
+            if (_isPatient && string.IsNullOrWhiteSpace(Doctor) && _doctors.Count > 0 && !_routedDefault)
+            {
+                _routedDefault = true;
+                Nav.NavigateTo(Link(_doctors[0].Id, _weekStart), replace: true);
+                return;
+            }
+
+            if (_isDoctor && !_patientsLoaded)
+            {
+                _patients.Clear();
+                _patients.AddRange(await Chart.ListAffiliatedPatientsAsync(_userId));
+                _patientsLoaded = true;
+                if (string.IsNullOrWhiteSpace(_patientId)
+                    && _patients.Any(patient => patient.PatientId == PatientUserId))
+                    _patientId = PatientUserId ?? "";
+            }
+
+            _notices = (await Schedule.GetNoticesAsync(_userId, _isDoctor)).ToList();
+            _board = string.IsNullOrWhiteSpace(SelectedDoctorId)
+                ? null
+                : await Schedule.GetBoardAsync(_userId, SelectedDoctorId, _weekStart);
+            if (_board is not null)
+                _weekStart = _board.WeekStart;
+            SyncFocus();
+            RebindPick();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _reload, 0);
+        }
+    }
+
+    private void SyncFocus()
+    {
+        if (_board is null)
+            return;
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (_focusDay is null || !_board.Days.Contains(_focusDay.Value))
+            _focusDay = _board.Days.Contains(today) ? today : _board.Days[0];
+    }
+
+    private void RebindPick()
+    {
+        if (_pickedStart is null || _board is null)
+        {
+            _picked = null;
+            return;
+        }
+
+        _picked = _board.Seats.FirstOrDefault(seat => seat.StartsAt == _pickedStart);
+        if (_picked is null || !_picked.CanOpen)
+        {
+            _picked = null;
+            _pickedStart = null;
+        }
+    }
+
+    private void OpenSeat(ScheduleSeatView seat)
+    {
+        if (!seat.CanOpen || _busy)
+            return;
+        if (_pickedStart != seat.StartsAt)
+            _reason = "";
+        _pickedStart = seat.StartsAt;
+        _picked = seat;
+    }
+
+    private void ClearPick()
+    {
+        _picked = null;
+        _pickedStart = null;
+    }
+
+    private void PickDoctor(string id)
+    {
+        ClearPick();
+        Nav.NavigateTo(Link(id, _weekStart));
+    }
+
+    private void ShiftWeek(int days)
+    {
+        ClearPick();
+        Nav.NavigateTo(Link(SelectedDoctorId, _weekStart.AddDays(days)));
+    }
+
+    private string Link(string? doctorId, DateOnly week)
+    {
+        var values = new Dictionary<string, object?>
+        {
+            ["week"] = week.ToString("yyyy-MM-dd")
+        };
+        if (!_isDoctor && !string.IsNullOrWhiteSpace(doctorId))
+            values["doctor"] = doctorId;
+        if (_isDoctor && !string.IsNullOrWhiteSpace(PatientUserId))
+            values["patientUserId"] = PatientUserId;
+        return Nav.GetUriWithQueryParameters("calendar", values);
+    }
+
+    private Task HoldAsync() => RunAsync(() =>
+    {
+        if (_board is null || _picked is null)
+            return Task.FromResult(new ScheduleActionResult(false, "Choose a seat."));
+        return _isDoctor
+            ? Schedule.OfferAsync(_userId!, _patientId, _picked.StartsAt, _reason)
+            : Schedule.RequestAsync(_userId!, _board.DoctorUserId, _picked.StartsAt, _reason);
+    });
+
+    private Task CloseAsync() => RunAsync(() =>
+        _picked is null || string.IsNullOrWhiteSpace(_userId)
+            ? Task.FromResult(new ScheduleActionResult(false, "Choose a seat."))
+            : Schedule.CloseAsync(_userId, _picked.StartsAt));
+
+    private Task ConfirmAsync(int seatId) => RunAsync(() => Schedule.ConfirmAsync(_userId!, seatId));
+
+    private Task DeclineAsync(int seatId) => RunAsync(() => Schedule.DeclineAsync(_userId!, seatId));
+
+    private Task ReopenAsync(int seatId) => RunAsync(() => Schedule.ReopenAsync(_userId!, seatId));
+
+    private Task ReleaseAsync(int seatId) => RunAsync(() => Schedule.ReleaseAsync(_userId!, seatId));
+
+    private Task CancelVisitAsync(int appointmentId) => RunAsync(() => Schedule.CancelVisitAsync(_userId!, appointmentId));
+
+    private async Task RunAsync(Func<Task<ScheduleActionResult>> action)
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_userId))
+            return;
+
+        _busy = true;
+        _message = null;
+        try
+        {
+            var result = await action();
+            _message = result.Message;
+            _messageOk = result.Ok;
+            if (result.Ok)
+                ClearPick();
+            await ReloadAsync();
+        }
+        catch (Exception)
+        {
+            _message = "That could not be saved. Try again.";
+            _messageOk = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string SeatClass(ScheduleSeatView seat)
+    {
+        var status = seat.Status switch
+        {
+            ScheduleSeatViewStatus.Held => "seat-held",
+            ScheduleSeatViewStatus.Locked => "seat-taken",
+            ScheduleSeatViewStatus.Closed => "seat-closed",
+            _ => seat.IsPast ? "seat-past" : "seat-open"
+        };
+        return status;
+    }
+
+    private static string LaneTitle(ScheduleNoticeLane lane) => lane switch
+    {
+        ScheduleNoticeLane.NeedsYou => "Needs your answer",
+        ScheduleNoticeLane.Waiting => "Waiting on the other person",
+        _ => "Locked in"
+    };
+
+    public void Dispose()
+    {
+        _left = true;
+        _poll?.Cancel();
+        _poll?.Dispose();
+        _listen?.Dispose();
+    }
+}

@@ -4,7 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MedicalManager.Data;
 
-public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> dbFactory, DoctorService doctors)
+public sealed class HealthRecordService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    DoctorService doctors,
+    ScheduleService schedule)
 {
     public async Task<List<BloodPressureReading>> GetBloodPressureAsync(string userId, int take = 30)
     {
@@ -406,6 +409,7 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         else db.Appointments.Update(appointment);
         await db.SaveChangesAsync();
         await doctors.SyncDiscoveredDoctorsAsync(appointment.UserId);
+        await schedule.ReleaseSeatIfAppointmentChangedAsync(appointment);
     }
 
     public async Task DeleteAppointmentAsync(int id, string userId)
@@ -416,6 +420,7 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         if (item is null) return;
         db.Appointments.Remove(item);
         await db.SaveChangesAsync();
+        await schedule.ReleaseSeatForAppointmentAsync(id);
     }
 
     public async Task<List<Appointment>> GetAppointmentsForDateAsync(string userId, DateOnly date)
@@ -440,6 +445,7 @@ public sealed class HealthRecordService(IDbContextFactory<ApplicationDbContext> 
         if (AppointmentRules.ShouldAutoMiss(appt, DateTime.Now))
             appt.Status = AppointmentStatus.Missed;
         await db.SaveChangesAsync();
+        await schedule.ReleaseSeatIfAppointmentChangedAsync(appt);
     }
 
     public async Task<List<ToDoItem>> GetToDosAsync(string userId)
