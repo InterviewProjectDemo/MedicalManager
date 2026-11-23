@@ -12,7 +12,7 @@
             }
             else
             {
-                <p class="controls-hint">Drag a logo to move it, and its corner to resize it. Each logo does the same action it already has. Configure opens the chooser. Default Size makes every logo the same size and fills this window without moving them. Default Position lines them up left to right from A to Z. Reset clears every logo. Closing this page keeps the last configuration.</p>
+                <p class="controls-hint">Drag a logo to move it, and its corner to resize it. Each logo does the same action it already has. The close button on a logo removes it, and the logos that remain resize and line up to fill this window. Configure opens the chooser. Default Size makes every logo the same size and fills this window without moving them. Default Position lines them up left to right from A to Z. Reset clears every logo. Closing this page keeps the last configuration.</p>
                 <div class="controls-toolbar">
                     <button type="button" class="controls-configure" @onclick="OpenConfigure">Configure</button>
                     <button type="button" class="controls-layout" disabled="@(!CanArrange)" title="Resize every logo to the same size and fill this window, keeping each logo where it is" @onclick="ApplyDefaultSize">Default Size</button>
@@ -62,6 +62,14 @@
                                     @LogoFace(item, calling)
                                 </button>
                             }
+                            <button type="button"
+                                    class="controls-tile-close"
+                                    data-tile-close
+                                    title="Remove @item.Label"
+                                    aria-label="Remove @item.Label"
+                                    @onclick="() => RemoveLogo(item)"
+                                    @onclick:stopPropagation="true"
+                                    @onpointerdown:stopPropagation="true">×</button>
                             <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
                         </div>
                     }
@@ -195,6 +203,7 @@
     private bool _editing;
     private bool _ready;
     private bool _configureOpen;
+    private bool _fillAfterRender;
     private bool _speechMissing;
     private string? _activeDialysis;
     private string? _loadedScope;
@@ -233,7 +242,15 @@
             }
 
             if (_ready)
+            {
                 await JS.InvokeVoidAsync("mmCustomControls.watch", _board, Scope);
+                if (_fillAfterRender)
+                {
+                    _fillAfterRender = false;
+                    if (_housed.Count > 0)
+                        await JS.InvokeVoidAsync("mmCustomControls.fill", _board);
+                }
+            }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
         {
@@ -308,6 +325,28 @@
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
         {
         }
+    }
+
+    private async Task RemoveLogo(LogoItem item)
+    {
+        if (_activeDialysis == item.Id)
+            await Attend();
+
+        _housed.Remove(item.Id);
+        _draft.Remove(item.Id);
+        if (_housed.Count == 0)
+            _editing = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.retainBoxes", Scope, _housed);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+
+        await PersistAsync();
+        _fillAfterRender = _housed.Count > 0;
     }
 
     private async Task ResetPage()

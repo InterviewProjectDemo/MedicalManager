@@ -147,6 +147,40 @@
         layout(board);
     }
 
+    function fill(board) {
+        if (!board)
+            return;
+        var tiles = tilesOf(board);
+        var width = board.clientWidth;
+        var height = board.clientHeight;
+        if (tiles.length === 0 || width < 80 || height < 80)
+            return;
+        tiles.sort(function (a, b) {
+            var ax = parseFloat(a.style.left) || 0;
+            var bx = parseFloat(b.style.left) || 0;
+            if (Math.abs(ax - bx) > 8)
+                return ax - bx;
+            return (parseFloat(a.style.top) || 0) - (parseFloat(b.style.top) || 0);
+        });
+        var scope = board.dataset.controlsScope || "";
+        var data = read(scope);
+        var gap = 10;
+        var tw = (width - gap * (tiles.length + 1)) / tiles.length;
+        var th = height - gap * 2;
+        var x = gap;
+        tiles.forEach(function (tile) {
+            data.boxes[tile.dataset.controlsTile] = {
+                x: x / width,
+                y: gap / height,
+                w: tw / width,
+                h: th / height
+            };
+            x += tw + gap;
+        });
+        write(scope, data);
+        layout(board);
+    }
+
     function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
     }
@@ -268,6 +302,8 @@
             var target = event.target;
             if (!(target instanceof Element))
                 return;
+            if (target.closest("[data-tile-close]"))
+                return;
             var tile = target.closest("[data-controls-tile]");
             if (!tile || !board.contains(tile))
                 return;
@@ -370,6 +406,7 @@
         retainBoxes: retainBoxes,
         watch: watch,
         defaultSize: defaultSize,
-        defaultPosition: defaultPosition
+        defaultPosition: defaultPosition,
+        fill: fill
     };
 })();

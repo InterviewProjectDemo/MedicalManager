@@ -230,6 +230,28 @@
     background: #f8fafc;
 }
 
+.controls-tile-close {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.35rem;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    width: 1.45rem;
+    height: 1.45rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #9f2d2d;
+    color: #fff;
+    font: inherit;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+
 .controls-logo-form {
     width: 100%;
     height: 100%;
