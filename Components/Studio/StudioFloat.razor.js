@@ -22,7 +22,55 @@ function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
-export function attach(panel, dotNet) {
+const PLACE_KEY = "mm-float-place";
+
+function readPlaces() {
+    try {
+        const raw = localStorage.getItem(PLACE_KEY);
+        const data = raw ? JSON.parse(raw) : {};
+        return data && typeof data === "object" ? data : {};
+    } catch {
+        return {};
+    }
+}
+
+function rememberPlace(key, left, top, width, height, z) {
+    if (!key)
+        return;
+    try {
+        const all = readPlaces();
+        all[key] = { left, top, width, height, z };
+        localStorage.setItem(PLACE_KEY, JSON.stringify(all));
+    } catch { /* this browser may block storage */ }
+}
+
+function recallPlace(key) {
+    if (!key)
+        return null;
+    const box = readPlaces()[key];
+    if (!box || !Number.isFinite(box.left) || !Number.isFinite(box.top))
+        return null;
+    return box;
+}
+
+function applyPlace(panel, box) {
+    const viewWidth = window.innerWidth;
+    const viewHeight = window.innerHeight;
+    const width = clamp(box.width, 420, Math.max(420, viewWidth - 16));
+    const height = clamp(box.height, 280, Math.max(280, viewHeight - 16));
+    const left = clamp(box.left, 8, Math.max(8, viewWidth - Math.min(width, viewWidth - 16)));
+    const top = clamp(box.top, 8, Math.max(8, viewHeight - 48));
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    panel.style.width = width + "px";
+    panel.style.height = height + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.transform = "none";
+    return { left, top, width, height, z: box.z || (window.__mmFloatZ || 4100) };
+}
+
+export function attach(panel, dotNet, memoryKey) {
     if (!panel || handles.has(panel))
         return;
 
@@ -43,6 +91,8 @@ export function attach(panel, dotNet) {
         }
         const rect = panel.getBoundingClientRect();
         const z = Number(panel.style.zIndex) || (window.__mmFloatZ || 4100);
+        if (memoryKey)
+            rememberPlace(memoryKey, rect.left, rect.top, rect.width, rect.height, z);
         dotNet.invokeMethodAsync("Remember", rect.left, rect.top, rect.width, rect.height, z);
     };
 
@@ -104,4 +154,12 @@ export function attach(panel, dotNet) {
     grip.addEventListener("pointercancel", finish);
     resize.addEventListener("pointercancel", finish);
     handles.set(panel, { grip, resize, onGrip, onResize });
+
+    if (memoryKey) {
+        const stored = recallPlace(memoryKey);
+        if (stored) {
+            const placed = applyPlace(panel, stored);
+            dotNet.invokeMethodAsync("Remember", placed.left, placed.top, placed.width, placed.height, placed.z);
+        }
+    }
 }

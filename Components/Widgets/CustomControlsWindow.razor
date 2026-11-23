@@ -1,0 +1,566 @@
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+@if (Visible)
+{
+    <StudioFloat Visible="true" VisibleChanged="HandleClose" Title="Custom Controls" Place="controls" MemoryKey="@MemoryKey">
+        <div class="controls-window">
+            @if (!_ready)
+            {
+                <p class="controls-hint">Loading custom controls…</p>
+            }
+            else
+            {
+                <p class="controls-hint">Drag a logo to move it, and its corner to resize it. Each logo does the same action it already has. Configure opens the chooser. Default Size makes every logo the same size and fills this window without moving them. Default Position lines them up left to right from A to Z. Reset clears every logo. Closing this page keeps the last configuration.</p>
+                <div class="controls-toolbar">
+                    <button type="button" class="controls-configure" @onclick="OpenConfigure">Configure</button>
+                    <button type="button" class="controls-layout" disabled="@(!CanArrange)" title="Resize every logo to the same size and fill this window, keeping each logo where it is" @onclick="ApplyDefaultSize">Default Size</button>
+                    <button type="button" class="controls-layout" disabled="@(!CanArrange)" title="Arrange logos left to right in alphabetical order" @onclick="ApplyDefaultPosition">Default Position</button>
+                    <button type="button" class="controls-reset" disabled="@(!CanReset)" title="Remove every logo from this page" @onclick="ResetPage">Reset</button>
+                    <p class="controls-status" role="status">@BoardStatus</p>
+                </div>
+                @if (ActiveDialysis is LogoItem active)
+                {
+                    <div class="controls-attended" role="status" aria-live="assertive">
+                        <p>@Phrase(active)</p>
+                        @if (_speechMissing)
+                        {
+                            <p>Record your voice on Profile so this sounds like you. Until then, this device reads the line aloud.</p>
+                        }
+                        <button type="button" @onclick="Attend">Attended</button>
+                    </div>
+                }
+                <div @ref="_board" class="controls-board" data-controls-board="house" data-controls-fill="row">
+                    @if (_housed.Count == 0)
+                    {
+                        <p class="controls-empty">Configured logos appear here.</p>
+                    }
+                    @foreach (var item in HousedItems)
+                    {
+                        var calling = item.Id == _activeDialysis;
+                        <div class="a11y-tile controls-tile @(calling ? "is-calling" : null)" data-controls-tile="@item.Id" @key="@("house-" + item.Id)">
+                            @if (item.Kind == "logout")
+                            {
+                                <form class="controls-logo-form" action="Account/Logout" method="post">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="ReturnUrl" value="@CurrentUrl" />
+                                    <button type="submit" class="controls-logo-btn">
+                                        @LogoFace(item, calling)
+                                    </button>
+                                </form>
+                            }
+                            else if (item.Kind == "nav")
+                            {
+                                <a class="controls-logo-btn" href="@Href(item)">
+                                    @LogoFace(item, calling)
+                                </a>
+                            }
+                            else
+                            {
+                                <button type="button" class="controls-logo-btn" aria-pressed="@(calling ? "true" : "false")" @onclick="() => Perform(item)">
+                                    @LogoFace(item, calling)
+                                </button>
+                            }
+                            <span class="a11y-tile-resize" data-tile-resize aria-hidden="true"></span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </StudioFloat>
+
+    @if (_ready && _configureOpen)
+    {
+        <StudioFloat Visible="true" VisibleChanged="CloseConfigure" Title="Configure" Place="controls-config" MemoryKey="@ConfigMemoryKey">
+            <div class="controls-window controls-configure-window">
+                <p class="controls-hint">Check up to 5 logos. This list includes the icons already in use, and the Dialysis Treatment logos from Accessibility. Update unlocks a new selection. Save locks it. Closing this window returns to Custom Controls with those logos.</p>
+                <div class="controls-toolbar">
+                    <button type="button"
+                            class="controls-switch @(_editing ? "is-editing" : "is-saved")"
+                            aria-pressed="@(_editing ? "true" : "false")"
+                            aria-label="@(_editing ? "Save configuration" : "Update configuration")"
+                            @onclick="ToggleMode">
+                        <span class="@(!_editing ? "is-on" : null)">Save</span>
+                        <span class="@(_editing ? "is-on" : null)">Update</span>
+                    </button>
+                    <p class="controls-status" role="status">@_draft.Count of @MaxItems selected.@(_editing ? " Save locks this selection." : " Update unlocks a new selection.")</p>
+                </div>
+                <div class="controls-picker @(_editing ? null : "is-locked")" role="group" aria-label="Logos">
+                    @foreach (var group in Groups)
+                    {
+                        @if (group.Key != "Logos")
+                        {
+                            <h3 class="controls-group">@group.Key</h3>
+                        }
+                        @foreach (var item in group)
+                        {
+                            <label class="controls-pick @(_draft.Contains(item.Id) ? "is-checked" : null)" @key="@("pick-" + item.Id)">
+                                <input type="checkbox"
+                                       checked="@_draft.Contains(item.Id)"
+                                       disabled="@LockPick(item.Id)"
+                                       @onchange="e => ToggleLogo(item.Id, e.Value is true)" />
+                                <span class="controls-pick-orb">@LogoMark(item)</span>
+                                @if (item.Group != "Logos")
+                                {
+                                    <span class="visually-hidden">@item.Group </span>
+                                }
+                                <span class="controls-pick-name">@item.Label</span>
+                            </label>
+                        }
+                    }
+                </div>
+            </div>
+        </StudioFloat>
+    }
+}
+
+@code {
+    private const int MaxItems = 5;
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public bool IsDoctor { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
+    [Parameter] public string? UserId { get; set; }
+    [Parameter] public string? CurrentUrl { get; set; }
+    [Parameter] public EventCallback OnEmergency { get; set; }
+    [Parameter] public EventCallback OnVoice { get; set; }
+    [Parameter] public EventCallback OnAccessibility { get; set; }
+    [Parameter] public EventCallback OnFamily { get; set; }
+    [Parameter] public EventCallback OnMonitor { get; set; }
+    [Parameter] public EventCallback OnPrescription { get; set; }
+    [Parameter] public EventCallback OnPatientCall { get; set; }
+
+    private static readonly LogoItem[] PatientLogos =
+    [
+        new("emergency", "emergency", "Emergency", "emergency", null, false),
+        new("voice", "voice", "Say Call", "voice", null, false),
+        new("accessibility", "accessibility", "Accessibility", "accessibility", null, false),
+        new("layout", "layout", "Layout", "nav", "dashboard-studio", true),
+        new("profile", "profile", "Profile", "nav", "profile", true),
+        new("resource", "resource", "Resource", "nav", "resource", true),
+        new("access", "access", "Access", "nav", "access-requests", false),
+        new("schedule", "schedule", "Schedule", "nav", "medication-schedule", true),
+        new("meds", "meds", "Med list", "nav", "medications", true),
+        new("account", "account", "Account", "nav", "Account/Manage", false),
+        new("logout", "logout", "Log out", "logout", null, false),
+        new("home", "home", "Dashboard", "nav", "", true),
+        new("today", "today", "Today", "nav", "chart-board", true),
+        new("bp", "bp", "Blood pressure", "nav", "blood-pressure", true),
+        new("sugar", "sugar", "Blood sugar", "nav", "sugar", true),
+        new("labs", "labs", "Labs", "nav", "labs", true),
+        new("appt", "appt", "Appointments", "nav", "appointments", true),
+        new("todo", "todo", "To do", "nav", "todos", true),
+        new("doctors", "doctors", "Doctors", "nav", "doctors", true),
+        new("medcheck", "medcheck", "Med check", "nav", "med-check", true),
+        new("family", "family", "Call family", "family", null, false),
+        new("monitor", "monitor", "Monitor", "monitor", null, false),
+        new("dialysis-help", "", "Help", "dialysis", null, false, "/studio/dialysis-help.jpg", "Please help.", "Dialysis Treatment"),
+        new("dialysis-family", "", "Family", "dialysis", null, false, "/studio/dialysis-family.jpg", "Please call my family.", "Dialysis Treatment"),
+        new("dialysis-pain", "", "Pain", "dialysis", null, false, "/studio/dialysis-pain.jpg", "I am in pain. Please help.", "Dialysis Treatment"),
+        new("dialysis-breathing", "", "Breathing", "dialysis", null, false, "/studio/dialysis-breathing.jpg", "I am having a breathing issue. Please help.", "Dialysis Treatment"),
+        new("dialysis-blood", "", "Blood", "dialysis", null, false, "/studio/dialysis-blood.jpg", "I am bleeding. Please help.", "Dialysis Treatment")
+    ];
+
+    private static readonly LogoItem[] DoctorLogos =
+    [
+        new("doctor-home", "doctor-home", "Dashboard", "nav", "", true),
+        new("doctor-profile", "doctor-profile", "Profile", "nav", "profile", true),
+        new("patients", "patient", "Patients", "nav", "patients", false),
+        new("rx", "doctor-rx", "Prescription", "prescription", null, false),
+        new("notes", "doctor-notes", "Notes", "nav", "visit-notes", false),
+        new("message", "doctor-message", "Message", "nav", "messages", false),
+        new("video", "doctor-video", "Video Visit", "nav", "video-visit", false),
+        new("set-appt", "doctor-appt", "Set Appointment", "nav", "set-appointment", false),
+        new("summary", "doctor-summary", "After-visit summary", "nav", "after-visit", false),
+        new("referral", "doctor-referral", "Referral", "nav", "referral", false),
+        new("account", "doctor-account", "Account", "nav", "Account/Manage", false),
+        new("logout", "doctor-logout", "Log out", "logout", null, false),
+        new("today", "doctor-today", "Today", "nav", "chart-board", true),
+        new("bp", "doctor-bp", "Blood pressure", "nav", "blood-pressure", true),
+        new("sugar", "doctor-sugar", "Blood sugar", "nav", "sugar", true),
+        new("labs", "doctor-labs", "Labs", "nav", "labs", true),
+        new("meds", "doctor-meds", "Medications", "nav", "medications", true),
+        new("appt", "doctor-appt", "Appointments", "nav", "appointments", true),
+        new("todo", "doctor-todo", "To do", "nav", "todos", true),
+        new("doctors", "doctors", "Doctors", "nav", "doctors", true),
+        new("medcheck", "medcheck", "Med check", "nav", "med-check", true),
+        new("call", "call-patient", "Call patient", "patient-call", null, false)
+    ];
+
+    private readonly List<string> _draft = [];
+    private readonly List<string> _housed = [];
+    private readonly Dictionary<string, string> _phrases = new(StringComparer.OrdinalIgnoreCase);
+    private bool _editing;
+    private bool _ready;
+    private bool _configureOpen;
+    private bool _speechMissing;
+    private string? _activeDialysis;
+    private string? _loadedScope;
+    private ElementReference _board;
+
+    private IReadOnlyList<LogoItem> Catalog => IsDoctor ? DoctorLogos : PatientLogos;
+    private IEnumerable<IGrouping<string, LogoItem>> Groups => Catalog.GroupBy(item => item.Group);
+    private string Scope => string.IsNullOrWhiteSpace(UserId) ? "" : (IsDoctor ? "doctor:" : "patient:") + UserId.Trim();
+    private string? MemoryKey => string.IsNullOrEmpty(Scope) ? null : "controls-" + Scope;
+    private string? ConfigMemoryKey => string.IsNullOrEmpty(Scope) ? null : "controls-config-" + Scope;
+    private bool CanReset => _housed.Count > 0 || _draft.Count > 0 || _activeDialysis is not null;
+    private bool CanArrange => _housed.Count > 0;
+    private string BoardStatus => _housed.Count == 0
+        ? "No logos yet. Configure chooses up to 5."
+        : $"{_housed.Count} of {MaxItems} logos on this page.";
+
+    private IEnumerable<LogoItem> HousedItems =>
+        _housed.Select(id => Catalog.FirstOrDefault(item => item.Id == id)).OfType<LogoItem>();
+
+    private LogoItem? ActiveDialysis => Catalog.FirstOrDefault(item => item.Id == _activeDialysis);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible || string.IsNullOrEmpty(Scope))
+            return;
+
+        try
+        {
+            if (_loadedScope != Scope)
+            {
+                await LoadAsync();
+                _loadedScope = Scope;
+                _ready = true;
+                StateHasChanged();
+                return;
+            }
+
+            if (_ready)
+                await JS.InvokeVoidAsync("mmCustomControls.watch", _board, Scope);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        await LoadPhrasesAsync();
+        ControlsState? state = null;
+        try
+        {
+            state = await JS.InvokeAsync<ControlsState?>("mmCustomControls.load", Scope);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+
+        _housed.Clear();
+        _draft.Clear();
+        _housed.AddRange(Known(state?.Housed).Take(MaxItems));
+        _draft.AddRange(Known(state?.Draft).Take(MaxItems));
+        _editing = state?.Editing ?? false;
+        if (_housed.Count == 0 && _draft.Count == 0)
+            _editing = true;
+        if (!_editing && _draft.Count == 0)
+            _draft.AddRange(_housed);
+    }
+
+    private async Task LoadPhrasesAsync()
+    {
+        try
+        {
+            var lines = await JS.InvokeAsync<SpeechLine[]>("mmVoice.lines");
+            _phrases.Clear();
+            if (lines is null)
+                return;
+
+            foreach (var line in lines)
+            {
+                if (!string.IsNullOrWhiteSpace(line.Id) && !string.IsNullOrWhiteSpace(line.Phrase))
+                    _phrases[line.Id] = line.Phrase.Trim();
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private IEnumerable<string> Known(IEnumerable<string>? ids) =>
+        (ids ?? []).Where(id => Catalog.Any(item => item.Id == id)).Distinct();
+
+    private bool LockPick(string id) => !_editing || (!_draft.Contains(id) && _draft.Count >= MaxItems);
+
+    private async Task ApplyDefaultSize()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.defaultSize", _board);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task ApplyDefaultPosition()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.defaultPosition", _board);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task ResetPage()
+    {
+        if (_activeDialysis is not null)
+            await Attend();
+
+        _housed.Clear();
+        _draft.Clear();
+        _editing = true;
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.retainBoxes", Scope, Array.Empty<string>());
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+
+        await PersistAsync();
+    }
+
+    private void OpenConfigure()
+    {
+        if (!_editing)
+        {
+            _draft.Clear();
+            _draft.AddRange(_housed);
+        }
+
+        _configureOpen = true;
+    }
+
+    private async Task ToggleLogo(string id, bool selected)
+    {
+        if (!_editing || Catalog.All(item => item.Id != id))
+            return;
+
+        if (selected)
+        {
+            if (_draft.Contains(id) || _draft.Count >= MaxItems)
+                return;
+            _draft.Add(id);
+        }
+        else
+        {
+            _draft.Remove(id);
+        }
+
+        await PersistAsync();
+    }
+
+    private async Task ToggleMode()
+    {
+        if (_editing)
+        {
+            _editing = false;
+            await CommitDraftAsync();
+            return;
+        }
+
+        _editing = true;
+        if (_draft.Count == 0)
+            _draft.AddRange(_housed);
+        await PersistAsync();
+    }
+
+    private async Task CloseConfigure(bool visible)
+    {
+        if (visible)
+            return;
+
+        await CommitDraftAsync();
+        _configureOpen = false;
+    }
+
+    private async Task CommitDraftAsync()
+    {
+        _housed.Clear();
+        _housed.AddRange(_draft.Take(MaxItems));
+        _draft.Clear();
+        _draft.AddRange(_housed);
+        if (_activeDialysis is not null && !_housed.Contains(_activeDialysis))
+            await Attend();
+
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.retainBoxes", Scope, _housed);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+
+        await PersistAsync();
+    }
+
+    private async Task Perform(LogoItem item)
+    {
+        switch (item.Kind)
+        {
+            case "emergency":
+                await OnEmergency.InvokeAsync();
+                break;
+            case "voice":
+                await OnVoice.InvokeAsync();
+                break;
+            case "accessibility":
+                await OnAccessibility.InvokeAsync();
+                break;
+            case "family":
+                await OnFamily.InvokeAsync();
+                break;
+            case "monitor":
+                await OnMonitor.InvokeAsync();
+                break;
+            case "prescription":
+                await OnPrescription.InvokeAsync();
+                break;
+            case "patient-call":
+                await OnPatientCall.InvokeAsync();
+                break;
+            case "dialysis":
+                await StartDialysis(item);
+                break;
+        }
+    }
+
+    private async Task StartDialysis(LogoItem item)
+    {
+        _activeDialysis = item.Id;
+        var phrase = Phrase(item);
+        try
+        {
+            await JS.InvokeAsync<bool>("mmVoice.ensureVoice");
+            _speechMissing = !await JS.InvokeAsync<bool>("mmAccessibility.startHelpCall", phrase);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+            _speechMissing = true;
+        }
+    }
+
+    private async Task Attend()
+    {
+        _activeDialysis = null;
+        _speechMissing = false;
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.stopHelpCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private string Phrase(LogoItem item)
+    {
+        var key = item.Id.StartsWith("dialysis-", StringComparison.Ordinal) ? item.Id["dialysis-".Length..] : item.Id;
+        return _phrases.TryGetValue(key, out var phrase) && !string.IsNullOrWhiteSpace(phrase)
+            ? phrase
+            : item.Phrase ?? item.Label;
+    }
+
+    private string Href(LogoItem item)
+    {
+        if (!item.WithPatient)
+            return string.IsNullOrEmpty(item.Path) ? "/" : item.Path;
+
+        var link = CareLinks.To(item.Path ?? "", PatientUserId);
+        return string.IsNullOrEmpty(link) ? "/" : link;
+    }
+
+    private RenderFragment LogoMark(LogoItem item) => @<text>
+        @if (!string.IsNullOrEmpty(item.Image))
+        {
+            <img class="scene-img" src="@item.Image" alt="" draggable="false" />
+        }
+        else
+        {
+            <FeatureScene Scene="@item.Scene" />
+        }
+    </text>;
+
+    private RenderFragment LogoFace(LogoItem item, bool calling) => @<span class="controls-logo-face">
+        <span class="controls-logo-orb">@LogoMark(item)</span>
+        <span class="controls-logo-name">@item.Label</span>
+        @if (calling)
+        {
+            <span class="controls-calling">Calling</span>
+        }
+    </span>;
+
+    private async Task HandleClose(bool visible)
+    {
+        if (!visible && _ready)
+        {
+            if (_configureOpen)
+                await CommitDraftAsync();
+            else
+                await PersistAsync();
+            if (_activeDialysis is not null)
+                await Attend();
+            _configureOpen = false;
+        }
+
+        await VisibleChanged.InvokeAsync(visible);
+    }
+
+    private async Task PersistAsync()
+    {
+        if (string.IsNullOrEmpty(Scope))
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("mmCustomControls.save", Scope, new ControlsState
+            {
+                Housed = _housed.ToArray(),
+                Draft = _draft.ToArray(),
+                Editing = _editing
+            });
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_ready)
+            await PersistAsync();
+    }
+
+    private sealed class ControlsState
+    {
+        public string[]? Housed { get; set; }
+        public string[]? Draft { get; set; }
+        public bool Editing { get; set; }
+    }
+
+    private sealed class SpeechLine
+    {
+        public string Id { get; set; } = "";
+        public string Phrase { get; set; } = "";
+    }
+
+    private sealed record LogoItem(
+        string Id,
+        string Scene,
+        string Label,
+        string Kind,
+        string? Path,
+        bool WithPatient,
+        string? Image = null,
+        string? Phrase = null,
+        string Group = "Logos");
+}

@@ -93,6 +93,8 @@
                                    OnPrescription="OpenPrescription"
                                    OnAccessibility="OpenAccessibility"
                                    AccessibilityOpen="_accessibilityOpen"
+                                   OnCustomControls="OpenCustomControls"
+                                   CustomControlsOpen="_controlsOpen"
                                    OnNavigate="CloseNav" />
                 }
                 else
@@ -477,6 +479,19 @@
                 <PrescriptionWindow Closed="ClosePrescription" />
             }
         </AuthorizeView>
+        <CustomControlsWindow Visible="_controlsOpen"
+                              VisibleChanged="OnControlsChanged"
+                              IsDoctor="_isDoctor"
+                              PatientUserId="@selectedPatientId"
+                              UserId="@_userId"
+                              CurrentUrl="@currentUrl"
+                              OnEmergency="OpenEmergencyCall"
+                              OnVoice="OpenGuide"
+                              OnAccessibility="OpenAccessibility"
+                              OnFamily="OpenFamilyCall"
+                              OnMonitor="OpenMonitor"
+                              OnPrescription="OpenPrescription"
+                              OnPatientCall="OpenPatientCall" />
     </Authorized>
 </AuthorizeView>
 
@@ -495,6 +510,7 @@
     private bool _isDoctor;
     private bool _prescriptionOpen;
     private bool _accessibilityOpen;
+    private bool _controlsOpen;
     private bool _authReady;
     private bool? _a11yForDoctor;
     private bool _callOpen;
@@ -844,6 +860,18 @@
 
         _accessibilityOpen = true;
         _navOpen = false;
+    }
+
+    private void OpenCustomControls()
+    {
+        _controlsOpen = true;
+        _navOpen = false;
+    }
+
+    private Task OnControlsChanged(bool visible)
+    {
+        _controlsOpen = visible;
+        return Task.CompletedTask;
     }
 
     private async Task SyncAccessibilityScopeAsync()

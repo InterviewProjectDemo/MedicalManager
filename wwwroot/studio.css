@@ -779,6 +779,30 @@ article.content > .home-mark {
     height: min(78vh, 680px);
 }
 
+.studio-float.place-controls {
+    top: 4.6rem;
+    left: 17.4rem;
+    width: min(980px, calc(100vw - 18.8rem));
+    height: min(82vh, 760px);
+}
+
+.studio-float.place-controls-config {
+    top: 6.4rem;
+    left: 21rem;
+    width: min(760px, calc(100vw - 22rem));
+    height: min(74vh, 680px);
+}
+
+@media (max-width: 800px) {
+    .studio-float.place-controls,
+    .studio-float.place-controls-config {
+        top: 4.2rem;
+        left: 0.6rem;
+        width: calc(100vw - 1.2rem);
+        height: min(78vh, 720px);
+    }
+}
+
 .studio-float.place-summary {
     top: 5rem;
     left: 12.5rem;
@@ -805,7 +829,8 @@ article.content > .home-mark {
     min-height: 0;
 }
 
-.studio-float-body:has(.a11y-window) {
+.studio-float-body:has(.a11y-window),
+.studio-float-body:has(.controls-window) {
     display: flex;
     flex-direction: column;
     overflow: hidden;

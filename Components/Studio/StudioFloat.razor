@@ -21,6 +21,7 @@
     [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
     [Parameter] public string Title { get; set; } = "";
     [Parameter] public string Place { get; set; } = "graph";
+    [Parameter] public string? MemoryKey { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private readonly string _titleId = "studio-float-" + Guid.NewGuid().ToString("N");
@@ -55,7 +56,7 @@
             _self ??= DotNetObjectReference.Create(this);
             if (!_hooked)
             {
-                await _module.InvokeVoidAsync("attach", _panel, _self);
+                await _module.InvokeVoidAsync("attach", _panel, _self, MemoryKey);
                 _hooked = true;
             }
             await _module.InvokeVoidAsync("layer", _panel);

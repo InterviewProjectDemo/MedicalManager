@@ -50,6 +50,9 @@
                 <NavLink class="studio-nav-link" href="referral" @onclick="OnNavigate">
                     @Mark("doctor-referral", "Referral")
                 </NavLink>
+                <button type="button" class="studio-nav-link @(CustomControlsOpen ? "active" : null)" aria-pressed="@(CustomControlsOpen ? "true" : "false")" title="Custom Controls" @onclick="OpenCustomControls">
+                    @Mark("controls", "Controls")
+                </button>
                 <NavLink class="studio-nav-link" href="Account/Manage" title="@AccountName" @onclick="OnNavigate">
                     @Mark("doctor-account", "Account")
                 </NavLink>
@@ -70,6 +73,9 @@
                 </button>
                 <button type="button" class="studio-nav-link @(AccessibilityOpen ? "active" : null)" aria-pressed="@(AccessibilityOpen ? "true" : "false")" @onclick="OpenAccessibility">
                     @Mark("accessibility", "Accessibility")
+                </button>
+                <button type="button" class="studio-nav-link @(CustomControlsOpen ? "active" : null)" aria-pressed="@(CustomControlsOpen ? "true" : "false")" title="Custom Controls" @onclick="OpenCustomControls">
+                    @Mark("controls", "Controls")
                 </button>
                 <NavLink class="studio-nav-link" href="@Href("dashboard-studio")" @onclick="OnNavigate">
                     @Mark("layout", "Layout")
@@ -117,6 +123,8 @@
     [Parameter] public EventCallback OnPrescription { get; set; }
     [Parameter] public EventCallback OnAccessibility { get; set; }
     [Parameter] public bool AccessibilityOpen { get; set; }
+    [Parameter] public EventCallback OnCustomControls { get; set; }
+    [Parameter] public bool CustomControlsOpen { get; set; }
 
     private async Task OpenPrescription()
     {
@@ -128,6 +136,12 @@
     {
         await OnNavigate.InvokeAsync();
         await OnAccessibility.InvokeAsync();
+    }
+
+    private async Task OpenCustomControls()
+    {
+        await OnNavigate.InvokeAsync();
+        await OnCustomControls.InvokeAsync();
     }
 
     private string Href(string path) => CareLinks.To(path, PatientUserId);
