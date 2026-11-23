@@ -153,7 +153,6 @@ public sealed class ScheduleService(
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await db.Database.BeginTransactionAsync();
             await ExpireAsync(db, doctor.Id);
             var conflict = await ConflictAsync(db, doctor, actor.Id, start, end, exceptSeatId: null);
             if (conflict is not null)
@@ -163,7 +162,6 @@ public sealed class ScheduleService(
             try
             {
                 await db.SaveChangesAsync();
-                await tx.CommitAsync();
             }
             catch (DbUpdateException)
             {
@@ -202,7 +200,6 @@ public sealed class ScheduleService(
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await db.Database.BeginTransactionAsync();
             await ExpireAsync(db, doctor.Id);
             var conflict = await ConflictAsync(db, doctor, patient.Id, start, end, exceptSeatId: null);
             if (conflict is not null)
@@ -212,7 +209,6 @@ public sealed class ScheduleService(
             try
             {
                 await db.SaveChangesAsync();
-                await tx.CommitAsync();
             }
             catch (DbUpdateException)
             {
@@ -250,7 +246,6 @@ public sealed class ScheduleService(
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await db.Database.BeginTransactionAsync();
             var seat = await db.ScheduleSeats.FirstOrDefaultAsync(item => item.Id == seatId);
             if (seat is null || seat.PatientUserId is null)
                 return Fail("That request is no longer waiting.");
@@ -273,7 +268,6 @@ public sealed class ScheduleService(
                 var releasedPatient = seat.PatientUserId;
                 db.ScheduleSeats.Remove(seat);
                 await db.SaveChangesAsync();
-                await tx.CommitAsync();
                 live.Publish(releasedDoctor, releasedPatient);
                 return Fail(conflict);
             }
@@ -295,7 +289,6 @@ public sealed class ScheduleService(
             }
 
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
             patientId = seat.PatientUserId;
         }
         finally
