@@ -4,7 +4,8 @@ public enum LabRangeKind
 {
     Between,
     LessThan,
-    GreaterThan
+    GreaterThan,
+    AtLeast
 }
 
 public sealed record LabTestDefinition(
@@ -76,8 +77,31 @@ public static class LabTestDefinitions
         new("urine-acr", "Urine ACR", "mg/g", "<30", LabRangeKind.LessThan, null, 30)
     ];
 
+    public static IReadOnlyList<LabTestDefinition> DialysisSection { get; } = CreateDialysisSection();
+
+    public static IReadOnlyList<LabTestDefinition> DialysisOnly { get; } =
+        DialysisSection.Where(test => All.All(existing => !existing.Code.Equals(test.Code, StringComparison.OrdinalIgnoreCase))).ToList();
+
+    private static IReadOnlyList<LabTestDefinition> CreateDialysisSection()
+    {
+        var hemoglobin = All.First(test => test.Code == "hemoglobin");
+        return
+        [
+            hemoglobin,
+            new("iron-saturation", "Iron saturation", "%", "20–50", LabRangeKind.Between, 20, 50),
+            new("dialysis-ferritin", "Ferritin", "ng/mL", "200–500", LabRangeKind.Between, 200, 500),
+            new("dialysis-albumin", "Albumin", "g/dL", "≥4.0", LabRangeKind.AtLeast, 4.0m, null),
+            new("dialysis-phosphorus", "Phosphorus", "mg/dL", "3.5–5.5", LabRangeKind.Between, 3.5m, 5.5m),
+            new("pth", "PTH intact", "pg/mL", "150–600", LabRangeKind.Between, 150, 600),
+            new("dialysis-potassium", "Potassium", "mEq/L", "3.5–5.5", LabRangeKind.Between, 3.5m, 5.5m),
+            new("ktv", "Kt/V", "spKt/V", "≥1.2", LabRangeKind.AtLeast, 1.2m, null)
+        ];
+    }
+
     private static readonly Dictionary<string, LabTestDefinition> ByCode =
-        All.ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
+        All.Concat(DialysisSection)
+            .GroupBy(test => test.Code, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
     public static LabTestDefinition? Get(string code) =>
         ByCode.TryGetValue(code, out var def) ? def : null;
@@ -95,6 +119,7 @@ public static class LabTestDefinitions
             LabRangeKind.Between => def.Min <= value && value <= def.Max,
             LabRangeKind.LessThan => value < def.Max,
             LabRangeKind.GreaterThan => value > def.Min,
+            LabRangeKind.AtLeast => value >= def.Min,
             _ => true
         };
     }

@@ -70,6 +70,17 @@ public static class LabOrderCatalog
             new("vitamin-d", "Vitamin D", ["vitamin-d"]),
             new("b12", "Vitamin B12", ["b12"]),
             new("folate", "Folate", ["folate"])
+        ]),
+        new("Dialysis",
+        [
+            new("dialysis-hemoglobin", "Hemoglobin", ["hemoglobin"]),
+            new("iron-saturation", "Iron saturation", ["iron-saturation"]),
+            new("dialysis-ferritin", "Ferritin", ["dialysis-ferritin"]),
+            new("dialysis-albumin", "Albumin", ["dialysis-albumin"]),
+            new("dialysis-phosphorus", "Phosphorus", ["dialysis-phosphorus"]),
+            new("pth", "PTH intact", ["pth"]),
+            new("dialysis-potassium", "Potassium", ["dialysis-potassium"]),
+            new("ktv", "Kt/V", ["ktv"])
         ])
     ];
 

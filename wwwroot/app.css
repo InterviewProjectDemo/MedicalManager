@@ -1774,6 +1774,16 @@ tr.is-selected > td { background: #e7f6f4; }
     .rx-med-row { grid-template-columns: 1fr; }
 }
 
+.lab-dialysis { margin-top: 1rem; }
+.lab-table.lab-table-compact { min-width: 0; }
+.lab-section-label {
+    margin: 0.85rem 0 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #0f3d5c;
+}
 .lab-form-section {
     margin: 1.25rem 0 0.75rem;
     font-size: 1rem;

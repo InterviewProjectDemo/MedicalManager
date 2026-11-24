@@ -117,6 +117,59 @@
             </div>
         </div>
 
+        <div class="table-card lab-table-wrap lab-desktop-table lab-dialysis">
+            <div class="lab-table-head">
+                <h2>Dialysis</h2>
+                <span class="muted">Hemodialysis goals</span>
+            </div>
+            <div class="lab-table-scroll">
+                <table class="table lab-table lab-table-compact align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="lab-date-col">Collection date</th>
+                            @foreach (var test in LabTestDefinitions.DialysisSection)
+                            {
+                                <th class="lab-test-col">
+                                    <span class="lab-test-name">@test.Name</span>
+                                    <span class="lab-test-range">@test.RangeLabel @test.Unit</span>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var report in active.Reports)
+                        {
+                            var resultMap = report.Results.ToDictionary(r => r.TestCode, StringComparer.OrdinalIgnoreCase);
+                            <tr>
+                                <td class="lab-date-col">
+                                    <strong>@report.ReportDate.ToString("MMM d, yyyy")</strong>
+                                </td>
+                                @foreach (var test in LabTestDefinitions.DialysisSection)
+                                {
+                                    <td class="lab-value-col">
+                                        @if (resultMap.TryGetValue(test.Code, out var result))
+                                        {
+                                            <span class="lab-value @LabTestDefinitions.CssClass(test.Code, result.Value)">
+                                                @FormatValue(result.Value)
+                                            </span>
+                                        }
+                                        else if (LabReportStatus.IsOrdered(report, test.Code))
+                                        {
+                                            <span class="lab-pending">Pending</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="lab-empty">—</span>
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="lab-mobile-list" aria-label="@active.Label lab reports">
             <div class="lab-table-head">
                 <h2>@active.Label</h2>
@@ -165,6 +218,31 @@
                             }
                         }
                     </div>
+                    @if (LabTestDefinitions.DialysisSection.Any(test => resultMap.ContainsKey(test.Code) || LabReportStatus.IsOrdered(report, test.Code)))
+                    {
+                        <h4 class="lab-section-label">Dialysis</h4>
+                        <div class="lab-result-grid">
+                            @foreach (var test in LabTestDefinitions.DialysisSection)
+                            {
+                                if (resultMap.TryGetValue(test.Code, out var dialysisResult))
+                                {
+                                    <div class="lab-result-chip">
+                                        <span>@test.Name</span>
+                                        <span class="lab-value @LabTestDefinitions.CssClass(test.Code, dialysisResult.Value)">
+                                            @FormatValue(dialysisResult.Value) <small>@test.Unit</small>
+                                        </span>
+                                    </div>
+                                }
+                                else if (LabReportStatus.IsOrdered(report, test.Code))
+                                {
+                                    <div class="lab-result-chip">
+                                        <span>@test.Name</span>
+                                        <span class="lab-pending">Pending</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
                 </article>
             }
         </div>

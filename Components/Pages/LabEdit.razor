@@ -51,6 +51,22 @@
             }
         </div>
 
+        <h2 class="lab-form-section">Dialysis</h2>
+        <div class="lab-form-grid">
+            @foreach (var entry in entries.Where(e => e.Test.Code == "hemoglobin").Concat(dialysisEntries))
+            {
+                <div class="lab-form-field">
+                    <label class="form-label">
+                        @entry.Test.Name
+                        <span class="lab-form-range">(@entry.Test.RangeLabel @entry.Test.Unit)</span>
+                    </label>
+                    <InputNumber class="form-control"
+                                 @bind-Value="entry.Value"
+                                 placeholder="—" />
+                </div>
+            }
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="btn btn-teal">Save</button>
             <a class="btn btn-outline-secondary" href="@Back">Cancel</a>
@@ -109,6 +125,9 @@ else if (Id is not null && model is not null && !_editAuthorized)
     private readonly List<LabValueEntry> entries = LabTestDefinitions.All
         .Select(t => new LabValueEntry { Test = t })
         .ToList();
+    private readonly List<LabValueEntry> dialysisEntries = LabTestDefinitions.DialysisOnly
+        .Select(t => new LabValueEntry { Test = t })
+        .ToList();
     private string Back => CareLinks.To("labs", PatientUserId);
 
     protected override async Task OnParametersSetAsync()
@@ -117,7 +136,7 @@ else if (Id is not null && model is not null && !_editAuthorized)
         scope = (await Access.ResolveAsync(state.User, PatientUserId)).ForSection(ChartSection.Lab, update: true);
         if (scope.PatientId is not string patientId) return;
 
-        foreach (var entry in entries)
+        foreach (var entry in entries.Concat(dialysisEntries))
         {
             entry.Value = null;
         }
@@ -130,7 +149,7 @@ else if (Id is not null && model is not null && !_editAuthorized)
             {
                 foreach (var result in model.Results)
                 {
-                    var entry = entries.FirstOrDefault(e => e.Test.Code == result.TestCode);
+                    var entry = entries.Concat(dialysisEntries).FirstOrDefault(e => e.Test.Code == result.TestCode);
                     if (entry is not null)
                     {
                         entry.Value = result.Value;
@@ -172,7 +191,7 @@ else if (Id is not null && model is not null && !_editAuthorized)
     {
         if (model is null || scope?.PatientId is null) return;
         model.UserId = scope.PatientId;
-        var values = entries.ToDictionary(e => e.Test.Code, e => e.Value);
+        var values = entries.Concat(dialysisEntries).ToDictionary(e => e.Test.Code, e => e.Value);
         await LabReports.SaveReportAsync(model, values);
         Nav.NavigateTo(Back);
     }
