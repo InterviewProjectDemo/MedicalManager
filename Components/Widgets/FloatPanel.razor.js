@@ -1,3 +1,8 @@
+export function unlayer(panel) {
+    if (panel && panel.isConnected)
+        panel.remove();
+}
+
 export function layer(panel) {
     if (!panel || !panel.isConnected)
         return;

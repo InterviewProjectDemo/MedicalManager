@@ -252,8 +252,7 @@
 @if (_pendingEditId is not null)
 {
     <div class="med-update-backdrop" @onclick="CancelEdit">
-        <FloatPanel Class="place-modal" LabelledBy="lab-edit-title">
-        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="false" aria-label="Confirm lab report edit">
+        <div class="med-update-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="lab-edit-title">
             <div class="med-update-head">
                 <div>
                     <h3 id="lab-edit-title">Confirm edit access</h3>
@@ -294,7 +293,6 @@
                 </div>
             </EditForm>
         </div>
-        </FloatPanel>
     </div>
 }
 

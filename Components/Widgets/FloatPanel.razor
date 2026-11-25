@@ -253,9 +253,10 @@
 
         try
         {
+            await _module.InvokeVoidAsync("unlayer", _panel);
             await _module.DisposeAsync();
         }
-        catch (JSDisconnectedException)
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
     }
