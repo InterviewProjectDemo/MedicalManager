@@ -1,0 +1,342 @@
+<div class="summary-browser">
+    @if (!string.IsNullOrWhiteSpace(Notice))
+    {
+        @if (NoticeIsError)
+        {
+            <div class="alert alert-danger py-2 mb-0" role="alert">@Notice</div>
+        }
+        else
+        {
+            <p class="muted mb-0" role="status">@Notice</p>
+        }
+    }
+    <div class="summary-filters">
+        <label>
+            From
+            <input type="date" class="form-control" value="@DateValue(_from)" @onchange="SetFrom" />
+        </label>
+        <label>
+            To
+            <input type="date" class="form-control" value="@DateValue(_to)" @onchange="SetTo" />
+        </label>
+        <label>
+            Visit
+            <select class="form-select" @bind="_visit" @bind:after="ShowFirst">
+                <option value="all">All visits</option>
+                <option value="none">Not from a video visit</option>
+                @foreach (var visit in VisitChoices())
+                {
+                    <option value="@visit.Value">@visit.Label</option>
+                }
+            </select>
+        </label>
+        <label>
+            Status
+            <select class="form-select" @bind="_status" @bind:after="ShowFirst">
+                <option value="all">All</option>
+                <option value="@TranscriptStatus.InProgress">Visit in progress</option>
+                <option value="@TranscriptStatus.Saved">Saved</option>
+                <option value="@TranscriptStatus.Archived">Archived</option>
+            </select>
+        </label>
+        <label>
+            Sort
+            <select class="form-select" @bind="_sort" @bind:after="ShowFirst">
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+                <option value="name-asc">Doctor A to Z</option>
+                <option value="status">Status</option>
+            </select>
+        </label>
+        <label class="summary-find">
+            Find
+            <input type="search" class="form-control" placeholder="Doctor or words in the transcript" value="@_query" @oninput="SetQuery" />
+        </label>
+        <button type="button" class="btn btn-sm btn-outline-secondary summary-clear" @onclick="ClearFilters">Clear filters</button>
+    </div>
+    @if (_from is not null && _to is not null && _from > _to)
+    {
+        <p class="muted summary-hint mb-0">Showing visits from the earlier date through the later date.</p>
+    }
+
+    @{
+        var visible = Visible();
+        var current = visible.Count == 0 ? null : visible[Math.Clamp(_index, 0, visible.Count - 1)];
+    }
+
+    <div class="summary-nav">
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFirst" disabled="@(visible.Count == 0 || _index <= 0)">First</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Previous" disabled="@(visible.Count == 0 || _index <= 0)">Previous</button>
+        <span>@Position(visible.Count)</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Next" disabled="@(visible.Count == 0 || _index >= visible.Count - 1)">Next</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowLast" disabled="@(visible.Count == 0 || _index >= visible.Count - 1)">Last</button>
+    </div>
+
+    @if (Items.Count == 0)
+    {
+        <p class="muted mb-0">@EmptyText</p>
+    }
+    else if (visible.Count == 0)
+    {
+        <p class="muted mb-0">No transcript matches these filters.</p>
+    }
+    else
+    {
+        <div class="summary-split">
+            <ul class="summary-jump">
+                @for (var i = 0; i < visible.Count; i++)
+                {
+                    var index = i;
+                    var item = visible[index];
+                    <li>
+                        <button type="button" class="@(index == _index ? "is-current" : null)" aria-pressed="@(index == _index ? "true" : "false")" @onclick="() => Choose(index)">
+                            <time>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</time>
+                            <span>@item.DoctorName</span>
+                            <span class="transcript-chip @ChipClass(item.Status)">@item.Status</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+            @if (current is not null)
+            {
+                <article class="summary-read">
+                    <header>
+                        <strong>@current.DoctorName</strong>
+                        <span class="transcript-chip @ChipClass(current.Status)">@current.Status</span>
+                        <time>@current.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</time>
+                    </header>
+                    @if (current.VideoVisitId is int)
+                    {
+                        <p class="muted">From a video visit</p>
+                    }
+                    @if (current.EmailedAt is DateTime emailed)
+                    {
+                        <p class="muted">Emailed @emailed.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</p>
+                    }
+                    @if (string.IsNullOrWhiteSpace(current.Body))
+                    {
+                        <p class="muted">No words yet.</p>
+                    }
+                    else
+                    {
+                        <p>@current.Body</p>
+                    }
+                    @if (CanManage)
+                    {
+                        <label class="transcript-option">
+                            <input type="checkbox" checked="@current.PatientCanView" disabled="@Busy" @onchange="e => ToggleView(current, e)" />
+                            Patient can view
+                        </label>
+                        <div class="form-actions">
+                            @if (current.Status != TranscriptStatus.Archived)
+                            {
+                                <button type="button" class="btn btn-sm btn-teal" disabled="@Busy" @onclick="() => SaveCurrent(current)">Save</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@Busy" @onclick="() => ArchiveCurrent(current)">Archive</button>
+                            }
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@Busy" @onclick="() => EmailCurrent(current)">Email</button>
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<MedicalTranscript> Items { get; set; } = [];
+    [Parameter] public bool CanManage { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string? Notice { get; set; }
+    [Parameter] public bool NoticeIsError { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "No medical transcript yet.";
+    [Parameter] public EventCallback<TranscriptCommand> Command { get; set; }
+
+    private DateOnly? _from;
+    private DateOnly? _to;
+    private string _visit = "all";
+    private string _status = "all";
+    private string _sort = "date-desc";
+    private string _query = "";
+    private int _index;
+    private int? _pinnedId;
+
+    protected override void OnParametersSet()
+    {
+        var visible = Visible();
+        if (_pinnedId is int id)
+        {
+            var found = visible.FindIndex(item => item.Id == id);
+            if (found >= 0)
+                _index = found;
+            else if (visible.Count == 0)
+                _index = 0;
+            else
+                _index = Math.Clamp(_index, 0, visible.Count - 1);
+        }
+        else if (visible.Count == 0)
+        {
+            _index = 0;
+        }
+        else
+        {
+            _index = Math.Clamp(_index, 0, visible.Count - 1);
+        }
+    }
+
+    private List<MedicalTranscript> Visible()
+    {
+        var start = _from;
+        var end = _to;
+        if (start is not null && end is not null && start > end)
+            (start, end) = (end, start);
+
+        var query = _query.Trim();
+        IEnumerable<MedicalTranscript> rows = Items;
+        if (start is DateOnly from)
+            rows = rows.Where(item => DateOnly.FromDateTime(item.CreatedAt.ToLocalTime()) >= from);
+        if (end is DateOnly to)
+            rows = rows.Where(item => DateOnly.FromDateTime(item.CreatedAt.ToLocalTime()) <= to);
+        if (_visit == "none")
+            rows = rows.Where(item => item.VideoVisitId is null);
+        else if (_visit.StartsWith("v-", StringComparison.Ordinal) && int.TryParse(_visit[2..], out var visitId))
+            rows = rows.Where(item => item.VideoVisitId == visitId);
+        if (_status != "all")
+            rows = rows.Where(item => item.Status == _status);
+        if (query.Length > 0)
+        {
+            rows = rows.Where(item =>
+                item.DoctorName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Body.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Status.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        rows = _sort switch
+        {
+            "date-asc" => rows.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id),
+            "name-asc" => rows.OrderBy(item => item.DoctorName, StringComparer.OrdinalIgnoreCase).ThenByDescending(item => item.CreatedAt),
+            "status" => rows.OrderBy(item => item.Status, StringComparer.OrdinalIgnoreCase).ThenByDescending(item => item.CreatedAt),
+            _ => rows.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id)
+        };
+        return rows.ToList();
+    }
+
+    private IReadOnlyList<VisitChoice> VisitChoices() =>
+        Items
+            .Where(item => item.VideoVisitId is int)
+            .GroupBy(item => item.VideoVisitId!.Value)
+            .Select(group => new VisitChoice(
+                "v-" + group.Key,
+                "Video visit · " + group.Min(item => item.CreatedAt).ToLocalTime().ToString("MMM d, yyyy h:mm tt"),
+                group.Min(item => item.CreatedAt)))
+            .OrderByDescending(item => item.When)
+            .ToList();
+
+    private void Choose(int index)
+    {
+        _index = index;
+        _pinnedId = CurrentId();
+    }
+
+    private void ShowFirst()
+    {
+        _index = 0;
+        _pinnedId = CurrentId();
+    }
+
+    private void ShowLast()
+    {
+        var count = Visible().Count;
+        _index = Math.Max(0, count - 1);
+        _pinnedId = CurrentId();
+    }
+
+    private void Previous()
+    {
+        if (_index > 0)
+            _index--;
+        _pinnedId = CurrentId();
+    }
+
+    private void Next()
+    {
+        var count = Visible().Count;
+        if (_index < count - 1)
+            _index++;
+        _pinnedId = CurrentId();
+    }
+
+    private int? CurrentId()
+    {
+        var visible = Visible();
+        if (visible.Count == 0)
+            return null;
+        return visible[Math.Clamp(_index, 0, visible.Count - 1)].Id;
+    }
+
+    private void SetFrom(ChangeEventArgs e)
+    {
+        _from = ParseDate(e.Value?.ToString());
+        ShowFirst();
+    }
+
+    private void SetTo(ChangeEventArgs e)
+    {
+        _to = ParseDate(e.Value?.ToString());
+        ShowFirst();
+    }
+
+    private void SetQuery(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        ShowFirst();
+    }
+
+    private void ClearFilters()
+    {
+        _from = null;
+        _to = null;
+        _query = "";
+        _visit = "all";
+        _status = "all";
+        _sort = "date-desc";
+        ShowFirst();
+    }
+
+    private Task SaveCurrent(MedicalTranscript item) =>
+        Command.InvokeAsync(new TranscriptCommand("save", item.Id));
+
+    private Task ArchiveCurrent(MedicalTranscript item) =>
+        Command.InvokeAsync(new TranscriptCommand("archive", item.Id));
+
+    private Task EmailCurrent(MedicalTranscript item) =>
+        Command.InvokeAsync(new TranscriptCommand("email", item.Id));
+
+    private Task ToggleView(MedicalTranscript item, ChangeEventArgs e)
+    {
+        var on = e.Value is bool value && value;
+        return Command.InvokeAsync(new TranscriptCommand(on ? "view-on" : "view-off", item.Id));
+    }
+
+    private string Position(int count)
+    {
+        if (Items.Count == 0)
+            return "No transcripts";
+        if (count == 0)
+            return "0 matches";
+        return $"Transcript {_index + 1} of {count}";
+    }
+
+    private static string ChipClass(string status) => status switch
+    {
+        TranscriptStatus.Saved => "is-saved",
+        TranscriptStatus.Archived => "is-archived",
+        _ => "is-progress"
+    };
+
+    private static string DateValue(DateOnly? date) => date?.ToString("yyyy-MM-dd") ?? "";
+
+    private static DateOnly? ParseDate(string? value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
+
+    private sealed record VisitChoice(string Value, string Label, DateTime When);
+}

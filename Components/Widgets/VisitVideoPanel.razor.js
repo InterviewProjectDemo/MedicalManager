@@ -79,6 +79,84 @@ export function clearRemote(remoteVideo) {
         remoteVideo.srcObject = null;
 }
 
+let transcriptRec = null;
+let transcriptRef = null;
+let transcriptOn = false;
+
+export function startTranscript(dotNetRef) {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition)
+        return "unsupported";
+
+    stopTranscript();
+    transcriptRef = dotNetRef;
+    transcriptOn = true;
+    const rec = new Recognition();
+    transcriptRec = rec;
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (event) => {
+        let finalText = "";
+        let interim = "";
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            const result = event.results[index];
+            const piece = (result[0] && result[0].transcript) || "";
+            if (result.isFinal)
+                finalText += piece;
+            else
+                interim += piece;
+        }
+        const line = finalText.trim();
+        if (line && transcriptRef)
+            transcriptRef.invokeMethodAsync("OnTranscriptLine", line);
+        if (transcriptRef)
+            transcriptRef.invokeMethodAsync("OnTranscriptInterim", interim.trim());
+    };
+    rec.onerror = (event) => {
+        const code = event && event.error;
+        if (code === "not-allowed" || code === "service-not-allowed") {
+            transcriptOn = false;
+            transcriptRec = null;
+            if (transcriptRef)
+                transcriptRef.invokeMethodAsync("OnTranscriptError", "Microphone speech recognition was blocked. You can type the transcript.");
+        }
+    };
+    rec.onend = () => {
+        if (!transcriptOn || transcriptRec !== rec)
+            return;
+        try {
+            rec.start();
+        } catch {
+            transcriptOn = false;
+        }
+    };
+    try {
+        rec.start();
+    } catch {
+        transcriptOn = false;
+        transcriptRec = null;
+        return "blocked";
+    }
+    return "ok";
+}
+
+export function stopTranscript() {
+    transcriptOn = false;
+    const rec = transcriptRec;
+    transcriptRec = null;
+    if (!rec)
+        return;
+    rec.onend = null;
+    rec.onresult = null;
+    rec.onerror = null;
+    try {
+        rec.stop();
+    } catch {
+        try { rec.abort(); } catch { /* already stopped */ }
+    }
+}
+
 export function hangup(localVideo, remoteVideo) {
     pendingIce.length = 0;
     if (pc)

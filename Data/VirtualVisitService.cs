@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using MedicalManager.Components.Account;
 
 namespace MedicalManager.Data;
 
@@ -9,7 +11,9 @@ public sealed class VirtualVisitService(
     UserManager<ApplicationUser> users,
     ChartAccessService chartAccess,
     LabReportService labReports,
-    HealthRecordService records)
+    HealthRecordService records,
+    IAppEmailSender email,
+    ILogger<VirtualVisitService> logger)
 {
     public async Task<VisitAccess> OpenAsync(ClaimsPrincipal principal, bool labUpdateOnly)
     {
@@ -368,6 +372,191 @@ public sealed class VirtualVisitService(
         await db.SaveChangesAsync();
     }
 
+    public async Task<IReadOnlyList<MedicalTranscript>> ListTranscriptsAsync(ClaimsPrincipal principal, string patientUserId)
+    {
+        var actor = await RequireReaderAsync(principal, patientUserId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var query = db.MedicalTranscripts.AsNoTracking().Where(item => item.PatientUserId == patientUserId);
+        if (actor.IsDoctor)
+            query = query.Where(item => item.DoctorUserId == actor.UserId);
+        else
+            query = query.Where(item => item.PatientCanView);
+        return await query
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Id)
+            .ToListAsync();
+    }
+
+    public async Task<MedicalTranscript> StartTranscriptAsync(ClaimsPrincipal principal, string patientUserId, int? videoVisitId)
+    {
+        var doctor = await RequireDoctorAsync(principal, patientUserId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var linked = await LinkedVisitIdAsync(db, patientUserId, doctor.Id, videoVisitId);
+        var open = await db.MedicalTranscripts
+            .Where(item =>
+                item.PatientUserId == patientUserId
+                && item.DoctorUserId == doctor.Id
+                && item.Status == TranscriptStatus.InProgress)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefaultAsync();
+        if (open is not null && (linked is null || open.VideoVisitId is null || open.VideoVisitId == linked))
+        {
+            if (open.VideoVisitId is null && linked is int visitId)
+            {
+                open.VideoVisitId = visitId;
+                open.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+
+            return open;
+        }
+
+        var transcript = new MedicalTranscript
+        {
+            PatientUserId = patientUserId,
+            DoctorUserId = doctor.Id,
+            DoctorName = doctor.DisplayName,
+            VideoVisitId = linked,
+            Body = "",
+            Status = TranscriptStatus.InProgress,
+            PatientCanView = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.MedicalTranscripts.Add(transcript);
+        await db.SaveChangesAsync();
+        return transcript;
+    }
+
+    public async Task<MedicalTranscript> WriteTranscriptAsync(ClaimsPrincipal principal, int transcriptId, string? body, bool patientCanView)
+    {
+        var doctor = await RequireDoctorAsync(principal);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await OwnTranscriptAsync(db, doctor.Id, transcriptId);
+        await RequireGrantAsync(doctor.Id, item.PatientUserId, labUpdate: false);
+        if (item.Status == TranscriptStatus.Archived)
+            throw new InvalidOperationException("An archived transcript cannot be changed.");
+
+        item.Body = LimitTranscript(body);
+        item.PatientCanView = patientCanView;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task<MedicalTranscript> SaveTranscriptAsync(ClaimsPrincipal principal, int transcriptId, string? body, bool patientCanView)
+    {
+        var doctor = await RequireDoctorAsync(principal);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await OwnTranscriptAsync(db, doctor.Id, transcriptId);
+        await RequireGrantAsync(doctor.Id, item.PatientUserId, labUpdate: false);
+        if (item.Status == TranscriptStatus.Archived)
+            throw new InvalidOperationException("An archived transcript cannot be changed.");
+
+        item.Body = RequiredText(body, "Transcript", 32000);
+        item.PatientCanView = patientCanView;
+        item.Status = TranscriptStatus.Saved;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task<MedicalTranscript> ArchiveTranscriptAsync(ClaimsPrincipal principal, int transcriptId, string? body, bool patientCanView)
+    {
+        var doctor = await RequireDoctorAsync(principal);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await OwnTranscriptAsync(db, doctor.Id, transcriptId);
+        await RequireGrantAsync(doctor.Id, item.PatientUserId, labUpdate: false);
+        if (item.Status == TranscriptStatus.Archived)
+            return item;
+
+        item.Body = LimitTranscript(string.IsNullOrWhiteSpace(body) ? item.Body : body);
+        item.PatientCanView = patientCanView;
+        item.Status = TranscriptStatus.Archived;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task<MedicalTranscript> SetTranscriptViewAsync(ClaimsPrincipal principal, int transcriptId, bool patientCanView)
+    {
+        var doctor = await RequireDoctorAsync(principal);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await OwnTranscriptAsync(db, doctor.Id, transcriptId);
+        await RequireGrantAsync(doctor.Id, item.PatientUserId, labUpdate: false);
+        item.PatientCanView = patientCanView;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return item;
+    }
+
+    public async Task<TranscriptMailResult> EmailTranscriptAsync(ClaimsPrincipal principal, int transcriptId, string? body, bool patientCanView)
+    {
+        var doctor = await RequireDoctorAsync(principal);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var item = await OwnTranscriptAsync(db, doctor.Id, transcriptId);
+        await RequireGrantAsync(doctor.Id, item.PatientUserId, labUpdate: false);
+
+        var changed = false;
+        if (item.Status == TranscriptStatus.Archived)
+        {
+            if (string.IsNullOrWhiteSpace(item.Body))
+                return new TranscriptMailResult(false, "This archived transcript has no words to email.");
+        }
+        else
+        {
+            var text = (body ?? "").Trim();
+            if (text.Length == 0)
+                return new TranscriptMailResult(false, "Write the transcript before emailing it.");
+            if (text.Length > 32000)
+                return new TranscriptMailResult(false, "The transcript is too long to email.");
+
+            item.Body = text;
+            item.PatientCanView = patientCanView;
+            item.UpdatedAt = DateTime.UtcNow;
+            changed = true;
+        }
+
+        var patient = await users.FindByIdAsync(item.PatientUserId);
+        var address = patient?.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            if (changed)
+                await db.SaveChangesAsync();
+            return new TranscriptMailResult(false, "This patient has no email on the account, so the transcript was not emailed.");
+        }
+
+        if (!email.IsConfigured)
+        {
+            if (changed)
+                await db.SaveChangesAsync();
+            logger.LogWarning("Email is not configured. A medical transcript was not emailed.");
+            return new TranscriptMailResult(false, "Email is not configured, so the transcript was not emailed. The words are still kept here.");
+        }
+
+        var when = item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+        var (html, plain) = EmailTemplates.MedicalTranscript(
+            patient?.DisplayName ?? "there",
+            item.DoctorName,
+            when,
+            item.Status,
+            item.Body);
+        var sent = await email.TrySendMedicalTranscriptAsync(address, html, plain);
+        if (!sent)
+        {
+            if (changed)
+                await db.SaveChangesAsync();
+            logger.LogWarning("A medical transcript email could not be sent.");
+            return new TranscriptMailResult(false, "The transcript email could not be sent. The words are still kept here.");
+        }
+
+        item.EmailedAt = DateTime.UtcNow;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return new TranscriptMailResult(true, "Emailed to the address on the patient's account.");
+    }
+
     public async Task<IReadOnlyList<ReferralOrder>> ListReferralsAsync(ClaimsPrincipal principal, string patientUserId)
     {
         var actor = await RequireReaderAsync(principal, patientUserId);
@@ -418,6 +607,41 @@ public sealed class VirtualVisitService(
             .DistinctBy(option => option.DoctorUserId)
             .OrderBy(option => option.DoctorName)
             .ToList();
+    }
+
+    private async Task<ApplicationUser> RequireDoctorAsync(ClaimsPrincipal principal, string? patientUserId = null)
+    {
+        var user = await users.GetUserAsync(principal)
+            ?? throw new InvalidOperationException("You must be signed in.");
+        if (!principal.IsInRole(AppRoles.Doctor))
+            throw new UnauthorizedAccessException("Only the doctor can change a medical transcript.");
+        if (!string.IsNullOrWhiteSpace(patientUserId))
+            await RequireGrantAsync(user.Id, patientUserId, labUpdate: false);
+        return user;
+    }
+
+    private static async Task<MedicalTranscript> OwnTranscriptAsync(ApplicationDbContext db, string doctorUserId, int transcriptId)
+    {
+        return await db.MedicalTranscripts.FirstOrDefaultAsync(item => item.Id == transcriptId && item.DoctorUserId == doctorUserId)
+            ?? throw new InvalidOperationException("That medical transcript was not found.");
+    }
+
+    private static async Task<int?> LinkedVisitIdAsync(ApplicationDbContext db, string patientUserId, string doctorUserId, int? videoVisitId)
+    {
+        if (videoVisitId is not int visitId || visitId <= 0)
+            return null;
+
+        var exists = await db.VideoVisitSessions.AsNoTracking().AnyAsync(item =>
+            item.Id == visitId && item.PatientUserId == patientUserId && item.DoctorUserId == doctorUserId);
+        return exists ? visitId : null;
+    }
+
+    private static string LimitTranscript(string? body)
+    {
+        var text = (body ?? "").Trim();
+        if (text.Length > 32000)
+            throw new InvalidOperationException("The transcript is too long.");
+        return text;
     }
 
     private async Task RequireGrantAsync(string doctorUserId, string patientUserId, bool labUpdate)

@@ -13,6 +13,8 @@ public interface IAppEmailSender : IEmailSender<ApplicationUser>
 
     Task<bool> TrySendPrescriptionAsync(string email, string html, string plainText, CancellationToken cancellationToken = default);
 
+    Task<bool> TrySendMedicalTranscriptAsync(string email, string html, string plainText, CancellationToken cancellationToken = default);
+
     Task<bool> TrySendAccessApprovalAsync(
         string email,
         string doctorName,

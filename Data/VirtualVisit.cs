@@ -6,6 +6,13 @@ public static class NoteSection
     public const string Doctor = "Doctor";
 }
 
+public static class TranscriptStatus
+{
+    public const string InProgress = "Visit in progress";
+    public const string Saved = "Saved";
+    public const string Archived = "Archived";
+}
+
 public class ClinicalNote
 {
     public int Id { get; set; }
@@ -79,6 +86,31 @@ public class AfterVisitSummary
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class MedicalTranscript
+{
+    public int Id { get; set; }
+
+    public string PatientUserId { get; set; } = string.Empty;
+
+    public string DoctorUserId { get; set; } = string.Empty;
+
+    public string DoctorName { get; set; } = string.Empty;
+
+    public int? VideoVisitId { get; set; }
+
+    public string Body { get; set; } = string.Empty;
+
+    public string Status { get; set; } = TranscriptStatus.InProgress;
+
+    public bool PatientCanView { get; set; } = true;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime? EmailedAt { get; set; }
+}
+
 public class ReferralOrder
 {
     public int Id { get; set; }
@@ -123,3 +155,7 @@ public sealed record VisitAccess(
     string ActorName,
     IReadOnlyList<DoctorGrantItem> Patients,
     IReadOnlyList<VisitDoctorOption> Doctors);
+
+public sealed record TranscriptMailResult(bool Sent, string Message);
+
+public sealed record TranscriptCommand(string Kind, int TranscriptId);

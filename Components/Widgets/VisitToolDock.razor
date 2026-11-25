@@ -2,8 +2,8 @@
     <h2>@(ForDoctor ? "Visit tools" : "With your doctors")</h2>
     <p class="muted">
         @(ForDoctor
-            ? "Notes, messages, and video for the selected patient. Each one opens in a window you can move and resize."
-            : "Notes, a separate message tab for each doctor, video invites, and after-visit summaries. Each one opens in a window you can move and resize.")
+            ? "Notes, messages, video, and medical transcripts for the selected patient. Each one opens in a window you can move and resize."
+            : "Notes, a separate message tab for each doctor, video invites, after-visit summaries, and medical transcripts your doctor shared. Each one opens in a window you can move and resize.")
     </p>
     <div class="visit-tool-row">
         <button type="button" class="visit-tool" aria-pressed="@_notesOpen" @onclick="() => _notesOpen = true">
@@ -45,6 +45,12 @@
             </span>
             <span>Video Visit</span>
         </button>
+        <button type="button" class="visit-tool" aria-pressed="@_transcriptOpen" @onclick="() => _transcriptOpen = true">
+            <span class="visit-tool-logo">
+                <span class="bi bi-transcript-nav-menu" aria-hidden="true"></span>
+            </span>
+            <span>Medical Transcript</span>
+        </button>
         @if (!ForDoctor)
         {
             <button type="button" class="visit-tool" aria-pressed="@(_summaryOpen ? "true" : "false")" @onclick="() => _summaryOpen = true">
@@ -81,6 +87,12 @@
         <AfterVisitSummaryView PatientUserId="@PatientUserId" />
     </StudioFloat>
 }
+@if (_transcriptOpen)
+{
+    <StudioFloat @bind-Visible="_transcriptOpen" Title="Medical transcript" Place="transcript" MemoryKey="transcript">
+        <MedicalTranscriptView ForDoctor="@ForDoctor" PatientUserId="@PatientUserId" />
+    </StudioFloat>
+}
 
 @code {
     [Parameter] public bool ForDoctor { get; set; }
@@ -91,4 +103,5 @@
     private bool _messageOpen;
     private bool _videoOpen;
     private bool _summaryOpen;
+    private bool _transcriptOpen;
 }

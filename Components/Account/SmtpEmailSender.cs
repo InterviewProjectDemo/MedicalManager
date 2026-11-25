@@ -76,6 +76,30 @@ internal sealed class SmtpEmailSender : IAppEmailSender
         }
     }
 
+    public async Task<bool> TrySendMedicalTranscriptAsync(
+        string email,
+        string html,
+        string plainText,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured)
+        {
+            _logger.LogWarning("Email is not configured. A medical transcript was not emailed.");
+            return false;
+        }
+
+        try
+        {
+            await SendAsync(email, "Your medical visit transcript", html, plainText, cancellationToken, quietFailure: true);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "A medical transcript email was not sent.");
+            return false;
+        }
+    }
+
     public async Task<bool> TrySendAccessApprovalAsync(
         string email,
         string doctorName,

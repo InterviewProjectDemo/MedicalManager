@@ -38,6 +38,47 @@ else if (_isDoctor)
             <div class="alert alert-danger py-2 mt-2" role="alert">@_error</div>
         }
     </div>
+    @if (!_missingPatient)
+    {
+        <div class="transcript-live">
+            <div class="transcript-live-head">
+                <button type="button" class="btn btn-teal" aria-pressed="@(_listening ? "true" : "false")" disabled="@_busy" @onclick="ToggleTranscriptAsync">
+                    @(_listening ? "Stop dictation" : _transcriptId is null ? "Start medical transcript" : "Resume dictation")
+                </button>
+                @if (_transcriptId is not null)
+                {
+                    <span class="transcript-chip is-progress">Visit in progress</span>
+                }
+            </div>
+            @if (_transcriptId is null)
+            {
+                <p class="muted mb-0">Optional. Turn this on during the visit. You can then save it, email it to the patient, or archive it.</p>
+            }
+            else
+            {
+                <p class="transcript-interim" role="status">@(_listening ? (string.IsNullOrWhiteSpace(_interim) ? "Listening…" : _interim) : "Dictation is off. You can still edit, save, email, or archive.")</p>
+                <label class="form-label" for="visit-transcript">Transcript</label>
+                <textarea id="visit-transcript" class="form-control" rows="6" @bind="_transcriptBody" @bind:event="oninput"></textarea>
+                <label class="transcript-option">
+                    <input type="checkbox" @bind="_patientCanView" @bind:after="FlushTranscriptAsync" />
+                    Patient can view
+                </label>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-teal" disabled="@_busy" @onclick="SaveTranscriptAsync">Save</button>
+                    <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="EmailTranscriptAsync">Email</button>
+                    <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="ArchiveTranscriptAsync">Archive</button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_transcriptError))
+            {
+                <div class="alert alert-danger py-2 mt-2 mb-0" role="alert">@_transcriptError</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(_transcriptNote))
+            {
+                <p class="muted mt-2 mb-0" role="status">@_transcriptNote</p>
+            }
+        </div>
+    }
 }
 else
 {
@@ -112,6 +153,13 @@ else
     private bool _resume;
     private int _activeVisitId;
     private int _generation;
+    private int? _transcriptId;
+    private string _transcriptBody = "";
+    private string _interim = "";
+    private string? _transcriptNote;
+    private string? _transcriptError;
+    private bool _listening;
+    private bool _patientCanView = true;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -121,6 +169,15 @@ else
 
         if (_inCall)
             await LeaveAsync();
+
+        if (_transcriptId is not null)
+        {
+            await StopSpeechAsync();
+            await FlushTranscriptAsync();
+            ClearTranscriptDraft();
+            _transcriptNote = null;
+            _transcriptError = null;
+        }
 
         _hasLoaded = true;
         _loadedFor = key;
@@ -342,8 +399,217 @@ else
         return InvokeAsync(StateHasChanged);
     }
 
+    private async Task ToggleTranscriptAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_patientId))
+            return;
+
+        if (_listening)
+        {
+            await StopSpeechAsync();
+            await FlushTranscriptAsync();
+            _transcriptNote = "Dictation is off. The transcript stays visit in progress until you save or archive it.";
+            _transcriptError = null;
+            return;
+        }
+
+        _busy = true;
+        _transcriptError = null;
+        _transcriptNote = null;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            var visitId = _inCall && _activeVisitId > 0 ? _activeVisitId : _doctorInvite?.Id;
+            var transcript = await Visits.StartTranscriptAsync(state.User, _patientId, visitId);
+            if (_transcriptId != transcript.Id || string.IsNullOrWhiteSpace(_transcriptBody))
+                _transcriptBody = transcript.Body;
+            _transcriptId = transcript.Id;
+            _patientCanView = transcript.PatientCanView;
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Widgets/VisitVideoPanel.razor.js");
+            _self ??= DotNetObjectReference.Create(this);
+            var mode = await _module.InvokeAsync<string>("startTranscript", _self);
+            _listening = mode == "ok";
+            _transcriptNote = mode switch
+            {
+                "unsupported" => "This browser cannot dictate. Type the transcript, then save, email, or archive it.",
+                "blocked" => "Speech recognition did not start. You can type the transcript.",
+                _ => "Visit in progress. Words from the microphone are added as you speak."
+            };
+            if (_listening)
+                _transcriptError = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException or JSException)
+        {
+            _listening = false;
+            _transcriptError = ex is JSException
+                ? "Speech recognition did not start. You can type the transcript."
+                : ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnTranscriptLine(string line)
+    {
+        var text = (line ?? "").Trim();
+        if (text.Length == 0 || _transcriptId is null)
+            return;
+
+        _interim = "";
+        _transcriptBody = string.IsNullOrWhiteSpace(_transcriptBody)
+            ? text
+            : _transcriptBody.TrimEnd() + Environment.NewLine + text;
+        await InvokeAsync(StateHasChanged);
+        await FlushTranscriptAsync();
+    }
+
+    [JSInvokable]
+    public Task OnTranscriptInterim(string line)
+    {
+        _interim = (line ?? "").Trim();
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnTranscriptError(string message)
+    {
+        _listening = false;
+        _transcriptError = string.IsNullOrWhiteSpace(message)
+            ? "Speech recognition stopped. You can type the transcript."
+            : message;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveTranscriptAsync()
+    {
+        if (_transcriptId is not int id)
+            return;
+
+        _busy = true;
+        _transcriptError = null;
+        try
+        {
+            await StopSpeechAsync();
+            var state = await Auth.GetAuthenticationStateAsync();
+            await Visits.SaveTranscriptAsync(state.User, id, _transcriptBody, _patientCanView);
+            ClearTranscriptDraft();
+            _transcriptNote = "Saved. Open Medical Transcript to read each visit.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _transcriptError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task EmailTranscriptAsync()
+    {
+        if (_transcriptId is not int id)
+            return;
+
+        _busy = true;
+        _transcriptError = null;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            var result = await Visits.EmailTranscriptAsync(state.User, id, _transcriptBody, _patientCanView);
+            if (result.Sent)
+                _transcriptNote = result.Message;
+            else
+                _transcriptError = result.Message;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _transcriptError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ArchiveTranscriptAsync()
+    {
+        if (_transcriptId is not int id)
+            return;
+
+        _busy = true;
+        _transcriptError = null;
+        try
+        {
+            await StopSpeechAsync();
+            var state = await Auth.GetAuthenticationStateAsync();
+            await Visits.ArchiveTranscriptAsync(state.User, id, _transcriptBody, _patientCanView);
+            ClearTranscriptDraft();
+            _transcriptNote = "Archived. It stays in Medical Transcript with the other visits.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _transcriptError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task FlushTranscriptAsync()
+    {
+        if (_transcriptId is not int id)
+            return;
+
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            await Visits.WriteTranscriptAsync(state.User, id, _transcriptBody, _patientCanView);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _transcriptError = ex.Message;
+        }
+    }
+
+    private async Task StopSpeechAsync()
+    {
+        _listening = false;
+        _interim = "";
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("stopTranscript");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private void ClearTranscriptDraft()
+    {
+        _transcriptId = null;
+        _transcriptBody = "";
+        _interim = "";
+        _listening = false;
+        _patientCanView = true;
+    }
+
     private async Task LeaveAsync()
     {
+        var wasListening = _listening;
+        await StopSpeechAsync();
+        if (wasListening && _transcriptId is not null)
+        {
+            await FlushTranscriptAsync();
+            _transcriptNote = "Dictation stopped when you left the video. The transcript is still visit in progress.";
+        }
+
         _leaving = true;
         var visitId = _activeVisitId;
         var userId = _selfId;
@@ -427,6 +693,9 @@ else
     {
         _poll.Cancel();
         _poll.Dispose();
+        await StopSpeechAsync();
+        if (_transcriptId is not null)
+            await FlushTranscriptAsync();
         if (_inCall)
             await LeaveAsync();
         await StopMediaAsync();

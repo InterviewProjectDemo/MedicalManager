@@ -501,6 +501,62 @@ internal static class EmailTemplates
             + "</tr>";
     }
 
+    public static (string Html, string PlainText) MedicalTranscript(
+        string patientName,
+        string doctorName,
+        string when,
+        string status,
+        string body)
+    {
+        var name = string.IsNullOrWhiteSpace(patientName) ? "there" : patientName.Trim();
+        var doctor = string.IsNullOrWhiteSpace(doctorName) ? "Your doctor" : doctorName.Trim();
+        var text = body.Trim();
+        var plainText = $"""
+            Hi {name},
+
+            {doctor} shared the medical transcript from your visit on {when}.
+            Status: {status}
+
+            {text}
+
+            This transcript is for you. You can also open Medical Transcript in Medical Manager when your doctor has left view access on.
+            """;
+
+        var html = $"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:{TextColor};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;">
+                      <tr>
+                        <td style="background:{BrandColor};padding:24px 28px;">
+                          <p style="margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.85);">Medical Manager</p>
+                          <h1 style="margin:8px 0 0;font-size:22px;line-height:1.3;color:#ffffff;font-weight:600;">Medical transcript</h1>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:24px 28px;">
+                          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi {Encode(name)},</p>
+                          <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">{Encode(doctor)} shared the transcript from your visit on {Encode(when)}.</p>
+                          <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:{MutedColor};">Status: {Encode(status)}</p>
+                          <div style="margin:0;padding:14px 16px;background:#f8fafc;border-radius:10px;white-space:pre-wrap;font-size:15px;line-height:1.55;">{Encode(text)}</div>
+                          <p style="margin:16px 0 0;font-size:14px;line-height:1.6;color:{MutedColor};">This transcript is for you. You can also open it in Medical Manager when your doctor has left view access on.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        return (html, plainText);
+    }
+
     private static string Encode(string? value) =>
         WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(value) ? "—" : value.Trim());
 }

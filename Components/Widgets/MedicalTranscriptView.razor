@@ -1,0 +1,174 @@
+@inject VirtualVisitService Visits
+@inject AuthenticationStateProvider Auth
+@implements IAsyncDisposable
+
+<div class="summary-browser-host">
+    <p class="muted">Drag the title bar to move this window. Drag the corner to resize it. Filter by date, visit, status, or words.</p>
+    @if (string.IsNullOrWhiteSpace(PatientUserId))
+    {
+        <p class="mb-0">Select a patient who approved access.</p>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger py-2" role="alert">@_error</div>
+    }
+    else if (_items is null)
+    {
+        <p class="muted">Loading transcripts...</p>
+    }
+    else
+    {
+        <MedicalTranscriptBrowser Items="_items"
+                                  CanManage="_canManage"
+                                  Busy="_busy"
+                                  Notice="@_notice"
+                                  NoticeIsError="_noticeError"
+                                  EmptyText="@EmptyText"
+                                  Command="RunAsync" />
+    }
+</div>
+
+@code {
+    [Parameter] public bool ForDoctor { get; set; }
+    [Parameter] public string? PatientUserId { get; set; }
+
+    private readonly CancellationTokenSource _poll = new();
+    private IReadOnlyList<MedicalTranscript>? _items;
+    private string? _error;
+    private string? _notice;
+    private string? _loadedFor;
+    private bool _noticeError;
+    private bool _busy;
+    private bool _canManage;
+    private int _load;
+
+    private string EmptyText => _canManage
+        ? "No medical transcript yet. Start one from Video Visit."
+        : "No medical transcript has been shared with you yet.";
+
+    protected override void OnInitialized() => _ = PollAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = PatientUserId ?? "";
+        if (_loadedFor == key && _items is not null)
+            return;
+
+        _loadedFor = key;
+        _notice = null;
+        _noticeError = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PatientUserId))
+        {
+            _items = [];
+            _error = null;
+            _canManage = false;
+            return;
+        }
+
+        var generation = ++_load;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            if (generation != _load)
+                return;
+
+            _canManage = ForDoctor && state.User.IsInRole(AppRoles.Doctor);
+            var items = await Visits.ListTranscriptsAsync(state.User, PatientUserId);
+            if (generation != _load)
+                return;
+
+            _items = items;
+            _error = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            if (generation != _load)
+                return;
+
+            _items = [];
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RunAsync(TranscriptCommand command)
+    {
+        if (!_canManage || _busy)
+            return;
+
+        _busy = true;
+        _notice = null;
+        _noticeError = false;
+        try
+        {
+            var state = await Auth.GetAuthenticationStateAsync();
+            var item = _items?.FirstOrDefault(row => row.Id == command.TranscriptId)
+                ?? throw new InvalidOperationException("That medical transcript was not found.");
+            switch (command.Kind)
+            {
+                case "save":
+                    await Visits.SaveTranscriptAsync(state.User, item.Id, item.Body, item.PatientCanView);
+                    _notice = "Saved.";
+                    break;
+                case "archive":
+                    await Visits.ArchiveTranscriptAsync(state.User, item.Id, item.Body, item.PatientCanView);
+                    _notice = "Archived.";
+                    break;
+                case "email":
+                    var mailed = await Visits.EmailTranscriptAsync(state.User, item.Id, item.Body, item.PatientCanView);
+                    _notice = mailed.Message;
+                    _noticeError = !mailed.Sent;
+                    break;
+                case "view-on":
+                    await Visits.SetTranscriptViewAsync(state.User, item.Id, true);
+                    _notice = "The patient can view this transcript.";
+                    break;
+                case "view-off":
+                    await Visits.SetTranscriptViewAsync(state.User, item.Id, false);
+                    _notice = "View access is off for this transcript.";
+                    break;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _notice = ex.Message;
+            _noticeError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_poll.Token))
+            {
+                if (_busy || string.IsNullOrWhiteSpace(PatientUserId))
+                    continue;
+
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _poll.Cancel();
+        _poll.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

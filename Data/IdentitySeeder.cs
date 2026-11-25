@@ -1671,6 +1671,16 @@ public static class IdentitySeeder
                 "Reason" TEXT NOT NULL,
                 "CreatedAt" TEXT NOT NULL
                 """);
+            await CreateSqliteVisitTableAsync(db, "MedicalTranscripts", """
+                "DoctorName" TEXT NOT NULL,
+                "VideoVisitId" INTEGER NULL,
+                "Body" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "PatientCanView" INTEGER NOT NULL DEFAULT 1,
+                "CreatedAt" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL,
+                "EmailedAt" TEXT NULL
+                """);
         }
         else
         {
@@ -1716,6 +1726,16 @@ public static class IdentitySeeder
                 "Reason" text NOT NULL,
                 "CreatedAt" timestamp without time zone NOT NULL
                 """);
+            await CreatePostgresVisitTableAsync(db, "MedicalTranscripts", """
+                "DoctorName" text NOT NULL,
+                "VideoVisitId" integer NULL,
+                "Body" text NOT NULL,
+                "Status" text NOT NULL,
+                "PatientCanView" boolean NOT NULL DEFAULT TRUE,
+                "CreatedAt" timestamp without time zone NOT NULL,
+                "UpdatedAt" timestamp without time zone NOT NULL,
+                "EmailedAt" timestamp without time zone NULL
+                """);
         }
 
         await db.Database.ExecuteSqlRawAsync(
@@ -1728,6 +1748,8 @@ public static class IdentitySeeder
             """CREATE INDEX IF NOT EXISTS "IX_AfterVisitSummaries_PatientUserId_CreatedAt" ON "AfterVisitSummaries" ("PatientUserId", "CreatedAt");""");
         await db.Database.ExecuteSqlRawAsync(
             """CREATE INDEX IF NOT EXISTS "IX_ReferralOrders_PatientUserId_CreatedAt" ON "ReferralOrders" ("PatientUserId", "CreatedAt");""");
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS "IX_MedicalTranscripts_PatientUserId_DoctorUserId_CreatedAt" ON "MedicalTranscripts" ("PatientUserId", "DoctorUserId", "CreatedAt");""");
         await EnsureVisitDetailColumnsAsync(db);
     }
 

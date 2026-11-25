@@ -36,6 +36,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<VisitMessage> VisitMessages => Set<VisitMessage>();
     public DbSet<VideoVisitSession> VideoVisitSessions => Set<VideoVisitSession>();
     public DbSet<AfterVisitSummary> AfterVisitSummaries => Set<AfterVisitSummary>();
+    public DbSet<MedicalTranscript> MedicalTranscripts => Set<MedicalTranscript>();
     public DbSet<ReferralOrder> ReferralOrders => Set<ReferralOrder>();
     public DbSet<ScheduleSeat> ScheduleSeats => Set<ScheduleSeat>();
 
@@ -215,6 +216,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<VideoVisitSession>().HasIndex(x => new { x.PatientUserId, x.DoctorUserId, x.CreatedAt });
         ConfigureVisit<AfterVisitSummary>(builder);
         builder.Entity<AfterVisitSummary>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
+        builder.Entity<MedicalTranscript>().ToTable("MedicalTranscripts");
+        ConfigureVisit<MedicalTranscript>(builder);
+        builder.Entity<MedicalTranscript>().HasIndex(x => new { x.PatientUserId, x.DoctorUserId, x.CreatedAt });
         ConfigureVisit<ReferralOrder>(builder);
         builder.Entity<ReferralOrder>().HasIndex(x => new { x.PatientUserId, x.CreatedAt });
 
@@ -335,6 +339,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<VideoVisitSession>().Property(x => x.Specialty).HasConversion(optional).HasColumnType("text");
         builder.Entity<AfterVisitSummary>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
         builder.Entity<AfterVisitSummary>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
+        builder.Entity<MedicalTranscript>().Property(x => x.DoctorName).HasConversion(required).HasColumnType("text");
+        builder.Entity<MedicalTranscript>().Property(x => x.Body).HasConversion(required).HasColumnType("text");
         builder.Entity<ReferralOrder>().Property(x => x.AuthorName).HasConversion(required).HasColumnType("text");
         builder.Entity<ReferralOrder>().Property(x => x.Specialty).HasConversion(required).HasColumnType("text");
         builder.Entity<ReferralOrder>().Property(x => x.ClinicianName).HasConversion(optional).HasColumnType("text");
