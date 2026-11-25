@@ -9,14 +9,17 @@
 
 @if (Visible)
 {
-    <FloatPanel Class="place-monitor" LabelledBy="monitor-title">
-    <section class="monitor-window @(_live ? "live" : null)" aria-label="Family monitor">
+    <FloatPanel Class="place-monitor" LabelledBy="monitor-title" Resizable="true" MemoryKey="monitor" MinWidth="300" MinHeight="420" Concealed="Concealed">
+    <section class="monitor-window @(_live && !Concealed ? "live" : null)" aria-label="Family monitor">
         <header class="monitor-head">
             <div>
                 <p class="monitor-kicker">Family monitor</p>
                 <h2 id="monitor-title">They can see you</h2>
             </div>
-            <button type="button" class="monitor-close" aria-label="Stop monitoring" @onclick="CloseAsync">&times;</button>
+            <div class="monitor-head-actions">
+                <button type="button" class="monitor-hide" @onclick="HideAsync">Hide</button>
+                <button type="button" class="monitor-close" aria-label="Stop monitoring" @onclick="CloseAsync">&times;</button>
+            </div>
         </header>
 
         @if (_loading)
@@ -30,7 +33,7 @@
         }
         else
         {
-            <p class="monitor-lead">This window uses the camera only. Voice Call, readings, and the rest of the app keep working.</p>
+            <p class="monitor-lead">This window uses the camera only. Voice Call, readings, and the rest of the app keep working. Hide puts this window away and leaves the camera on. Press Monitor in the menu or on the home page to show it again.</p>
             <div class="monitor-stage">
                 <video @ref="_video" class="monitor-preview" autoplay muted playsinline></video>
                 @if (!_live)
@@ -87,6 +90,8 @@
 @code {
     [Parameter] public bool Visible { get; set; }
     [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public bool Concealed { get; set; }
+    [Parameter] public EventCallback<bool> ConcealedChanged { get; set; }
     [Parameter] public EventCallback<bool> LiveChanged { get; set; }
 
     private ElementReference _video;
@@ -421,6 +426,8 @@
             _copied = false;
         }
     }
+
+    private Task HideAsync() => ConcealedChanged.InvokeAsync(true);
 
     private void OpenProfile() => Navigation.NavigateTo("profile");
 

@@ -74,6 +74,9 @@
                 <button type="button" class="studio-nav-link" @onclick="OnVoice">
                     @Mark("voice", "Say Call")
                 </button>
+                <button type="button" class="studio-nav-link" @onclick="OpenMonitor">
+                    @Mark("monitor", "Monitor")
+                </button>
                 <button type="button" class="studio-nav-link @(AccessibilityOpen ? "active" : null)" aria-pressed="@(AccessibilityOpen ? "true" : "false")" @onclick="OpenAccessibility">
                     @Mark("accessibility", "Accessibility")
                 </button>
@@ -131,6 +134,7 @@
     [Parameter] public bool AccessibilityOpen { get; set; }
     [Parameter] public EventCallback OnCustomControls { get; set; }
     [Parameter] public bool CustomControlsOpen { get; set; }
+    [Parameter] public EventCallback OnMonitor { get; set; }
 
     private async Task OpenPrescription()
     {
@@ -148,6 +152,12 @@
     {
         await OnNavigate.InvokeAsync();
         await OnCustomControls.InvokeAsync();
+    }
+
+    private async Task OpenMonitor()
+    {
+        await OnNavigate.InvokeAsync();
+        await OnMonitor.InvokeAsync();
     }
 
     private string Href(string path) => CareLinks.To(path, PatientUserId);

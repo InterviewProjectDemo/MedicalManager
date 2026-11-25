@@ -1,7 +1,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div @ref="_panel" class="float-panel @Class" style="@Style" role="dialog" aria-modal="false" aria-labelledby="@LabelledBy">
+<div @ref="_panel" class="float-panel @Class @(Resizable ? "is-resizable" : null) @(_sized ? "is-sized" : null) @(Resizable ? "resize-" + ActiveCorner : null) @(Concealed ? "is-concealed" : null)" style="@Style" role="dialog" aria-modal="false" aria-labelledby="@LabelledBy" @attributes="ConcealAttributes">
     <div @ref="_grip"
          class="float-grip"
          role="button"
@@ -9,18 +9,35 @@
          title="Drag to move"
          @onpointerdown="BeginDrag"
          @onpointermove="Drag"
-         @onpointerup="EndDrag"
-         @onpointercancel="EndDrag">
+         @onpointerup="EndPointer"
+         @onpointercancel="EndPointer">
         <span>Drag to move</span>
     </div>
     <div class="float-body">
         @ChildContent
     </div>
+    @if (Resizable)
+    {
+        <button @ref="_resize"
+                type="button"
+                class="float-resize"
+                aria-label="Resize"
+                title="Drag to resize"
+                @onpointerdown="BeginResize"
+                @onpointermove="Resize"
+                @onpointerup="EndPointer"
+                @onpointercancel="EndPointer"></button>
+    }
 </div>
 
 @code {
     [Parameter] public string? Class { get; set; }
     [Parameter] public string? LabelledBy { get; set; }
+    [Parameter] public bool Concealed { get; set; }
+    [Parameter] public bool Resizable { get; set; }
+    [Parameter] public string? MemoryKey { get; set; }
+    [Parameter] public double MinWidth { get; set; } = 300;
+    [Parameter] public double MinHeight { get; set; } = 360;
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private static int _nextZ = 4400;
@@ -29,23 +46,45 @@
     private IJSObjectReference? _module;
     private ElementReference _panel;
     private ElementReference _grip;
+    private ElementReference _resize;
     private bool _dragging;
+    private bool _resizing;
     private bool _placed;
+    private bool _sized;
+    private bool _recallStarted;
     private int _dragToken;
     private bool _disposed;
     private double _startX;
     private double _startY;
     private double _originLeft;
     private double _originTop;
+    private double _originWidth;
+    private double _originHeight;
     private double _left;
     private double _top;
+    private double _width;
+    private double _height;
     private double _viewWidth = 1280;
     private double _viewHeight = 800;
     private int _z = 4400;
 
-    private string Style => _placed
-        ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;z-index:{_z}")
-        : $"z-index:{_z}";
+    private string? _corner;
+
+    private string ActiveCorner => string.IsNullOrEmpty(_corner) ? InitialCorner : _corner;
+
+    private string InitialCorner => Class?.Contains("place-monitor") == true ? "nw" : "se";
+
+    private string ConcealStyle => Concealed ? "visibility:hidden;pointer-events:none;opacity:0;" : "";
+
+    private Dictionary<string, object> ConcealAttributes => Concealed
+        ? new() { ["inert"] = true, ["aria-hidden"] = "true" }
+        : [];
+
+    private string Style => !_placed
+        ? $"z-index:{_z};{ConcealStyle}"
+        : !_sized
+            ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;z-index:{_z};{ConcealStyle}")
+            : FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;width:{_width:0.0}px;height:{_height:0.0}px;right:auto;bottom:auto;transform:none;max-width:none;max-height:none;z-index:{_z};{ConcealStyle}");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -56,42 +95,68 @@
         {
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
             await _module.InvokeVoidAsync("layer", _panel);
+            if (Resizable && !_recallStarted && !string.IsNullOrEmpty(MemoryKey))
+            {
+                _recallStarted = true;
+                var box = await _module.InvokeAsync<FloatOrigin>("recall", MemoryKey);
+                if (!_disposed && box is { Found: true })
+                {
+                    ApplyRecalled(box);
+                    StateHasChanged();
+                }
+            }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
         }
     }
 
-    private async Task BeginDrag(PointerEventArgs e)
+    private Task BeginDrag(PointerEventArgs e) => StartPointer(e, _grip, resize: false);
+
+    private Task BeginResize(PointerEventArgs e) => StartPointer(e, _resize, resize: true);
+
+    private async Task StartPointer(PointerEventArgs e, ElementReference handle, bool resize)
     {
         if (e.Button != 0 || _module is null)
             return;
+
+        if (resize && string.IsNullOrEmpty(_corner))
+            _corner = InitialCorner;
 
         var token = ++_dragToken;
         _z = ++_nextZ;
         FloatOrigin origin;
         try
         {
-            origin = await _module.InvokeAsync<FloatOrigin>("begin", _panel, _grip, e.PointerId);
+            origin = await _module.InvokeAsync<FloatOrigin>("begin", _panel, handle, e.PointerId);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
             return;
         }
 
-        if (token != _dragToken)
+        if (token != _dragToken || _disposed)
             return;
 
         _startX = e.ClientX;
         _startY = e.ClientY;
         _originLeft = origin.Left;
         _originTop = origin.Top;
-        _viewWidth = origin.ViewWidth;
-        _viewHeight = origin.ViewHeight;
+        _originWidth = origin.Width;
+        _originHeight = origin.Height;
+        _viewWidth = origin.ViewWidth > 0 ? origin.ViewWidth : _viewWidth;
+        _viewHeight = origin.ViewHeight > 0 ? origin.ViewHeight : _viewHeight;
         _left = _originLeft;
         _top = _originTop;
         _placed = true;
-        _dragging = true;
+        _dragging = !resize;
+        _resizing = resize;
+        if (Resizable)
+        {
+            _width = _originWidth;
+            _height = _originHeight;
+            _sized = true;
+        }
     }
 
     private void Drag(PointerEventArgs e)
@@ -103,10 +168,81 @@
         _top = Math.Clamp(_originTop + e.ClientY - _startY, 8, Math.Max(8, _viewHeight - 48));
     }
 
-    private void EndDrag(PointerEventArgs _)
+    private void Resize(PointerEventArgs e)
     {
+        if (!_resizing)
+            return;
+
+        var dx = e.ClientX - _startX;
+        var dy = e.ClientY - _startY;
+        var east = _corner is "se" or "ne";
+        var south = _corner is "se" or "sw";
+        var originRight = _originLeft + _originWidth;
+        var originBottom = _originTop + _originHeight;
+        var maxWidth = east
+            ? Math.Max(MinWidth, _viewWidth - _originLeft - 8)
+            : Math.Max(MinWidth, originRight - 8);
+        var maxHeight = south
+            ? Math.Max(MinHeight, _viewHeight - _originTop - 8)
+            : Math.Max(MinHeight, originBottom - 8);
+        var width = Math.Clamp(east ? _originWidth + dx : _originWidth - dx, MinWidth, maxWidth);
+        var height = Math.Clamp(south ? _originHeight + dy : _originHeight - dy, MinHeight, maxHeight);
+        _width = width;
+        _height = height;
+        _left = east ? _originLeft : originRight - width;
+        _top = south ? _originTop : originBottom - height;
+    }
+
+    private async Task EndPointer(PointerEventArgs _)
+    {
+        var save = _dragging || _resizing;
         _dragToken++;
         _dragging = false;
+        _resizing = false;
+        if (save)
+        {
+            UpdateCorner();
+            await RememberAsync();
+        }
+    }
+
+    private void ApplyRecalled(FloatOrigin box)
+    {
+        _viewWidth = box.ViewWidth > 0 ? box.ViewWidth : _viewWidth;
+        _viewHeight = box.ViewHeight > 0 ? box.ViewHeight : _viewHeight;
+        _width = Math.Clamp(box.Width, MinWidth, Math.Max(MinWidth, _viewWidth - 16));
+        _height = Math.Clamp(box.Height, MinHeight, Math.Max(MinHeight, _viewHeight - 16));
+        _left = Math.Clamp(box.Left, 8, Math.Max(8, _viewWidth - Math.Min(_width, _viewWidth - 16)));
+        _top = Math.Clamp(box.Top, 8, Math.Max(8, _viewHeight - 48));
+        _placed = true;
+        _sized = true;
+        UpdateCorner();
+    }
+
+    private void UpdateCorner()
+    {
+        if (!_sized)
+            return;
+
+        var rightSpace = _viewWidth - (_left + _width);
+        var bottomSpace = _viewHeight - (_top + _height);
+        var east = rightSpace >= _left;
+        var south = bottomSpace >= _top;
+        _corner = (south ? "s" : "n") + (east ? "e" : "w");
+    }
+
+    private async Task RememberAsync()
+    {
+        if (!Resizable || string.IsNullOrEmpty(MemoryKey) || _module is null || !_sized)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("remember", MemoryKey, _left, _top, _width, _height);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -126,8 +262,11 @@
 
     private sealed class FloatOrigin
     {
+        public bool Found { get; set; }
         public double Left { get; set; }
         public double Top { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
         public double ViewWidth { get; set; }
         public double ViewHeight { get; set; }
     }

@@ -95,6 +95,7 @@
                                    AccessibilityOpen="_accessibilityOpen"
                                    OnCustomControls="OpenCustomControls"
                                    CustomControlsOpen="_controlsOpen"
+                                   OnMonitor="OpenMonitor"
                                    OnNavigate="CloseNav" />
                 }
                 else
@@ -292,13 +293,13 @@
                     </AuthorizeView>
                     <AuthorizeView Roles="@AppRoles.Doctor" Context="hideMonitor">
                         <NotAuthorized>
-                    <button type="button" class="nav-call-btn nav-call-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">
+                    <button type="button" class="nav-call-btn nav-call-monitor @(MonitorShown ? "live" : null)" data-monitor-camera aria-pressed="@MonitorShown" @onclick="OpenMonitor">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4.5 7.2A2.2 2.2 0 0 1 6.7 5h7.1a2.2 2.2 0 0 1 2.2 2.2v1.1l2.8-1.6c.7-.4 1.7.1 1.7 1v8.6c0 .9-1 1.4-1.7 1l-2.8-1.6v1.1a2.2 2.2 0 0 1-2.2 2.2H6.7a2.2 2.2 0 0 1-2.2-2.2v-9.6z" />
                         </svg>
                         <span>Monitor</span>
                     </button>
-                    <p class="nav-call-hint">@(_monitorLive ? "Camera is on" : "Family can watch")</p>
+                    <p class="nav-call-hint">@(MonitorShown ? "Camera is on" : "Family can watch")</p>
                         </NotAuthorized>
                     </AuthorizeView>
                 </div>
@@ -395,7 +396,7 @@
             <button type="button" class="mobile-tab mobile-tab-guide" @onclick="OpenGuide">Voice Call</button>
             <AuthorizeView Roles="@AppRoles.Doctor" Context="hideMonitorTab">
                 <NotAuthorized>
-            <button type="button" class="mobile-tab mobile-tab-monitor @(_monitorLive ? "live" : null)" data-monitor-camera aria-pressed="@_monitorLive" @onclick="OpenMonitor">Monitor</button>
+            <button type="button" class="mobile-tab mobile-tab-monitor @(MonitorShown ? "live" : null)" data-monitor-camera aria-pressed="@MonitorShown" @onclick="OpenMonitor">Monitor</button>
                 </NotAuthorized>
             </AuthorizeView>
             <NavLink class="mobile-tab" href="@Href("")" Match="NavLinkMatch.All">
@@ -482,7 +483,7 @@
                         CallerName="@_callerName"
                         CallerPhone="@_callerPhone" />
         <GuideCallModal Visible="_guideOpen" Seed="_guideSeed" VisibleChanged="OnGuideVisibleChanged" />
-        <MonitorWindow Visible="_monitorOpen" VisibleChanged="OnMonitorVisibleChanged" LiveChanged="OnMonitorLiveChanged" />
+        <MonitorWindow Visible="_monitorOpen" VisibleChanged="OnMonitorVisibleChanged" Concealed="_monitorConcealed" ConcealedChanged="OnMonitorConcealedChanged" LiveChanged="OnMonitorLiveChanged" />
         <AuthorizeView Roles="@AppRoles.Doctor" Context="rxHost">
             @if (_prescriptionOpen)
             {
@@ -528,6 +529,8 @@
     private bool _guideOpen;
     private bool _monitorOpen;
     private bool _monitorLive;
+    private bool _monitorConcealed;
+    private bool MonitorShown => _monitorLive && !_monitorConcealed;
     private string? _guideSeed;
     private bool _wakeReady;
     private bool _cameraGestureReady;
@@ -684,6 +687,7 @@
             return;
 
         _monitorOpen = true;
+        _monitorConcealed = false;
         _navOpen = false;
     }
 
@@ -697,7 +701,16 @@
     {
         _monitorOpen = visible;
         if (!visible)
+        {
             _monitorLive = false;
+            _monitorConcealed = false;
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task OnMonitorConcealedChanged(bool concealed)
+    {
+        _monitorConcealed = concealed;
         return Task.CompletedTask;
     }
 

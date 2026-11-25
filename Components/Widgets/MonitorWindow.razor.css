@@ -34,6 +34,22 @@
     font-size: 1.45rem;
 }
 
+.monitor-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.monitor-hide {
+    border: none;
+    border-radius: 999px;
+    background: #ccfbf1;
+    color: #115e59;
+    font-weight: 800;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+}
+
 .monitor-close {
     border: none;
     background: transparent;

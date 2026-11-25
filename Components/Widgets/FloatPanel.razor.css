@@ -62,6 +62,124 @@
     min-width: 0;
 }
 
+.float-panel.is-resizable {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.float-panel.is-resizable .float-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.float-panel.is-resizable.is-sized .float-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.float-panel.is-sized ::deep .monitor-window {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    min-height: 100%;
+}
+
+.float-panel.is-resizable ::deep .monitor-window {
+    padding-bottom: 1.5rem;
+}
+
+.float-panel.is-sized ::deep .monitor-stage {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 11rem;
+}
+
+.float-panel.is-sized ::deep .monitor-preview {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 11rem;
+    aspect-ratio: auto;
+}
+
+.float-panel.is-resizable .float-grip {
+    flex: 0 0 auto;
+}
+
+.float-resize {
+    position: absolute;
+    z-index: 4;
+    width: 1.7rem;
+    height: 1.7rem;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    touch-action: none;
+}
+
+.float-resize::after {
+    content: "";
+    position: absolute;
+    width: 0.72rem;
+    height: 0.72rem;
+    border: 2px solid #0f766e;
+}
+
+.float-panel.resize-se .float-resize {
+    right: 0;
+    bottom: 0;
+    cursor: nwse-resize;
+}
+
+.float-panel.resize-se .float-resize::after {
+    right: 0.34rem;
+    bottom: 0.34rem;
+    border-left: 0;
+    border-top: 0;
+}
+
+.float-panel.resize-nw .float-resize {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+}
+
+.float-panel.resize-nw .float-resize::after {
+    top: 0.34rem;
+    left: 0.34rem;
+    border-right: 0;
+    border-bottom: 0;
+}
+
+.float-panel.resize-ne .float-resize {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+}
+
+.float-panel.resize-ne .float-resize::after {
+    top: 0.34rem;
+    right: 0.34rem;
+    border-left: 0;
+    border-bottom: 0;
+}
+
+.float-panel.resize-sw .float-resize {
+    left: 0;
+    bottom: 0;
+    cursor: nesw-resize;
+}
+
+.float-panel.resize-sw .float-resize::after {
+    left: 0.34rem;
+    bottom: 0.34rem;
+    border-right: 0;
+    border-top: 0;
+}
+
 @media (max-width: 640.98px) {
     .float-panel.place-phone,
     .float-panel.place-guide {
