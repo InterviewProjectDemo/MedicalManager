@@ -1,3 +1,5 @@
+import { frame as computeFrame } from "../../js/window-frame.js";
+
 const handles = new WeakMap();
 
 export function layer(panel) {
@@ -70,6 +72,23 @@ function applyPlace(panel, box) {
     return { left, top, width, height, z: box.z || (window.__mmFloatZ || 4100) };
 }
 
+export function frame(panel, mode, memoryKey) {
+    const box = computeFrame(panel, mode);
+    panel.style.left = box.left + "px";
+    panel.style.top = box.top + "px";
+    panel.style.width = box.width + "px";
+    panel.style.height = box.height + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.maxWidth = "none";
+    panel.style.maxHeight = "none";
+    panel.style.transform = "none";
+    panel.style.borderRadius = mode === "full" ? "0" : "";
+    if (memoryKey)
+        rememberPlace(memoryKey, box.left, box.top, box.width, box.height, box.z);
+    return box;
+}
+
 export function attach(panel, dotNet, memoryKey) {
     if (!panel || handles.has(panel))
         return;
@@ -82,15 +101,19 @@ export function attach(panel, dotNet, memoryKey) {
     const state = { mode: null };
 
     const finish = (event) => {
-        if (!state.mode)
+        if (!state.mode || (event.pointerId != null && state.pointerId != null && event.pointerId !== state.pointerId))
             return;
         state.mode = null;
-        const handle = event.currentTarget;
-        if (handle && state.pointerId != null) {
-            try { handle.releasePointerCapture(state.pointerId); } catch { /* already released */ }
+        for (const handle of [grip, resize]) {
+            try {
+                if (state.pointerId != null && handle.hasPointerCapture?.(state.pointerId))
+                    handle.releasePointerCapture(state.pointerId);
+            } catch { /* already released */ }
         }
         const rect = panel.getBoundingClientRect();
         const z = Number(panel.style.zIndex) || (window.__mmFloatZ || 4100);
+        delete panel.dataset.floatFull;
+        delete panel.dataset.floatRestore;
         if (memoryKey)
             rememberPlace(memoryKey, rect.left, rect.top, rect.width, rect.height, z);
         dotNet.invokeMethodAsync("Remember", rect.left, rect.top, rect.width, rect.height, z);
@@ -120,8 +143,19 @@ export function attach(panel, dotNet, memoryKey) {
     const begin = (mode) => (event) => {
         if (event.button !== 0)
             return;
-        if (event.target instanceof Element && event.target.closest(".studio-float-close"))
+        const under = document.elementFromPoint(event.clientX, event.clientY);
+        const chrome = (under instanceof Element && under.closest(".studio-float-actions, .studio-float-resize"))
+            || (event.target instanceof Element && event.target.closest(".studio-float-actions, .studio-float-resize"));
+        if (chrome) {
+            state.mode = null;
+            for (const handle of [grip, resize]) {
+                try {
+                    if (handle.hasPointerCapture?.(event.pointerId))
+                        handle.releasePointerCapture(event.pointerId);
+                } catch { /* the press is a button, not a drag */ }
+            }
             return;
+        }
 
         const rect = panel.getBoundingClientRect();
         state.mode = mode;
@@ -153,6 +187,8 @@ export function attach(panel, dotNet, memoryKey) {
     resize.addEventListener("pointerup", finish);
     grip.addEventListener("pointercancel", finish);
     resize.addEventListener("pointercancel", finish);
+    window.addEventListener("pointerup", finish, true);
+    window.addEventListener("pointercancel", finish, true);
     handles.set(panel, { grip, resize, onGrip, onResize });
 
     if (memoryKey) {

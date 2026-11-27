@@ -1,3 +1,22 @@
+import { frame as computeFrame } from "../../js/window-frame.js";
+
+export function frame(panel, mode, memoryKey) {
+    const box = computeFrame(panel, mode);
+    panel.style.left = box.left + "px";
+    panel.style.top = box.top + "px";
+    panel.style.width = box.width + "px";
+    panel.style.height = box.height + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.maxWidth = "none";
+    panel.style.maxHeight = "none";
+    panel.style.transform = "none";
+    panel.style.borderRadius = mode === "full" ? "0" : "";
+    if (memoryKey)
+        remember(memoryKey, box.left, box.top, box.width, box.height);
+    return box;
+}
+
 export function unlayer(panel) {
     if (panel && panel.isConnected)
         panel.remove();
@@ -21,6 +40,8 @@ export function bringForward(panel) {
 }
 
 export function begin(panel, grip, pointerId) {
+    delete panel.dataset.floatFull;
+    delete panel.dataset.floatRestore;
     layer(panel);
     bringForward(panel);
     const rect = panel.getBoundingClientRect();

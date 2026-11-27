@@ -7,7 +7,7 @@
         @foreach (var call in _calls)
         {
             var calling = call.Id == _activeId;
-            <div class="a11y-tile" data-a11y-tile="@call.Id">
+            <div class="a11y-tile" data-a11y-tile="@call.Id" @key="call.Id">
                 <button type="button"
                         class="dialysis-call @(calling ? "is-calling" : null)"
                         data-phrase="@call.Phrase"
@@ -26,23 +26,6 @@
             </div>
         }
     </div>
-
-    @if (Active is Call active)
-    {
-        <div class="dialysis-attended" role="status" aria-live="assertive">
-            <p class="dialysis-attended-phrase">@active.Phrase</p>
-            <p class="dialysis-attended-hint">@Hint()</p>
-            @if (_speechMissing)
-            {
-                <p class="dialysis-attended-hint">Record your voice on Profile so this sounds like you. Until then, this device reads the line aloud.</p>
-            }
-            <button type="button" class="dialysis-attended-btn" @onclick="Attend">Attended</button>
-        </div>
-    }
-    else if (_acknowledged)
-    {
-        <p class="dialysis-ack" role="status">Attended. The voice has stopped.</p>
-    }
 </div>
 
 @code {
@@ -58,21 +41,9 @@
     private List<Call> _calls = Defaults.ToList();
 
     private string? _activeId;
-    private bool _acknowledged;
-    private bool _speechMissing;
-    private bool _ownVoice;
-    private bool _voiceComing;
+    private int _choice;
     private bool _synced;
     private DotNetObjectReference<DialysisHelpCalls>? _self;
-
-    private Call? Active => _calls.FirstOrDefault(call => call.Id == _activeId);
-
-    private string Hint() =>
-        _ownVoice
-            ? "This is your voice, repeating. Tap Attended when someone is here."
-            : _voiceComing
-                ? "Your own voice is being prepared. You will hear yourself, not a computer voice."
-                : "Tap Attended when someone is here. That stops the voice.";
 
     protected override void OnInitialized() => _self = DotNetObjectReference.Create(this);
 
@@ -122,21 +93,45 @@
 
     private async Task Start(Call call)
     {
-        _acknowledged = false;
+        var choice = ++_choice;
         await LoadLines();
+        if (choice != _choice)
+            return;
+
         call = _calls.FirstOrDefault(item => item.Id == call.Id) ?? call;
         _activeId = call.Id;
+        StateHasChanged();
         try
         {
-            var saved = await JS.InvokeAsync<bool>("mmVoice.ensureVoice");
-            _ownVoice = saved && await JS.InvokeAsync<bool>("mmVoice.hasCachedPhrase", call.Phrase);
-            _voiceComing = saved && !_ownVoice;
-            _speechMissing = !await JS.InvokeAsync<bool>("mmAccessibility.startHelpCall", call.Phrase);
+            await JS.InvokeAsync<bool>("mmAccessibility.startHelpCall", call.Phrase);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
         {
-            _speechMissing = true;
         }
+
+        if (choice != _choice)
+            return;
+
+        try
+        {
+            var phrase = await JS.InvokeAsync<string>("mmAccessibility.helpCallPhrase");
+            if (choice != _choice)
+                return;
+            ShowPhrase(phrase);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            if (choice == _choice)
+                ShowPhrase(null);
+        }
+    }
+
+    public void ShowPhrase(string? phrase)
+    {
+        _activeId = string.IsNullOrWhiteSpace(phrase)
+            ? null
+            : _calls.FirstOrDefault(call => call.Phrase == phrase)?.Id;
+        StateHasChanged();
     }
 
     [JSInvokable]
@@ -145,8 +140,6 @@
         if (_activeId is null)
             return;
 
-        _ownVoice = true;
-        _voiceComing = false;
         StateHasChanged();
     }
 
@@ -154,21 +147,6 @@
     {
         _self?.Dispose();
         _ = JS.InvokeVoidAsync("mmVoice.unwatchOwnVoice");
-    }
-
-    private async Task Attend()
-    {
-        _activeId = null;
-        _acknowledged = true;
-        _speechMissing = false;
-        _voiceComing = false;
-        try
-        {
-            await JS.InvokeVoidAsync("mmAccessibility.stopHelpCall");
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
-        {
-        }
     }
 
     private sealed class SpeechLine

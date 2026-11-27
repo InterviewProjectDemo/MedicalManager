@@ -675,6 +675,22 @@ article.content > .home-mark {
     padding: 1rem;
 }
 
+.entry-window.is-full {
+    width: calc(100vw - 1rem);
+    height: calc(100dvh - 1rem);
+    max-height: none;
+}
+
+.entry-window.is-reduced {
+    width: min(480px, 100%);
+}
+
+.entry-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
 .entry-window {
     width: min(720px, 100%);
     max-height: min(92vh, 860px);
@@ -854,6 +870,7 @@ article.content > .home-mark {
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
 }
 
 .a11y-tile {
@@ -895,6 +912,8 @@ article.content > .home-mark {
 }
 
 .studio-float-head {
+    position: relative;
+    z-index: 5;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -903,7 +922,7 @@ article.content > .home-mark {
     background: #fff;
     border-bottom: 1px solid #e6eef5;
     cursor: grab;
-    touch-action: none;
+    touch-action: manipulation;
     user-select: none;
 }
 
@@ -914,6 +933,49 @@ article.content > .home-mark {
     flex: 1;
     min-width: 0;
     font-size: 1.05rem;
+    touch-action: none;
+}
+
+.studio-float-actions {
+    position: relative;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+    pointer-events: auto;
+}
+
+.studio-float-fit,
+.window-fit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f4f7;
+    color: #1b2838;
+    cursor: pointer;
+    touch-action: auto;
+}
+
+.studio-float-glyph {
+    display: block;
+    box-sizing: border-box;
+    border: 2px solid currentColor;
+    border-radius: 2px;
+}
+
+.studio-float-glyph.is-full {
+    width: 0.85rem;
+    height: 0.85rem;
+}
+
+.studio-float-glyph.is-reduce {
+    width: 0.55rem;
+    height: 0.55rem;
 }
 
 .studio-float-close,

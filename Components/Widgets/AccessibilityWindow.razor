@@ -1,11 +1,12 @@
 @inject IJSRuntime JS
 @inject AuthenticationStateProvider Auth
+@implements IDisposable
 
 @if (Visible)
 {
     <StudioFloat Visible="true" VisibleChanged="HandleClose" Title="Accessibility" Place="access">
         <div class="a11y-window" @ref="_layoutRoot">
-            <p class="a11y-hint">Drag any button to move it, and the corner mark to resize it. The tabs start the same size and fill this bar. Drag the title bar to move this window, and its corner to resize it.</p>
+            <p class="a11y-hint">Drag any button to move it, and the corner mark to resize it. Default Size makes every item on this tab the same size and fills this window without moving them. Default Position lines them up left to right from A to Z. The tabs start the same size and fill this bar. Drag the title bar to move this window, and its corner to resize it.</p>
             <div class="a11y-tabs" role="tablist" aria-label="Accessibility groups">
                 @for (var i = 0; i < _tabs.Count; i++)
                 {
@@ -57,11 +58,20 @@
             @if (_loaded && Active is not null)
             {
                 <div id="a11y-panel" class="a11y-panel" role="tabpanel" aria-labelledby="@TabButtonId(Active)">
+                    <div class="a11y-toolbar">
+                        <button type="button" class="a11y-layout" title="Resize every item to the same size and fill this window, keeping each item where it is" @onclick="ApplyDefaultSize">Default Size</button>
+                        <button type="button" class="a11y-layout" title="Arrange items left to right in alphabetical order" @onclick="ApplyDefaultPosition">Default Position</button>
+                        <button type="button" class="a11y-attended @(_helpPhrase is not null ? "is-live" : null)" title="@(_helpPhrase ?? "Stop the voice")" aria-label="Attended. Stop the voice." @onclick="AttendHelp">Attended</button>
+                        @if (_helpAck && _helpPhrase is null)
+                        {
+                            <span class="a11y-ack" role="status">Attended. The voice has stopped.</span>
+                        }
+                    </div>
                     <h3>@Active.Title</h3>
                     <p class="a11y-lead">@Lead(Active.Kind)</p>
                     @if (Active.Kind == "dialysis")
                     {
-                        <DialysisHelpCalls />
+                        <DialysisHelpCalls @ref="_helpCalls" />
                     }
                     else
                     {
@@ -182,6 +192,11 @@
     private string? _dragId;
     private string? _dropId;
     private ElementReference _layoutRoot;
+    private DialysisHelpCalls? _helpCalls;
+    private DotNetObjectReference<AccessibilityWindow>? _self;
+    private bool _helpWatching;
+    private string? _helpPhrase;
+    private bool _helpAck;
 
     private A11yTab? Active => _tabs.FirstOrDefault(tab => tab.Id == _activeId);
     private bool IsFirst => _tabs.FindIndex(tab => tab.Id == _activeId) <= 0;
@@ -198,6 +213,8 @@
     {
         if (!Visible)
             return;
+
+        await WatchHelp();
 
         if (_loaded)
         {
@@ -245,6 +262,79 @@
 
     private Task HandleClose(bool open)
         => open ? Task.CompletedTask : VisibleChanged.InvokeAsync(false);
+
+    private async Task WatchHelp()
+    {
+        if (_helpWatching)
+            return;
+
+        _helpWatching = true;
+        _self ??= DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.watchHelpCall", _self);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            _helpWatching = false;
+        }
+    }
+
+    [JSInvokable]
+    public void HelpCallChanged(string? phrase)
+    {
+        var next = string.IsNullOrWhiteSpace(phrase) ? null : phrase;
+        if (next is null && _helpPhrase is not null)
+            _helpAck = true;
+        if (next is not null)
+            _helpAck = false;
+        _helpPhrase = next;
+        _helpCalls?.ShowPhrase(next);
+        StateHasChanged();
+    }
+
+    private async Task AttendHelp()
+    {
+        _helpAck = true;
+        _helpPhrase = null;
+        _helpCalls?.ShowPhrase(null);
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility.stopHelpCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _ = JS.InvokeVoidAsync("mmAccessibility.unwatchHelpCall");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+
+        _self?.Dispose();
+        _self = null;
+    }
+
+    private async Task ApplyDefaultSize() => await ArrangeBoard("defaultSize");
+
+    private async Task ApplyDefaultPosition() => await ArrangeBoard("defaultPosition");
+
+    private async Task ArrangeBoard(string action)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("mmAccessibility." + action, _layoutRoot);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+        }
+    }
 
     private async Task Select(string id)
     {
@@ -477,7 +567,7 @@
     private static string Lead(string kind) => kind switch
     {
         "general" => "Choices here apply everywhere in Medical Manager.",
-        "dialysis" => "Tap a picture. Drag it to move it, and the corner mark to resize it.",
+        "dialysis" => "Tap a picture. Drag it to move it, and the corner mark to resize it. Attended, beside Default Position, stops the voice.",
         "authorization" => "Makes approval and consent steps easier to read and harder to send by mistake.",
         "social" => "Makes resource and contact information easier to read.",
         "government" => "Makes agency forms and official pages easier to follow.",

@@ -247,7 +247,7 @@
     }
 
     function slop(pointerType) {
-        return pointerType === "mouse" ? 6 : 32;
+        return pointerType === "mouse" ? 16 : 32;
     }
 
     document.addEventListener("touchstart", function () {

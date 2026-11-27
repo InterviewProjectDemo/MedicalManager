@@ -63,14 +63,21 @@
     var helpCall = null;
     var helpWatch = null;
     var helpGeneration = 0;
+    var helpToken = 0;
 
     function watchHelp() {
         if (!helpCall || helpCall.stopped)
             return;
-        if (helpCall.deviceVoice && helpCall.resumeDevice && window.speechSynthesis && !window.speechSynthesis.speaking && !helpCall.deviceTimer) {
-            helpCall.resumeDevice();
+        if (helpCall.deviceVoice) {
+            releaseSpeechHold();
+            paintAttended(helpCall.phrase);
+            paintCalling(helpCall.phrase);
+            if (helpCall.resumeDevice && !helpCall.deviceTimer && window.speechSynthesis && !window.speechSynthesis.speaking && !window.speechSynthesis.pending)
+                helpCall.resumeDevice();
             return;
         }
+        paintAttended(helpCall.phrase);
+        paintCalling(helpCall.phrase);
         if (helpCall.waiting)
             return;
         if (!helpCall.usingVoice || helpCall.between)
@@ -79,6 +86,56 @@
             helpCall.player.nudge();
         else if (helpCall.audio && helpCall.audio.paused)
             helpCall.audio.play().catch(function () { });
+    }
+
+    var helpWatcher = null;
+
+    function releaseSpeechHold() {
+        var synth = window.speechSynthesis;
+        if (!synth)
+            return;
+        var started = helpCall && helpCall.spokenSince ? helpCall.spokenSince : 0;
+        if (started && Date.now() - started > 8000) {
+            helpCall.spokenSince = 0;
+            try { synth.cancel(); } catch (e) { /* the phrase starts again on the next gap */ }
+            return;
+        }
+        if (!synth.speaking)
+            return;
+        try {
+            synth.pause();
+            synth.resume();
+        } catch (e) { /* the next phrase still speaks */ }
+    }
+
+    function paintAttended(phrase) {
+        var live = !!phrase;
+        document.querySelectorAll(".a11y-attended").forEach(function (button) {
+            button.classList.toggle("is-live", live);
+            if (live)
+                button.title = phrase;
+        });
+    }
+
+    function paintCalling(phrase) {
+        var live = phrase ? String(phrase) : "";
+        document.querySelectorAll(".dialysis-call").forEach(function (button) {
+            var on = live.length > 0 && button.getAttribute("data-phrase") === live;
+            button.classList.toggle("is-calling", on);
+            button.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+    }
+
+    function publishHelp(phrase) {
+        var next = phrase ? String(phrase) : "";
+        paintAttended(next);
+        paintCalling(next);
+        if (publishHelp.current === next)
+            return;
+        publishHelp.current = next;
+        if (!helpWatcher)
+            return;
+        helpWatcher.invokeMethodAsync("HelpCallChanged", next).catch(function () { });
     }
 
     function naturalVoice() {
@@ -115,8 +172,9 @@
                 helpCall.deviceTimer = null;
             }
         }
-        if (window.speechSynthesis)
-            window.speechSynthesis.cancel();
+        if (window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (e) { /* already quiet */ }
+        }
     }
 
     function beginDevicePhrase(phrase) {
@@ -147,13 +205,16 @@
             usingVoice: false,
             deviceVoice: true,
             between: false,
-            waiting: true
+            waiting: true,
+            spokenSince: 0
         };
         function say() {
             if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.deviceVoice)
                 return;
             helpCall.deviceTimer = null;
-            var synth = window.speechSynthesis;
+            var liveSynth = window.speechSynthesis;
+            if (!liveSynth)
+                return;
             var utter = new SpeechSynthesisUtterance(text);
             utter.lang = "en-US";
             utter.rate = 0.92;
@@ -161,13 +222,21 @@
             var voice = naturalVoice();
             if (voice)
                 utter.voice = voice;
+            utter.onstart = function () {
+                if (helpCall && helpCall.generation === generation)
+                    helpCall.spokenSince = Date.now();
+            };
             utter.onend = function () {
                 if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.deviceVoice)
                     return;
-                helpCall.deviceTimer = setTimeout(say, 350);
+                if (helpCall)
+                    helpCall.spokenSince = 0;
+                helpCall.deviceTimer = setTimeout(say, 700);
             };
-            synth.resume();
-            synth.speak(utter);
+            try {
+                liveSynth.resume();
+                liveSynth.speak(utter);
+            } catch (e) { /* this phrase waits for the next gap */ }
         }
         helpCall.resumeDevice = say;
         if (wasSpeaking)
@@ -176,6 +245,7 @@
             say();
         if (!helpWatch)
             helpWatch = setInterval(watchHelp, 1000);
+        publishHelp(text);
         return true;
     }
 
@@ -206,6 +276,7 @@
             between: false,
             waiting: false
         };
+        publishHelp(String(phrase));
         return playOwnVoice(blob).then(function (played) {
             if (!helpCall || helpCall.generation !== generation)
                 return false;
@@ -243,11 +314,15 @@
             return true;
         var deviceAlready = !!(helpCall && !helpCall.stopped && helpCall.deviceVoice && helpCall.phrase === String(phrase));
         if (!deviceAlready)
-            stopHelpCall();
+            stopHelpCall(true);
+        var token = helpToken;
+        function abandoned() { return token !== helpToken; }
         var ready = false;
         if (window.mmVoice && window.mmVoice.ensureVoice) {
             try { ready = await window.mmVoice.ensureVoice(); } catch (e) { ready = false; }
         }
+        if (abandoned())
+            return false;
         if (!ready) {
             if (!deviceAlready)
                 beginDevicePhrase(phrase);
@@ -256,12 +331,18 @@
         if (window.mmVoice.cachedPhrase) {
             try {
                 var clip = await window.mmVoice.cachedPhrase(phrase);
+                if (abandoned())
+                    return false;
                 if (clip)
                     return await beginVoiceLoop(phrase, clip);
             } catch (e) { /* the saved voice is generated next */ }
         }
+        if (abandoned())
+            return false;
         if (!deviceAlready)
             beginDevicePhrase(phrase);
+        if (abandoned())
+            return false;
         if (!helpCall || helpCall.phrase !== String(phrase)) {
             helpCall = {
                 phrase: String(phrase),
@@ -275,10 +356,13 @@
         }
         if (!helpWatch)
             helpWatch = setInterval(watchHelp, 1000);
+        var heard = helpCall.generation;
         window.mmVoice.speakPhrase(phrase).then(function (blob) {
-            if (!blob || !helpCall || helpCall.stopped || helpCall.phrase !== String(phrase))
+            if (abandoned() || !blob || !helpCall || helpCall.stopped || helpCall.generation !== heard || helpCall.phrase !== String(phrase))
                 return;
             stopDeviceVoice();
+            if (!helpCall || helpCall.generation !== heard)
+                return;
             helpCall.deviceVoice = false;
             helpCall.resumeDevice = null;
             helpCall.usingVoice = true;
@@ -286,6 +370,8 @@
             helpCall.pending = false;
             helpCall.between = false;
             return playOwnVoice(blob).then(function (played) {
+                if (!helpCall || helpCall.generation !== heard)
+                    return;
                 if (!played)
                     beginDevicePhrase(phrase);
             });
@@ -293,11 +379,18 @@
         return true;
     }
 
-    function stopHelpCall() {
+    function stopHelpCall(silent) {
+        helpToken += 1;
         helpGeneration += 1;
         stopDeviceVoice();
         if (helpCall && helpCall.player)
             helpCall.player.stop();
+        document.querySelectorAll("audio[data-live='1']").forEach(function (el) {
+            try {
+                el.onended = null;
+                el.pause();
+            } catch (e) { /* already quiet */ }
+        });
         if (helpCall && helpCall.audio) {
             helpCall.audio.onended = null;
             helpCall.audio.pause();
@@ -311,6 +404,8 @@
             clearInterval(helpWatch);
             helpWatch = null;
         }
+        if (!silent)
+            publishHelp("");
     }
 
     function helpCallPhrase() {
@@ -525,6 +620,121 @@
         tile.style.height = h + "px";
     }
 
+    function tilesOf(board) {
+        return Array.prototype.slice.call(board.querySelectorAll("[data-a11y-tile]"));
+    }
+
+    function currentBox(tile, board, saved) {
+        var stored = saved[tile.dataset.a11yTile];
+        if (stored)
+            return stored;
+        var boardRect = board.getBoundingClientRect();
+        var rect = tile.getBoundingClientRect();
+        var width = Math.max(board.clientWidth, 1);
+        var height = Math.max(board.clientHeight, 1);
+        return {
+            x: (rect.left - boardRect.left) / width,
+            y: (rect.top - boardRect.top) / height,
+            w: rect.width / width,
+            h: rect.height / height
+        };
+    }
+
+    function tileName(tile) {
+        var strong = tile.querySelector("strong");
+        if (strong && strong.textContent.trim())
+            return strong.textContent.trim();
+        var dialysis = tile.querySelector(".dialysis-call > span:not(.dialysis-call-logo):not(.dialysis-call-state)");
+        if (dialysis && dialysis.textContent.trim())
+            return dialysis.textContent.trim();
+        var control = tile.querySelector("button, label");
+        return ((control ? control.innerText : tile.innerText) || "").replace(/\s+/g, " ").trim();
+    }
+
+    function activeBoard(root) {
+        return root ? root.querySelector("[data-a11y-board]") : null;
+    }
+
+    function defaultSize(root) {
+        var board = activeBoard(root);
+        if (!board)
+            return;
+        var tiles = tilesOf(board);
+        var width = board.clientWidth;
+        var height = board.clientHeight;
+        if (tiles.length === 0 || width < 80 || height < 80)
+            return;
+        var data = readLayout();
+        var boardId = board.dataset.a11yBoard || "general";
+        var saved = data.boards[boardId];
+        if (!saved || typeof saved !== "object")
+            saved = {};
+        var gap = 10;
+        var tw = (width - gap * (tiles.length + 1)) / tiles.length;
+        var th = height - gap * 2;
+        var next = {};
+        tiles.forEach(function (tile) {
+            var current = currentBox(tile, board, saved);
+            var w = tw / width;
+            var h = th / height;
+            next[tile.dataset.a11yTile] = {
+                x: clamp(current.x, 0, Math.max(0, 1 - w)),
+                y: clamp(current.y, 0, Math.max(0, 1 - h)),
+                w: w,
+                h: h
+            };
+        });
+        data.boards[boardId] = next;
+        writeLayout(data);
+        layoutRoot(root);
+    }
+
+    function defaultPosition(root) {
+        var board = activeBoard(root);
+        if (!board)
+            return;
+        var tiles = tilesOf(board);
+        var width = board.clientWidth;
+        var height = board.clientHeight;
+        if (tiles.length === 0 || width < 80 || height < 80)
+            return;
+        tiles.sort(function (a, b) {
+            return tileName(a).localeCompare(tileName(b), undefined, { sensitivity: "base" });
+        });
+        var data = readLayout();
+        var boardId = board.dataset.a11yBoard || "general";
+        var saved = data.boards[boardId];
+        if (!saved || typeof saved !== "object")
+            saved = {};
+        var gap = 10;
+        var sizes = tiles.map(function (tile) {
+            var box = currentBox(tile, board, saved);
+            return {
+                id: tile.dataset.a11yTile,
+                w: Math.max(96, box.w * width),
+                h: Math.min(Math.max(96, box.h * height), height - gap * 2)
+            };
+        });
+        var total = sizes.reduce(function (sum, item) { return sum + item.w; }, 0);
+        var room = width - gap * (sizes.length + 1);
+        var scale = total > room && total > 0 ? room / total : 1;
+        var x = gap;
+        var next = {};
+        sizes.forEach(function (item) {
+            var w = item.w * scale;
+            next[item.id] = {
+                x: x / width,
+                y: gap / height,
+                w: w / width,
+                h: item.h / height
+            };
+            x += w + gap;
+        });
+        data.boards[boardId] = next;
+        writeLayout(data);
+        layoutRoot(root);
+    }
+
     function bindGestures(root) {
         var drag = null;
 
@@ -539,7 +749,7 @@
             var target = event.target;
             if (!(target instanceof Element))
                 return;
-            if (target.closest(".a11y-tab-x, .studio-float-close, .studio-float-resize"))
+            if (target.closest(".a11y-attended, .a11y-layout, .a11y-ack, .studio-float-actions, .studio-float-resize"))
                 return;
 
             var tabResize = target.closest("[data-tab-resize]");
@@ -586,6 +796,7 @@
                 kind: "tile",
                 mode: resizing ? "resize" : "move",
                 pointerId: event.pointerId,
+                pointerType: event.pointerType || "",
                 tile: tile,
                 board: board,
                 startX: event.clientX,
@@ -617,12 +828,9 @@
 
             var dx = event.clientX - drag.startX;
             var dy = event.clientY - drag.startY;
-            var slop = event.pointerType === "mouse" ? 6 : 32;
+            var slop = drag.pointerType === "mouse" ? 16 : 32;
             if (!drag.moved && Math.hypot(dx, dy) < slop)
                 return;
-            if (!drag.moved && drag.mode === "move") {
-                try { drag.tile.setPointerCapture(event.pointerId); } catch (e) { /* the window listener still follows the pointer */ }
-            }
             drag.moved = true;
             root.dataset.a11yDragging = "1";
             var width = drag.board.clientWidth;
@@ -662,6 +870,15 @@
             }
             if (!current.moved)
                 return;
+            var travel = Math.hypot(event.clientX - current.startX, event.clientY - current.startY);
+            var tapSlop = current.pointerType === "mouse" ? 16 : 32;
+            if (current.mode === "move" && travel <= tapSlop) {
+                current.tile.style.left = current.origX + "px";
+                current.tile.style.top = current.origY + "px";
+                current.tile.style.width = current.origW + "px";
+                current.tile.style.height = current.origH + "px";
+                return;
+            }
             current.tile.dataset.suppressClick = "1";
             var board = current.board;
             var width = board.clientWidth;
@@ -710,7 +927,17 @@
         playHelpNow: playHelpNow,
         stopHelpCall: stopHelpCall,
         helpCallPhrase: helpCallPhrase,
-        watchLayout: watchLayout
+        watchLayout: watchLayout,
+        defaultSize: defaultSize,
+        defaultPosition: defaultPosition,
+        watchHelpCall: function (dotnet) {
+            helpWatcher = dotnet;
+            publishHelp.current = null;
+            publishHelp(helpCall && !helpCall.stopped ? helpCall.phrase : "");
+        },
+        unwatchHelpCall: function () {
+            helpWatcher = null;
+        }
     };
     if (window.speechSynthesis) {
         window.speechSynthesis.getVoices();
@@ -720,5 +947,89 @@
             });
         }
     }
+    function speechBusy() {
+        return !!(helpCall && !helpCall.stopped && helpCall.deviceVoice && window.speechSynthesis &&
+            (window.speechSynthesis.speaking || window.speechSynthesis.pending));
+    }
+
+    function disarmSpeechResume() {
+        if (helpCall && helpCall.deviceTimer) {
+            clearTimeout(helpCall.deviceTimer);
+            helpCall.deviceTimer = null;
+        }
+    }
+
+    function releaseFloatCapture(pointerId) {
+        var released = false;
+        var nodes = document.querySelectorAll("[data-float-grip], [data-float-resize], [data-a11y-tile], [data-tile-resize], [data-a11y-tab]");
+        for (var i = 0; i < nodes.length; i++) {
+            try {
+                if (nodes[i].hasPointerCapture && pointerId != null && nodes[i].hasPointerCapture(pointerId)) {
+                    nodes[i].releasePointerCapture(pointerId);
+                    released = true;
+                }
+            } catch (e) { /* already released */ }
+        }
+        return released;
+    }
+
+    document.addEventListener("pointerdown", function (event) {
+        var under = document.elementFromPoint(event.clientX, event.clientY);
+        var chrome = under instanceof Element
+            ? under.closest("button.studio-float-fit, button.studio-float-close, button.studio-float-resize, button.window-fit, .window-actions button, .rx-actions button")
+            : null;
+        if (chrome) {
+            var captured = releaseFloatCapture(event.pointerId);
+            var speaking = speechBusy();
+            var retargeted = !(event.target instanceof Element) || (event.target !== chrome && !chrome.contains(event.target));
+            if (speaking) {
+                disarmSpeechResume();
+                try { window.speechSynthesis.cancel(); } catch (e) { /* the window button still runs */ }
+            }
+            if (speaking || captured || retargeted) {
+                var generation = helpCall ? helpCall.generation : 0;
+                setTimeout(function () {
+                    chrome.click();
+                    if (!speaking)
+                        return;
+                    setTimeout(function () {
+                        if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.resumeDevice)
+                            return;
+                        helpCall.resumeDevice();
+                    }, 180);
+                }, 40);
+            }
+            return;
+        }
+        var target = event.target instanceof Element ? event.target : null;
+        var button = target ? target.closest(".a11y-attended, .controls-attended button") : null;
+        if (button) {
+            stopHelpCall();
+            return;
+        }
+        if (!helpCall || helpCall.stopped || !helpCall.deviceVoice || !window.speechSynthesis)
+            return;
+        var nextIcon = event.target instanceof Element ? event.target.closest(".dialysis-call") : null;
+        var nextPhrase = nextIcon ? (nextIcon.getAttribute("data-phrase") || "") : "";
+        try { window.speechSynthesis.cancel(); } catch (e) { /* the click still goes through */ }
+        if (nextPhrase && nextPhrase !== helpCall.phrase) {
+            if (helpCall.deviceTimer) {
+                clearTimeout(helpCall.deviceTimer);
+                helpCall.deviceTimer = null;
+            }
+            return;
+        }
+        var generation = helpCall.generation;
+        if (helpCall.deviceTimer) {
+            clearTimeout(helpCall.deviceTimer);
+            helpCall.deviceTimer = null;
+        }
+        helpCall.deviceTimer = setTimeout(function () {
+            if (!helpCall || helpCall.stopped || helpCall.generation !== generation || !helpCall.deviceVoice || !helpCall.resumeDevice)
+                return;
+            helpCall.deviceTimer = null;
+            helpCall.resumeDevice();
+        }, 400);
+    }, true);
     apply(doctorView() ? null : load());
 })();

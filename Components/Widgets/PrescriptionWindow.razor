@@ -11,7 +11,15 @@
          @onpointerup="EndDrag"
          @onpointercancel="EndDrag">
         <strong id="rx-title">Prescription</strong>
-        <button type="button" class="rx-close" @onclick="Close" @onpointerdown:stopPropagation="true" aria-label="Close">&times;</button>
+        <span class="rx-actions" @onpointerdown:stopPropagation="true">
+            <button type="button" class="window-fit" title="Full screen" aria-label="Full screen" @onclick="FullScreen">
+                <span class="studio-float-glyph is-full" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="window-fit" title="Reduce size" aria-label="Reduce size" @onclick="Reduce">
+                <span class="studio-float-glyph is-reduce" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="rx-close" @onclick="Close" aria-label="Close">&times;</button>
+        </span>
     </div>
     <div class="rx-body">
         @if (_desk is null)
@@ -174,6 +182,7 @@
     private ElementReference _grip;
     private bool _dragging;
     private bool _placed;
+    private bool _sized;
     private int _dragToken;
     private bool _disposed;
     private double _startX;
@@ -182,12 +191,16 @@
     private double _originTop;
     private double _left;
     private double _top;
+    private double _width;
+    private double _height;
     private double _viewWidth = 1280;
     private double _viewHeight = 800;
 
-    private string Style => _placed
-        ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;")
-        : "";
+    private string Style => !_placed
+        ? ""
+        : !_sized
+            ? FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;right:auto;bottom:auto;transform:none;")
+            : FormattableString.Invariant($"left:{_left:0.0}px;top:{_top:0.0}px;width:{_width:0.0}px;height:{_height:0.0}px;max-width:none;max-height:none;right:auto;bottom:auto;transform:none;");
 
     protected override async Task OnInitializedAsync()
     {
@@ -365,6 +378,35 @@
 
     private async Task Close() => await Closed.InvokeAsync();
 
+    private Task FullScreen() => FrameAsync("full");
+
+    private Task Reduce() => FrameAsync("reduce");
+
+    private async Task FrameAsync(string mode)
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            var box = await _module.InvokeAsync<FloatOrigin>("frame", _panel, mode, "prescription");
+            if (_disposed)
+                return;
+            _left = box.Left;
+            _top = box.Top;
+            _width = box.Width;
+            _height = box.Height;
+            _viewWidth = box.ViewWidth > 0 ? box.ViewWidth : _viewWidth;
+            _viewHeight = box.ViewHeight > 0 ? box.ViewHeight : _viewHeight;
+            _placed = true;
+            _sized = true;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
     private async Task BeginDrag(PointerEventArgs e)
     {
         if (e.Button != 0 || _module is null)
@@ -440,5 +482,7 @@
         public double Top { get; set; }
         public double ViewWidth { get; set; }
         public double ViewHeight { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
     }
 }

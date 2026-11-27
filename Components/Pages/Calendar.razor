@@ -11,6 +11,7 @@
 
 <PageTitle>Calendar</PageTitle>
 
+<div class="calendar-fit">
 <div class="page-head accent-appt">
     <div>
         <p class="eyebrow">Seat map</p>
@@ -227,9 +228,11 @@ else if (_ready)
 
         @if (_picked is not null)
         {
+            <div class="seat-dialog" role="dialog" aria-modal="true" aria-labelledby="seat-dialog-title">
+            <button type="button" class="seat-dialog-shade" aria-label="Never mind" @onclick="ClearPick"></button>
             <section class="boarding-pass" aria-live="polite">
                 <p class="eyebrow">@PassEyebrow</p>
-                <h2>@_picked.StartsAt.ToString("dddd, MMM d")</h2>
+                <h2 id="seat-dialog-title">@_picked.StartsAt.ToString("dddd, MMM d")</h2>
                 <p class="boarding-time">@_picked.StartsAt.ToString("h:mm tt") – @_picked.EndsAt.ToString("h:mm tt")</p>
                 <p class="mb-2">@_board.DoctorName</p>
                 @if (_picked.ShowIdentity && !string.IsNullOrWhiteSpace(_picked.PersonName))
@@ -313,9 +316,11 @@ else if (_ready)
                     </div>
                 }
             </section>
+            </div>
         }
     }
 }
+</div>
 
 @code {
     [SupplyParameterFromQuery(Name = "doctor")] public string? Doctor { get; set; }

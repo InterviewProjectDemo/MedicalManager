@@ -146,6 +146,67 @@
     padding: 0.35rem 0.6rem;
 }
 
+.a11y-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 0.75rem;
+    position: relative;
+    z-index: 5;
+}
+
+.a11y-layout {
+    border: 1px solid #d7e1ea;
+    border-radius: 999px;
+    background: #fff;
+    color: #0f3d5c;
+    font: inherit;
+    font-weight: 700;
+    padding: 0.48rem 1rem;
+    cursor: pointer;
+}
+
+.a11y-layout:disabled {
+    background: #d7e1ea;
+    color: #667085;
+    cursor: not-allowed;
+}
+
+.a11y-attended {
+    display: none;
+    border: 0;
+    border-radius: 999px;
+    background: #067647;
+    color: #fff;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 800;
+    padding: 0.52rem 1.15rem;
+    cursor: pointer;
+    box-shadow: 0 0 0 3px rgba(6, 118, 71, 0.35);
+    touch-action: manipulation;
+    pointer-events: auto;
+}
+
+.a11y-attended.is-live {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.a11y-attended:hover,
+.a11y-attended:focus-visible {
+    background: #085d3a;
+    outline: 3px solid #f79009;
+    outline-offset: 2px;
+}
+
+.a11y-ack {
+    color: #067647;
+    font-weight: 800;
+}
+
 .a11y-panel {
     flex: 1 1 auto;
     min-height: 0;

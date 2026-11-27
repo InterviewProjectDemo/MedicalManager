@@ -38,7 +38,9 @@
 .float-grip {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0 0.35rem 0 0.8rem;
     min-height: 2.2rem;
     margin-bottom: 0.4rem;
     border-radius: 999px;
@@ -56,6 +58,12 @@
 
 .float-grip:active {
     cursor: grabbing;
+}
+
+.window-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
 }
 
 .float-body {

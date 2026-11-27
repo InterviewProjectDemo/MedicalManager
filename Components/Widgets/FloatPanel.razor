@@ -12,6 +12,14 @@
          @onpointerup="EndPointer"
          @onpointercancel="EndPointer">
         <span>Drag to move</span>
+        <span class="window-actions" @onpointerdown:stopPropagation="true" @onclick:stopPropagation="true">
+            <button type="button" class="window-fit" title="Full screen" aria-label="Full screen" @onclick="FullScreen">
+                <span class="studio-float-glyph is-full" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="window-fit" title="Reduce size" aria-label="Reduce size" @onclick="Reduce">
+                <span class="studio-float-glyph is-reduce" aria-hidden="true"></span>
+            </button>
+        </span>
     </div>
     <div class="float-body">
         @ChildContent
@@ -105,6 +113,38 @@
                     StateHasChanged();
                 }
             }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private Task FullScreen() => FrameAsync("full");
+
+    private Task Reduce() => FrameAsync("reduce");
+
+    private async Task FrameAsync(string mode)
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            var box = await _module.InvokeAsync<FloatOrigin>("frame", _panel, mode, MemoryKey);
+            if (_disposed)
+                return;
+            _left = box.Left;
+            _top = box.Top;
+            _width = box.Width;
+            _height = box.Height;
+            _viewWidth = box.ViewWidth > 0 ? box.ViewWidth : _viewWidth;
+            _viewHeight = box.ViewHeight > 0 ? box.ViewHeight : _viewHeight;
+            _placed = true;
+            _sized = true;
+            if (box.Z > 0)
+                _z = box.Z;
+            UpdateCorner();
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
         {
@@ -270,5 +310,6 @@
         public double Height { get; set; }
         public double ViewWidth { get; set; }
         public double ViewHeight { get; set; }
+        public int Z { get; set; }
     }
 }

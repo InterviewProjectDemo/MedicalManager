@@ -186,17 +186,23 @@
 @if (_entryOpen && model is not null)
 {
     <div class="entry-shade" @onclick="CloseEntry">
-        <div @ref="_entryPanel" class="entry-window" role="dialog" aria-modal="true" aria-labelledby="sugar-entry-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="OnEntryKey">
+        <div @ref="_entryPanel" class="entry-window @_entryFrame" role="dialog" aria-modal="true" aria-labelledby="sugar-entry-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="OnEntryKey">
             <div class="entry-window-bar">
                 <div>
                     <p class="bp-kicker">Blood sugar</p>
                     <h2 id="sugar-entry-title">@(model.Id == 0 ? "Add reading" : "Update reading")</h2>
                 </div>
-                <div>
+                <div class="entry-actions">
                     @if (CanOverwrite)
                     {
                         <button type="button" class="btn btn-light" @onclick="BeginOverwrite">Overwrite</button>
                     }
+                    <button type="button" class="window-fit" title="Full screen" aria-label="Full screen" @onclick="FullEntry">
+                        <span class="studio-float-glyph is-full" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="window-fit" title="Reduce size" aria-label="Reduce size" @onclick="ReduceEntry">
+                        <span class="studio-float-glyph is-reduce" aria-hidden="true"></span>
+                    </button>
                     <button type="button" class="entry-close" aria-label="Close" @onclick="CloseEntry">&times;</button>
                 </div>
             </div>
@@ -461,10 +467,17 @@
         _entryFocused = false;
     }
 
+    private string _entryFrame = "";
+
+    private void FullEntry() => _entryFrame = "is-full";
+
+    private void ReduceEntry() => _entryFrame = _entryFrame == "is-full" ? "" : "is-reduced";
+
     private void CloseEntry()
     {
         if (_overwritePending) return;
         _entryOpen = false;
+        _entryFrame = "";
         model = null;
     }
 

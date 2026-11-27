@@ -7,7 +7,15 @@
     <div @ref="_panel" class="studio-float place-@Place" style="@Style" role="dialog" aria-modal="false" aria-labelledby="@_titleId">
         <header class="studio-float-head" data-float-grip>
             <h2 id="@_titleId">@Title</h2>
-            <button type="button" class="studio-float-close" aria-label="Close" @onclick="Close">&times;</button>
+            <div class="studio-float-actions">
+                <button type="button" class="studio-float-fit" title="Full screen" aria-label="Full screen" @onpointerdown="FullScreen" @onpointerdown:stopPropagation="true" @onclick="FullScreen">
+                    <span class="studio-float-glyph is-full" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="studio-float-fit" title="Reduce size" aria-label="Reduce size" @onpointerdown="Reduce" @onpointerdown:stopPropagation="true" @onclick="Reduce">
+                    <span class="studio-float-glyph is-reduce" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="studio-float-close" aria-label="Close" @onpointerdown="Close" @onpointerdown:stopPropagation="true" @onclick="Close">&times;</button>
+            </div>
         </header>
         <div class="studio-float-body">
             @ChildContent
@@ -78,7 +86,64 @@
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private Task Close() => VisibleChanged.InvokeAsync(false);
+    private long _chromeTick;
+
+    private bool BeginChrome()
+    {
+        var now = Environment.TickCount64;
+        if (now - _chromeTick < 450)
+            return false;
+        _chromeTick = now;
+        return true;
+    }
+
+    private Task Close()
+    {
+        if (!BeginChrome())
+            return Task.CompletedTask;
+        return VisibleChanged.InvokeAsync(false);
+    }
+
+    private Task FullScreen()
+    {
+        if (!BeginChrome())
+            return Task.CompletedTask;
+        return FrameAsync("full");
+    }
+
+    private Task Reduce()
+    {
+        if (!BeginChrome())
+            return Task.CompletedTask;
+        return FrameAsync("reduce");
+    }
+
+    private async Task FrameAsync(string mode)
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", _modulePath);
+            var box = await _module.InvokeAsync<FrameBox>("frame", _panel, mode, MemoryKey);
+            if (_disposed)
+                return;
+            Remember(box.Left, box.Top, box.Width, box.Height, box.Z);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private sealed class FrameBox
+    {
+        public double Left { get; set; }
+        public double Top { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public int Z { get; set; }
+    }
 
     public async ValueTask DisposeAsync()
     {

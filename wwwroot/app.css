@@ -1534,6 +1534,8 @@ th[aria-sort="descending"] .sort-indicator {
 }
 .rx-titlebar:active { cursor: grabbing; }
 .rx-titlebar strong { font-size: 1.05rem; }
+.rx-actions { display: inline-flex; align-items: center; gap: 0.35rem; }
+.rx-titlebar .window-fit { background: rgba(255, 255, 255, 0.16); color: #fff; }
 .rx-close {
     border: 0;
     background: transparent;
@@ -5274,6 +5276,185 @@ html.a11y-medicare-plain .content h3 {
     margin-bottom: 1rem;
 }
 
+main:has(.calendar-fit) {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+main:has(.calendar-fit) .content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-top: 0.55rem;
+}
+
+.calendar-fit {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.calendar-fit + .site-footer {
+    flex: 0 0 auto;
+    margin: 0.3rem 0 0.35rem;
+    padding-top: 0.3rem;
+}
+
+.calendar-fit .page-head {
+    flex: 0 0 auto;
+    padding: 0.4rem 0.75rem;
+    margin-bottom: 0.35rem;
+    border-radius: 12px;
+}
+
+.calendar-fit .page-head h1 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.calendar-fit .page-head .eyebrow { display: none; }
+
+.calendar-fit .page-head .muted {
+    margin: 0;
+    font-size: 0.75rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.calendar-fit .alert,
+.calendar-fit .seat-toolbar,
+.calendar-fit .seat-week,
+.calendar-fit .seat-clinic,
+.calendar-fit .seat-legend {
+    flex: 0 0 auto;
+    margin-bottom: 0.3rem;
+}
+
+.calendar-fit .seat-legend-copy,
+.calendar-fit .seat-day-chips { display: none; }
+
+.calendar-fit .doctor-row {
+    flex: 0 0 auto;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0;
+}
+
+.calendar-fit .doctor-card {
+    min-width: 8.5rem;
+    padding: 0.35rem 0.55rem;
+}
+
+.calendar-fit .seat-notices {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0.45rem;
+    overflow-x: auto;
+    max-height: 3.1rem;
+    margin-bottom: 0.35rem;
+}
+
+.calendar-fit .seat-notices section {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.calendar-fit .seat-notices h2 {
+    margin: 0;
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.calendar-fit .seat-notice {
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    white-space: nowrap;
+}
+
+.calendar-fit .seat-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    display: flex;
+    margin-bottom: 0;
+    padding: 0.4rem;
+}
+
+.calendar-fit .seat-board {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+}
+
+.calendar-fit .seat-day {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.calendar-fit .seat-day h2 {
+    position: static;
+    flex: 0 0 auto;
+    margin: 0 0 0.15rem;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.calendar-fit .seat {
+    flex: 1 1 0;
+    min-height: 0;
+    margin: 0 0 2px;
+    padding: 0;
+    gap: 0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.calendar-fit .seat-board .seat-time {
+    font-size: clamp(0.55rem, 1.35vh, 0.72rem);
+}
+
+.calendar-fit .seat-board .seat-who,
+.calendar-fit .seat-board .seat-face { display: none; }
+
+.seat-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.seat-dialog-shade {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(22, 32, 45, 0.46);
+    cursor: pointer;
+}
+
+.seat-dialog .boarding-pass {
+    position: relative;
+    z-index: 1;
+    width: min(34rem, 100%);
+    max-height: min(80dvh, 640px);
+    margin: 0;
+    overflow: auto;
+}
+
 .seat-board {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -5389,6 +5570,10 @@ html.a11y-medicare-plain .content h3 {
     .seat-board { grid-template-columns: 1fr; }
     .seat-day { display: none; }
     .seat-day.is-focus { display: block; }
+    .calendar-fit .seat-day-chips { display: none; }
+    .calendar-fit .seat-board { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .calendar-fit .seat-day,
+    .calendar-fit .seat-day.is-focus { display: flex; }
     .seat-notice { flex-wrap: wrap; }
     .seat-notice-actions { margin-left: 0; }
 }
