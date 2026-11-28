@@ -76,6 +76,8 @@ window.mmOnboarding = {
         try {
             const audio = this._ensureAudio();
             audio.src = this._silentWav;
+            if (window.mmDevices?.applySink)
+                window.mmDevices.applySink(audio);
             const played = audio.play();
             if (played && typeof played.catch === "function") {
                 played.catch(() => { });
@@ -356,7 +358,7 @@ window.mmOnboarding = {
             };
             audio.src = url;
 
-            const played = audio.play();
+            const played = Promise.resolve(window.mmDevices?.applySink?.(audio)).then(() => audio.play());
             if (played && typeof played.then === "function") {
                 played.then(() => {
                     if (token === this._speakToken) {

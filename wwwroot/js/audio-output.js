@@ -20,8 +20,11 @@
         var Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx)
             return null;
-        if (!ctx)
+        if (!ctx) {
             ctx = new Ctx();
+            if (window.mmDevices && window.mmDevices.applyContext)
+                window.mmDevices.applyContext(ctx);
+        }
         return ctx;
     }
 
@@ -36,6 +39,8 @@
         element.volume = 1;
         element.style.cssText = "position:fixed;width:0;height:0;opacity:0;pointer-events:none;";
         (document.body || document.documentElement).appendChild(element);
+        if (window.mmDevices && window.mmDevices.applySink)
+            window.mmDevices.applySink(element);
         return element;
     }
 
@@ -108,7 +113,12 @@
                 return;
             }
             mode = "context";
-            ctxReady.then(function () {
+            var sinkReady = (window.mmDevices && window.mmDevices.applyContext)
+                ? window.mmDevices.applyContext(audio)
+                : Promise.resolve();
+            Promise.resolve(sinkReady).catch(function () { }).then(function () {
+                return ctxReady;
+            }).then(function () {
                 if (audio.state === "suspended")
                     return audio.resume();
             }).then(function () {
@@ -169,12 +179,19 @@
                 playing = false;
                 schedule(function () { playElement(false); });
             };
-            var played;
-            try { played = el.play(); }
-            catch (e) { played = Promise.reject(e); }
-            Promise.resolve(played).then(function () {
-                playing = true;
-                report(true);
+            var sinkReady = (window.mmDevices && window.mmDevices.applySink)
+                ? window.mmDevices.applySink(el)
+                : Promise.resolve();
+            Promise.resolve(sinkReady).catch(function () { }).then(function () {
+                if (stopped || mode !== "element")
+                    return;
+                var played;
+                try { played = el.play(); }
+                catch (e) { played = Promise.reject(e); }
+                return Promise.resolve(played).then(function () {
+                    playing = true;
+                    report(true);
+                });
             }).catch(function () {
                 try { el.pause(); } catch (e) { /* the speaker path is next */ }
                 if (stopped) {
@@ -223,7 +240,12 @@
         var audio = outputContext();
         if (!audio)
             return Promise.resolve(false);
-        return ctxReady.then(function () {
+        var sinkReady = (window.mmDevices && window.mmDevices.applyContext)
+            ? window.mmDevices.applyContext(audio)
+            : Promise.resolve();
+        return Promise.resolve(sinkReady).catch(function () { }).then(function () {
+            return ctxReady;
+        }).then(function () {
             return blob.arrayBuffer();
         }).then(function (raw) {
             return audio.decodeAudioData(raw.slice(0));

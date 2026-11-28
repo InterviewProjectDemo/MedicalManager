@@ -3,7 +3,9 @@ export async function startPreview(video) {
         return "unavailable";
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = window.mmDevices?.openStream
+            ? await window.mmDevices.openStream({ video: true, audio: true })
+            : await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         video.srcObject = stream;
         await video.play();
         return "live";

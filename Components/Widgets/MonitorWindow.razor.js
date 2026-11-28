@@ -115,14 +115,15 @@ async function openCamera() {
         stream = null;
     }
 
-    const attempts = [
-        { audio: false, video: true },
-        { audio: false, video: { facingMode: "user" } }
-    ];
+    const attempts = [];
+    if (window.mmDevices?.openStream && window.mmDevices.read?.().videoInputId)
+        attempts.push(() => window.mmDevices.openStream({ audio: false, video: true }));
+    attempts.push(() => navigator.mediaDevices.getUserMedia({ audio: false, video: true }));
+    attempts.push(() => navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user" } }));
     let lastError;
-    for (const constraints of attempts) {
+    for (const open of attempts) {
         try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            stream = await open();
             return stream;
         } catch (error) {
             lastError = error;

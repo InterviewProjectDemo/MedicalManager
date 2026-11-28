@@ -86,11 +86,21 @@ export async function startFamilyCall(token, ticket, dotNetRef) {
         notify(dotNetRef, "OnFamilyCallError", callErrorDetail(error));
     });
     try {
-        const outputs = await navigator.mediaDevices.enumerateDevices();
-        const speaker = outputs.find((item) => item.kind === "audiooutput" && /speaker/i.test(item.label));
-        await twilioDevice.audio.speakerDevices.set(speaker ? speaker.deviceId : "default");
+        const saved = window.mmDevices?.read?.() || {};
+        if (saved.audioInputId && twilioDevice.audio?.setInputDevice) {
+            try { await twilioDevice.audio.setInputDevice(saved.audioInputId); }
+            catch { /* the call keeps the browser microphone */ }
+        }
+        let speakerId = saved.audioOutputId || "";
+        if (!speakerId) {
+            const outputs = await navigator.mediaDevices.enumerateDevices();
+            const speaker = outputs.find((item) => item.kind === "audiooutput" && /speaker/i.test(item.label));
+            speakerId = speaker ? speaker.deviceId : "default";
+        }
+        await twilioDevice.audio.speakerDevices.set(speakerId || "default");
     } catch {
-        // The browser keeps the default speaker when it cannot list outputs.
+        try { await twilioDevice.audio.speakerDevices.set("default"); }
+        catch { /* the browser keeps the default speaker */ }
     }
 
     if (mine !== generation)

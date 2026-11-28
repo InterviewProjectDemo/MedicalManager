@@ -433,9 +433,10 @@ async function listenForVoice() {
     }
     wakeOpening = true;
     try {
-        wakeStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true }
-        });
+        const wakeAudioConstraints = { echoCancellation: true, noiseSuppression: true };
+        wakeStream = window.mmDevices?.openStream
+            ? await window.mmDevices.openStream({ audio: wakeAudioConstraints, video: false })
+            : await navigator.mediaDevices.getUserMedia({ audio: wakeAudioConstraints });
         if (!wakeOn || wakeFired || wakeNeedsGesture) {
             releaseMic();
             return;

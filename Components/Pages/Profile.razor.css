@@ -29,3 +29,13 @@
     letter-spacing: 0.28rem;
     text-align: center;
 }
+
+.media-device-preview {
+    display: block;
+    width: min(100%, 320px);
+    margin-top: 1rem;
+    border-radius: 12px;
+    background: #0f172a;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+}

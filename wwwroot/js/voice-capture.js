@@ -189,9 +189,11 @@
             return Promise.resolve();
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
             return Promise.reject(new Error("This browser cannot use a microphone."));
-        return navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
-        }).then(function (next) {
+        var audioConstraints = { echoCancellation: true, noiseSuppression: true, channelCount: 1 };
+        var opening = (window.mmDevices && window.mmDevices.openStream)
+            ? window.mmDevices.openStream({ audio: audioConstraints, video: false })
+            : navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        return opening.then(function (next) {
             stream = next;
             var Ctx = window.AudioContext || window.webkitAudioContext;
             audioCtx = new Ctx();
@@ -536,7 +538,12 @@
             return window.mmAudio.play(blob);
         var audio = new Audio(URL.createObjectURL(blob));
         audio.volume = 1;
-        return audio.play().then(function () { return true; }).catch(function () { return false; });
+        var sink = (window.mmDevices && window.mmDevices.applySink)
+            ? window.mmDevices.applySink(audio)
+            : Promise.resolve();
+        return Promise.resolve(sink).catch(function () { }).then(function () {
+            return audio.play().then(function () { return true; }).catch(function () { return false; });
+        });
     }
 
     function bindPreview(element, userId) {

@@ -84,16 +84,21 @@ export async function startCamera(videoElement) {
         throw new Error("Camera is not supported in this browser.");
     }
 
-    try {
-        activeStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
-            audio: false
-        });
-    } catch {
-        activeStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false
-        });
+    const preferredCamera = window.mmDevices?.read?.().videoInputId;
+    if (window.mmDevices?.openStream && preferredCamera) {
+        activeStream = await window.mmDevices.openStream({ audio: false, video: true });
+    } else {
+        try {
+            activeStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user" },
+                audio: false
+            });
+        } catch {
+            activeStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+            });
+        }
     }
 
     video.muted = true;

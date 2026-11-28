@@ -6,7 +6,9 @@ const pendingIce = [];
 export async function startCall(localVideo, remoteVideo, dotNetRef) {
     hangup(localVideo, remoteVideo);
     dotNet = dotNetRef;
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    localStream = window.mmDevices?.openStream
+        ? await window.mmDevices.openStream({ audio: true, video: true })
+        : await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     localVideo.srcObject = localStream;
     await localVideo.play().catch(() => { });
 
@@ -19,6 +21,7 @@ export async function startCall(localVideo, remoteVideo, dotNetRef) {
         if (!stream)
             return;
         remoteVideo.srcObject = stream;
+        window.mmDevices?.applySink?.(remoteVideo);
         remoteVideo.play().catch(() => { });
     };
     pc.onicecandidate = (event) => {

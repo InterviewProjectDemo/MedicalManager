@@ -68,7 +68,7 @@ export function play(payload) {
         audio.onended = () => finish("ok");
         audio.onerror = () => finish("error");
 
-        const started = audio.play();
+        const started = Promise.resolve(window.mmDevices?.applySink?.(audio)).then(() => audio.play());
         const ready = started && typeof started.then === "function" ? started : Promise.resolve();
         ready.then(() => {
             const seconds = Number.isFinite(audio.duration) ? audio.duration : 20;
